@@ -109,7 +109,7 @@ async function main() {
         balance: amount - paidAmount,
         state,
         dueDate: due,
-        sentAt: state === 'DRAFT' ? null : created,
+        sentAt: created,
         viewedAt: ['VIEWED', 'PAID', 'PARTIALLY_PAID'].includes(state) ? new Date(created.getTime() + 3600e3) : null,
         paidAt: state === 'PAID' ? new Date(created.getTime() + 2 * 864e5) : null,
         cancelledAt: state === 'CANCELLED' ? new Date(created.getTime() + 864e5) : null,

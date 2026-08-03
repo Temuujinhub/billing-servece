@@ -14,7 +14,9 @@ const NAV = [
   { href: '/customers', label: 'Харилцагч', icon: '👥' },
   { href: '/payments', label: 'Төлбөр', icon: '💳' },
   { href: '/receipts', label: 'eBarimt', icon: '🧿' },
+  { href: '/reports', label: 'Тайлан', icon: '📈' },
   { href: '/billing', label: 'Billing & Modules', icon: '⚙️' },
+  { href: '/developers', label: 'API & Webhooks', icon: '🧩' },
   { href: '/settings', label: 'Тохиргоо', icon: '🛠' },
 ];
 
@@ -72,7 +74,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           >
             ☰
           </button>
-          <Logo href="/dashboard" />
+          <Logo href={user.isAdmin ? '/admin' : '/dashboard'} />
           {/* Live API status with pulse */}
           <span className="ml-2 hidden items-center gap-2 rounded-full border border-white/80 bg-white/50 px-3 py-1 text-[12px] font-semibold text-slate-600 backdrop-blur-md md:inline-flex">
             <span className="relative flex h-2 w-2">
@@ -107,6 +109,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           }`}
         >
           <nav className="flex h-full flex-col gap-1 overflow-y-auto p-3" aria-label="Самбарын цэс">
+            {!user.isAdmin && (
+            <>
             <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Merchant</p>
             {NAV.map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -127,6 +131,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </Link>
               );
             })}
+            </>
+            )}
             {user.isAdmin && (
               <>
                 <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-[0.14em] text-amber-500">Admin</p>

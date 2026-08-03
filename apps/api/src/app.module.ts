@@ -12,6 +12,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { BillingModule } from './modules/billing/billing.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { DevelopersModule } from './modules/developers/developers.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { HealthModule } from './modules/health/health.module';
 import { ImportsModule } from './modules/imports/imports.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
@@ -37,6 +39,8 @@ import { TenantsModule } from './modules/tenants/tenants.module';
     PaymentsModule,
     ReceiptsModule,
     BillingModule,
+    ReportsModule,
+    DevelopersModule,
     AnalyticsModule,
     HealthModule,
   ],

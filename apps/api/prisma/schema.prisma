@@ -52,6 +52,11 @@ model Tenant {
   timezone      String       @default("Asia/Ulaanbaatar")
   contactEmail  String?
   contactPhone  String?
+  // KYB onboarding details (M-03)
+  address        String?
+  bankName       String?
+  bankAccount    String?
+  representative String?
   // Custom payer SMS template with {{нэр}} {{дүн}} {{дугаар}} {{хугацаа}} {{линк}} {{байгууллага}} vars.
   smsTemplate   String?
   createdAt     DateTime     @default(now())
@@ -66,6 +71,8 @@ model Tenant {
   auditLogs       AuditLog[]
   invoiceSeq      InvoiceSequence?
   providerConfigs ProviderConfig[]
+  apiKeys         ApiKey[]
+  webhooks        WebhookEndpoint[]
 }
 
 /// Tenant-level external provider settings (QPAY, CALLPRO). Secret fields
@@ -231,6 +238,8 @@ model Invoice {
   viewedAt    DateTime?
   paidAt      DateTime?
   cancelledAt DateTime?
+  remindersSent  Int       @default(0)
+  lastReminderAt DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -454,6 +463,39 @@ model IdempotencyKey {
   createdAt   DateTime @default(now())
 
   @@unique([tenantId, key])
+}
+
+// Scoped partner API keys (M-22 / PRD §9.2): only the SHA-256 hash is stored.
+model ApiKey {
+  id        String    @id @default(uuid())
+  tenantId  String
+  name      String
+  prefix    String // "bsk_XXXX" shown in UI
+  keyHash   String    @unique
+  last4     String
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
+
+// Merchant outbound webhooks (PRD §9.3) — HMAC-signed, at-least-once.
+model WebhookEndpoint {
+  id         String    @id @default(uuid())
+  tenantId   String
+  url        String
+  secret     String // HMAC signing secret (shown once at creation)
+  events     Json // ["payment.succeeded", "receipt.created", ...]
+  active     Boolean   @default(true)
+  lastStatus Int?
+  lastAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
 }
 
 // Platform-wide key-value settings: pricing, feature flags (admin-editable).

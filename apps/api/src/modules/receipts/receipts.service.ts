@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WebhooksService } from '../developers/webhooks.service';
 import { QpayAdapter } from '../providers/qpay.adapter';
 
 /**
@@ -20,6 +21,7 @@ export class ReceiptsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly qpay: QpayAdapter,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   /** Called inside the payment-confirm transaction. */
@@ -69,6 +71,12 @@ export class ReceiptsService {
             });
             processed += 1;
           }
+        });
+        this.webhooks.emit(tenantId, 'receipt.created', {
+          receipt_id: receipt.id,
+          transaction_id: receipt.transactionId,
+          receipt_no: result.receiptNo,
+          lottery: result.lottery,
         });
       } catch (e: any) {
         await this.prisma.ebarimtReceipt.update({

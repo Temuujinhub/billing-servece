@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { EmptyState, ErrorNote, InvoiceBadge, PageLoader } from '@/components/ui';
 import { api } from '@/lib/api';
 import { INVOICE_STATE_MN, mnt, shortDate } from '@/lib/format';
@@ -11,6 +12,16 @@ const PAGE = 25;
 const FILTERS: (InvoiceState | 'ALL')[] = ['ALL', 'SENT', 'VIEWED', 'PAID', 'PARTIALLY_PAID', 'OVERDUE', 'CANCELLED'];
 
 export default function InvoicesPage() {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <InvoicesInner />
+    </Suspense>
+  );
+}
+
+function InvoicesInner() {
+  const router = useRouter();
+  const batchId = useSearchParams().get('batchId');
   const [items, setItems] = useState<Invoice[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -27,13 +38,14 @@ export default function InvoicesPage() {
       params.set('skip', String(page * PAGE));
       if (state !== 'ALL') params.set('state', state);
       if (query) params.set('search', query);
+      if (batchId) params.set('batchId', batchId);
       const res = await api<{ items: Invoice[]; total: number }>(`/invoices?${params.toString()}`);
       setItems(res.items);
       setTotal(res.total);
     } catch (e: any) {
       setError(e.message);
     }
-  }, [page, state, query]);
+  }, [page, state, query, batchId]);
 
   useEffect(() => {
     void load();
@@ -46,7 +58,18 @@ export default function InvoicesPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Нэхэмжлэх</h1>
-          <p className="mt-1 text-sm text-slate-500">{total.toLocaleString()} бичлэг</p>
+          <p className="mt-1 flex items-center gap-2 text-sm text-slate-500">
+            {total.toLocaleString()} бичлэг
+            {batchId && (
+              <button
+                className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-[12.5px] font-semibold text-indigo-700 hover:bg-indigo-100"
+                onClick={() => router.replace('/invoices')}
+                title="Шүүлтүүр арилгах"
+              >
+                📥 Нэг импортын багц ✕
+              </button>
+            )}
+          </p>
         </div>
         <div className="flex gap-3">
           <Link href="/imports" className="btn-secondary">📥 Excel импорт</Link>

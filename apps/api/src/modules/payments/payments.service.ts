@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { apiError } from '../../common/filters/http-exception.filter';
 import { sha256 } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WebhooksService } from '../developers/webhooks.service';
 import { MockQpayAdapter } from '../providers/mock-qpay.adapter';
 import { ProviderResolver } from '../providers/provider-resolver.service';
 import { ReceiptsService } from '../receipts/receipts.service';
@@ -22,6 +23,7 @@ export class PaymentsService {
     private readonly resolver: ProviderResolver,
     private readonly mockAdapter: MockQpayAdapter,
     private readonly receipts: ReceiptsService,
+    private readonly webhooks: WebhooksService,
     private readonly config: ConfigService,
   ) {}
 
@@ -322,6 +324,20 @@ export class PaymentsService {
 
     await this.receipts.processPending(intent.tenantId).catch((err) => {
       this.logger.error(`eBarimt processing failed (will retry later): ${err?.message}`);
+    });
+
+    // Merchant outbound webhook (PRD §9.3) — fire-and-forget.
+    const invoiceRow = await this.prisma.invoice.findUnique({
+      where: { id: intent.invoiceId },
+      select: { id: true, number: true, amount: true, balance: true, state: true },
+    });
+    this.webhooks.emit(intent.tenantId, 'payment.succeeded', {
+      invoice_id: intent.invoiceId,
+      invoice_number: invoiceRow?.number,
+      amount: status.gross ?? intent.amount,
+      provider: intent.provider,
+      provider_payment_id: status.providerPaymentId,
+      invoice_state: invoiceRow?.state,
     });
 
     return { intentId, state: 'SUCCEEDED' as const };

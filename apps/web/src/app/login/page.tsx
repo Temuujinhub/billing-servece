@@ -20,8 +20,8 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await login(email, password);
-      router.replace('/dashboard');
+      const auth = await login(email, password);
+      router.replace(auth.user.isAdmin ? '/admin' : '/dashboard');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Сүлжээний алдаа. Дахин оролдоно уу.');
       setBusy(false);

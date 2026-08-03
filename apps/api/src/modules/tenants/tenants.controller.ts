@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpStatus, Patch } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
@@ -26,6 +26,12 @@ class UpdateTenantDto {
   @IsString()
   @MaxLength(320)
   smsTemplate?: string;
+
+  // KYB onboarding fields (M-03)
+  @IsOptional() @IsString() @MaxLength(300) address?: string;
+  @IsOptional() @IsString() @MaxLength(100) bankName?: string;
+  @IsOptional() @IsString() @MaxLength(40) bankAccount?: string;
+  @IsOptional() @IsString() @MaxLength(150) representative?: string;
 }
 
 @ApiTags('tenants')
@@ -70,6 +76,10 @@ export class TenantsController {
         invoicePrefix: dto.invoicePrefix,
         regNo: dto.regNo?.trim(),
         smsTemplate: dto.smsTemplate !== undefined ? dto.smsTemplate.trim() || null : undefined,
+        address: dto.address?.trim(),
+        bankName: dto.bankName?.trim(),
+        bankAccount: dto.bankAccount?.trim(),
+        representative: dto.representative?.trim(),
       },
     });
     await this.prisma.auditLog.create({
@@ -80,6 +90,24 @@ export class TenantsController {
         action: 'tenant.updated',
         targetType: 'tenant',
         targetId: user.tenantId,
+      },
+    });
+    return tenant;
+  }
+
+  /** M-03 final step: submit the completed profile for platform review. */
+  @Roles(Role.OWNER)
+  @HttpCode(200)
+  @Post('kyb-submit')
+  async kybSubmit(@CurrentUser() user: AuthUser) {
+    const tenant = await this.prisma.tenant.update({
+      where: { id: user.tenantId },
+      data: { kybStatus: 'SUBMITTED' },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: user.tenantId, actorId: user.userId, actorEmail: user.email,
+        action: 'kyb.submitted', targetType: 'tenant', targetId: user.tenantId,
       },
     });
     return tenant;

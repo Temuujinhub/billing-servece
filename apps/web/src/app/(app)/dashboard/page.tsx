@@ -5,9 +5,9 @@ import { useEffect, useState } from 'react';
 import { AreaChart, Donut } from '@/components/charts';
 import { StatProgress, StatRing, StatTrend } from '@/components/stats';
 import { EmptyState, ErrorNote, InvoiceBadge, PageLoader, Stat } from '@/components/ui';
-import { api } from '@/lib/api';
+import { api, getSessionUser } from '@/lib/api';
 import { mnt, shortDate } from '@/lib/format';
-import type { DashboardData } from '@/lib/types';
+import type { DashboardData, TenantInfo } from '@/lib/types';
 
 const SPLIT_COLORS: Record<string, string> = {
   PAID: '#10B981',
@@ -23,11 +23,16 @@ const SPLIT_COLORS: Record<string, string> = {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [kybStatus, setKybStatus] = useState<string | null>(null);
+  const isOwner = getSessionUser()?.role === 'OWNER';
 
   useEffect(() => {
     api<DashboardData>('/analytics/dashboard')
       .then(setData)
       .catch((e) => setError(e.message));
+    api<TenantInfo>('/tenant')
+      .then((r) => setKybStatus(r.tenant.kybStatus))
+      .catch(() => undefined);
   }, []);
 
   if (error) return <ErrorNote message={error} />;
@@ -40,6 +45,20 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {/* KYB call-to-action (M-03) */}
+      {isOwner && kybStatus && ['DRAFT', 'NEEDS_INFO', 'REJECTED'].includes(kybStatus) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200/80 bg-amber-50/80 px-5 py-4 backdrop-blur-md">
+          <div>
+            <p className="font-bold text-amber-900">Байгууллагаа баталгаажуулаарай</p>
+            <p className="mt-0.5 text-[13.5px] text-amber-800">
+              {kybStatus === 'NEEDS_INFO'
+                ? 'Нэмэлт мэдээлэл шаардлагатай — профайлаа шинэчлээд дахин илгээнэ үү.'
+                : 'Регистр, банкны данс зэрэг мэдээллээ бөглөж илгээснээр бүрэн эрх нээгдэнэ.'}
+            </p>
+          </div>
+          <Link href="/onboarding" className="btn-primary shrink-0 px-4 py-2 text-[13.5px]">Баталгаажуулах →</Link>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Хянах самбар</h1>

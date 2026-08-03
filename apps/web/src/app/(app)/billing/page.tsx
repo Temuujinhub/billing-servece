@@ -10,7 +10,7 @@ const MODULE_INFO: Record<string, { title: string; desc: string; price: string }
   SMS: { title: 'SMS илгээлт', desc: 'Төлбөрийн линкийг SMS-ээр хүргэх', price: '25₮/segment' },
   EBARIMT: { title: 'eBarimt', desc: 'Төлбөр бүрд НӨАТ-ын баримт автоматаар', price: '20,000₮/сар' },
   POS: { title: 'POS / Cloud Print', desc: 'Салбар дээрх баримт хэвлэлт', price: '20,000₮/төхөөрөмж' },
-  REMINDER: { title: 'Сануулга (удахгүй)', desc: 'Хугацаа хэтрэлтийн автомат сануулга', price: 'Тун удахгүй' },
+  REMINDER: { title: 'Автомат сануулга', desc: 'Хугацаа хэтэрсэн нэхэмжлэхэд 72 цаг тутам, дээд тал нь 3 SMS сануулга (10:00–20:00)', price: '25₮/segment' },
 };
 
 export default function BillingPage() {
@@ -59,7 +59,7 @@ export default function BillingPage() {
             .filter((m) => MODULE_INFO[m.code])
             .map((m) => {
               const info = MODULE_INFO[m.code];
-              const disabled = m.code === 'REMINDER' || !isOwner;
+              const disabled = !isOwner;
               return (
                 <div key={m.code} className="card flex items-center justify-between gap-4 p-5">
                   <div>

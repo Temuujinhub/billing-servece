@@ -206,9 +206,53 @@ export interface TenantInfo {
     contactEmail: string | null;
     contactPhone: string | null;
     smsTemplate: string | null;
+    address: string | null;
+    bankName: string | null;
+    bankAccount: string | null;
+    representative: string | null;
     createdAt: string;
     modules: { code: string; enabled: boolean; quantity: number }[];
   };
   team: { id: string; role: Role; user: { id: string; name: string; email: string }; since: string }[];
   me: { userId: string; email: string; name: string; role: Role };
+}
+
+export interface TeamMember {
+  id: string;
+  role: Role;
+  user: { id: string; name: string; email: string };
+}
+
+export interface ReportsSummary {
+  days: number;
+  since: string;
+  invoices: { count: number; amount: number; outstanding: number };
+  payments: { count: number; gross: number; fee: number };
+  smsSegments: number;
+  byState: { state: InvoiceState; count: number; amount: number }[];
+  topCustomers: { customerId: string; name: string; invoices: number; amount: number }[];
+}
+
+export interface ApiKeyInfo {
+  id: string;
+  name: string;
+  prefix: string;
+  last4: string;
+  createdAt: string;
+  revokedAt: string | null;
+}
+
+export interface WebhookInfo {
+  id: string;
+  url: string;
+  events: string[];
+  active: boolean;
+  lastStatus: number | null;
+  lastAt: string | null;
+  createdAt: string;
+}
+
+export interface DevelopersOverview {
+  keys: ApiKeyInfo[];
+  webhooks: WebhookInfo[];
 }

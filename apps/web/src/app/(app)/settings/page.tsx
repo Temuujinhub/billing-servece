@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ErrorNote, PageLoader, Spinner } from '@/components/ui';
+import Link from 'next/link';
+import { useCallback, useEffect, useState } from 'react';
+import { ErrorNote, Modal, PageLoader, Spinner } from '@/components/ui';
 import { api, ApiError, getSessionUser } from '@/lib/api';
 import { shortDate } from '@/lib/format';
-import type { TenantInfo } from '@/lib/types';
+import type { Role, TenantInfo } from '@/lib/types';
 
 const ROLE_MN: Record<string, string> = {
   OWNER: 'Эзэмшигч',
@@ -62,17 +63,77 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const isOwner = getSessionUser()?.role === 'OWNER';
+  const myUserId = getSessionUser()?.id;
 
-  useEffect(() => {
+  // Team management (M-23)
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [invite, setInvite] = useState({ email: '', name: '', role: 'OPERATOR' as Role });
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [teamBusy, setTeamBusy] = useState<string | null>(null);
+  const [teamError, setTeamError] = useState<string | null>(null);
+
+  const load = useCallback((first = false) => {
     api<TenantInfo>('/tenant')
       .then((r) => {
         setInfo(r);
-        setName(r.tenant.name);
-        setPrefix(r.tenant.invoicePrefix);
-        setSmsTemplate(r.tenant.smsTemplate ?? '');
+        if (first) {
+          setName(r.tenant.name);
+          setPrefix(r.tenant.invoicePrefix);
+          setSmsTemplate(r.tenant.smsTemplate ?? '');
+        }
       })
       .catch((e) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    load(true);
+  }, [load]);
+
+  async function sendInvite() {
+    setTeamBusy('invite');
+    setTeamError(null);
+    try {
+      const res = await api<{ membership: unknown; tempPassword: string | null }>('/tenant/members', {
+        method: 'POST',
+        body: JSON.stringify({ email: invite.email.trim(), name: invite.name.trim(), role: invite.role }),
+      });
+      setTempPassword(res.tempPassword);
+      if (!res.tempPassword) setInviteOpen(false);
+      setInvite({ email: '', name: '', role: 'OPERATOR' });
+      load();
+    } catch (e) {
+      setTeamError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
+    } finally {
+      setTeamBusy(null);
+    }
+  }
+
+  async function changeRole(membershipId: string, role: Role) {
+    setTeamBusy(membershipId);
+    setTeamError(null);
+    try {
+      await api(`/tenant/members/${membershipId}`, { method: 'PATCH', body: JSON.stringify({ role }) });
+      load();
+    } catch (e) {
+      setTeamError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
+    } finally {
+      setTeamBusy(null);
+    }
+  }
+
+  async function removeMember(membershipId: string, email: string) {
+    if (!window.confirm(`${email} хэрэглэгчийг багаас хасах уу?`)) return;
+    setTeamBusy(membershipId);
+    setTeamError(null);
+    try {
+      await api(`/tenant/members/${membershipId}`, { method: 'DELETE' });
+      load();
+    } catch (e) {
+      setTeamError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
+    } finally {
+      setTeamBusy(null);
+    }
+  }
 
   async function save() {
     setBusy(true);
@@ -101,6 +162,14 @@ export default function SettingsPage() {
         <p className="mt-1 text-sm text-slate-500">
           KYB төлөв: <b className="text-navy-800">{KYB_MN[info.tenant.kybStatus] ?? info.tenant.kybStatus}</b>
           {info.tenant.regNo && <> · Регистр: {info.tenant.regNo}</>}
+          {isOwner && ['DRAFT', 'NEEDS_INFO', 'REJECTED'].includes(info.tenant.kybStatus) && (
+            <>
+              {' · '}
+              <Link href="/onboarding" className="font-semibold text-indigo-600 hover:underline">
+                Баталгаажуулалт бөглөх →
+              </Link>
+            </>
+          )}
         </p>
       </div>
 
@@ -187,8 +256,17 @@ export default function SettingsPage() {
         )}
       </div>
 
+      {/* Team management (M-23) */}
       <div className="card overflow-hidden">
-        <h2 className="px-6 py-4 font-bold text-slate-900">Багийн гишүүд</h2>
+        <div className="flex items-center justify-between px-6 py-4">
+          <h2 className="font-bold text-slate-900">Багийн гишүүд</h2>
+          {isOwner && (
+            <button className="btn-primary px-4 py-2 text-[13.5px]" onClick={() => setInviteOpen(true)}>
+              + Гишүүн урих
+            </button>
+          )}
+        </div>
+        {teamError && <div className="px-6 pb-3"><ErrorNote message={teamError} /></div>}
         <table className="w-full border-t border-slate-200/60">
           <thead className="bg-slate-50/50">
             <tr>
@@ -196,23 +274,108 @@ export default function SettingsPage() {
               <th className="th">Имэйл</th>
               <th className="th">Эрх</th>
               <th className="th">Нэгдсэн</th>
+              {isOwner && <th className="th" />}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200/60">
             {info.team.map((m) => (
               <tr key={m.id}>
-                <td className="td font-medium">{m.user.name}</td>
+                <td className="td font-medium">
+                  {m.user.name}
+                  {m.user.id === myUserId && <span className="ml-1.5 text-[11.5px] font-semibold text-indigo-500">(та)</span>}
+                </td>
                 <td className="td text-slate-500">{m.user.email}</td>
                 <td className="td">
-                  <span className="rounded-full bg-navy-50 px-2.5 py-1 text-[12px] font-semibold text-navy-700">{ROLE_MN[m.role] ?? m.role}</span>
+                  {isOwner && m.user.id !== myUserId ? (
+                    <select
+                      className="input w-auto px-2.5 py-1.5 text-[13px]"
+                      value={m.role}
+                      disabled={teamBusy === m.id}
+                      onChange={(e) => changeRole(m.id, e.target.value as Role)}
+                      aria-label={`${m.user.email} эрх`}
+                    >
+                      {(['OWNER', 'OPERATOR', 'ACCOUNTANT', 'VIEWER'] as Role[]).map((r) => (
+                        <option key={r} value={r}>{ROLE_MN[r]}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="rounded-full bg-navy-50 px-2.5 py-1 text-[12px] font-semibold text-navy-700">{ROLE_MN[m.role] ?? m.role}</span>
+                  )}
                 </td>
                 <td className="td text-slate-500">{shortDate(m.since)}</td>
+                {isOwner && (
+                  <td className="td text-right">
+                    {m.user.id !== myUserId && (
+                      <button
+                        className="text-[13px] font-semibold text-red-600 hover:underline disabled:opacity-50"
+                        disabled={teamBusy === m.id}
+                        onClick={() => removeMember(m.id, m.user.email)}
+                      >
+                        Хасах
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
-        <p className="px-6 py-4 text-[12.5px] text-slate-500">Гишүүн урих, эрх өөрчлөх — дараагийн хувилбарт.</p>
       </div>
+
+      {/* Invite modal — temp password shown exactly once */}
+      <Modal
+        open={inviteOpen}
+        title={tempPassword ? 'Гишүүн нэмэгдлээ' : 'Гишүүн урих'}
+        onClose={() => {
+          setInviteOpen(false);
+          setTempPassword(null);
+        }}
+      >
+        {tempPassword ? (
+          <div className="space-y-4">
+            <p className="text-[13.5px] leading-relaxed text-slate-600">
+              Шинэ хэрэглэгчийн түр нууц үг — <b>зөвхөн одоо нэг удаа</b> харагдана. Гишүүндээ дамжуулж, нэвтэрсний дараа солиулаарай.
+            </p>
+            <div className="rounded-xl bg-navy-900 p-4">
+              <code className="break-all font-mono text-[15px] font-bold text-teal-300">{tempPassword}</code>
+            </div>
+            <div className="flex justify-end">
+              <button className="btn-primary" onClick={() => { setInviteOpen(false); setTempPassword(null); }}>Хадгалсан, хаах</button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <label className="label">Имэйл</label>
+              <input className="input" type="email" value={invite.email} onChange={(e) => setInvite((v) => ({ ...v, email: e.target.value }))} placeholder="member@company.mn" />
+            </div>
+            <div>
+              <label className="label">Нэр</label>
+              <input className="input" value={invite.name} onChange={(e) => setInvite((v) => ({ ...v, name: e.target.value }))} maxLength={120} />
+            </div>
+            <div>
+              <label className="label">Эрх</label>
+              <select className="input" value={invite.role} onChange={(e) => setInvite((v) => ({ ...v, role: e.target.value as Role }))}>
+                {(['OWNER', 'OPERATOR', 'ACCOUNTANT', 'VIEWER'] as Role[]).map((r) => (
+                  <option key={r} value={r}>{ROLE_MN[r]}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-[12px] text-slate-500">Оператор — нэхэмжлэх илгээнэ · Нягтлан — тайлан, тулгалт · Үзэгч — зөвхөн харна</p>
+            </div>
+            {teamError && <ErrorNote message={teamError} />}
+            <div className="flex justify-end gap-3">
+              <button className="btn-secondary" onClick={() => setInviteOpen(false)}>Болих</button>
+              <button
+                className="btn-primary min-w-[120px]"
+                disabled={teamBusy === 'invite' || !invite.email.trim() || !invite.name.trim()}
+                onClick={sendInvite}
+              >
+                {teamBusy === 'invite' ? <Spinner className="h-5 w-5 text-white" /> : 'Урих'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

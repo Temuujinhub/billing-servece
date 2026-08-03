@@ -50,7 +50,7 @@ export default function ImportsPage() {
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [approving, setApproving] = useState(false);
-  const [done, setDone] = useState<{ created: number } | null>(null);
+  const [done, setDone] = useState<{ created: number; batchId?: string } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -123,7 +123,7 @@ export default function ImportsPage() {
     setApproving(true);
     setError(null);
     try {
-      const res = await api<{ created: number }>(`/imports/${preview.batch.id}/approve`, { method: 'POST' });
+      const res = await api<{ created: number; batchId: string }>(`/imports/${preview.batch.id}/approve`, { method: 'POST' });
       setDone(res);
       setPreview(null);
       loadBatches();
@@ -200,7 +200,7 @@ export default function ImportsPage() {
       {done && (
         <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
           ✅ {done.created} нэхэмжлэх үүсгэж, SMS линкүүд илгээгдлээ.{' '}
-          <Link href="/invoices" className="font-semibold underline">Нэхэмжлэхүүд үзэх</Link>
+          <Link href={done.batchId ? `/invoices?batchId=${done.batchId}` : '/invoices'} className="font-semibold underline">Нэхэмжлэхүүд үзэх</Link>
         </div>
       )}
 
