@@ -1,0 +1,44 @@
+# =============================================================================
+# billingservice.mn — reverse proxy (Caddy) for the production droplet.
+#
+# Serves the app on billing.mastrsys.com with automatic HTTPS (Let's Encrypt).
+# The apex domain and bare-IP requests are redirected to the canonical host.
+# When the billingservice.mn domain is purchased, add it as an extra site
+# address on the main block below — nothing else needs to change.
+# =============================================================================
+{
+	admin off
+	email stemuujin@gmail.com
+}
+
+billing.mastrsys.com {
+	encode zstd gzip
+
+	# Backend (NestJS): REST API, health checks, payment webhooks.
+	@backend path /api/* /health/*
+	handle @backend {
+		reverse_proxy api:4000
+	}
+
+	# Everything else is the Next.js web app (landing + dashboard + pay page).
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+# While hotel PMS is paused, send the apex + www to the billing service.
+mastrsys.com, www.mastrsys.com {
+	redir https://billing.mastrsys.com{uri} temporary
+}
+
+# Bare-IP / unknown-host HTTP requests → canonical host.
+:80 {
+	redir https://billing.mastrsys.com{uri} temporary
+}

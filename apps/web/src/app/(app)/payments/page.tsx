@@ -1,0 +1,83 @@
+'use client';
+
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { EmptyState, ErrorNote, PageLoader, ReceiptBadge } from '@/components/ui';
+import { api } from '@/lib/api';
+import { dateTime, mnt } from '@/lib/format';
+import type { PaymentRow } from '@/lib/types';
+
+export default function PaymentsPage() {
+  const [items, setItems] = useState<PaymentRow[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api<{ items: PaymentRow[]; total: number }>('/payments?take=100')
+      .then((r) => {
+        setItems(r.items);
+        setTotal(r.total);
+      })
+      .catch((e) => setError(e.message));
+  }, []);
+
+  const gross = (items ?? []).reduce((s, p) => s + p.gross, 0);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Төлбөр</h1>
+          <p className="mt-1 text-sm text-muted">{total.toLocaleString()} гүйлгээ · provider-ээр баталгаажсан</p>
+        </div>
+        {items && items.length > 0 && (
+          <p className="text-sm text-muted">
+            Сүүлийн {items.length} гүйлгээний нийт: <b className="text-navy-900">{mnt(gross)}</b>
+          </p>
+        )}
+      </div>
+
+      {error && <ErrorNote message={error} />}
+      {!items ? (
+        <PageLoader />
+      ) : items.length === 0 ? (
+        <EmptyState title="Төлбөр бүртгэгдээгүй" hint="Төлөгч линкээр орж төлснөөр энд харагдана." />
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="scroll-thin overflow-x-auto">
+            <table className="w-full min-w-[760px]">
+              <thead className="bg-navy-50/60">
+                <tr>
+                  <th className="th">Огноо</th>
+                  <th className="th">Нэхэмжлэх</th>
+                  <th className="th">Төлөгч</th>
+                  <th className="th">Provider</th>
+                  <th className="th">Гүйлгээний ID</th>
+                  <th className="th text-right">Дүн</th>
+                  <th className="th">eBarimt</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {items.map((p) => (
+                  <tr key={p.id} className="transition hover:bg-navy-50/40">
+                    <td className="td text-muted">{dateTime(p.paidAt)}</td>
+                    <td className="td">
+                      <Link href={`/invoices/${p.intent.invoice.id}`} className="font-semibold text-teal-700 hover:underline">
+                        {p.intent.invoice.number}
+                      </Link>
+                    </td>
+                    <td className="td">{p.intent.invoice.customer.name}</td>
+                    <td className="td text-muted">{p.intent.provider === 'qpay_mock' ? 'QPay (mock)' : p.intent.provider}</td>
+                    <td className="td max-w-[160px] truncate font-mono text-[12px] text-muted">{p.providerPaymentId}</td>
+                    <td className="td text-right font-semibold text-teal-700">{mnt(p.gross)}</td>
+                    <td className="td">{p.receipts[0] ? <ReceiptBadge state={p.receipts[0].state} /> : <span className="text-muted">—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
