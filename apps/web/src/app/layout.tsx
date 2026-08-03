@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   },
   description:
     'Нэхэмжлэх, төлбөр хураалт, SMS/payment link, eBarimt-ийг нэг дор автоматжуулсан Монголын B2B SaaS платформ.',
+  icons: { icon: '/favicon.svg' },
 };
 
 export const viewport: Viewport = {

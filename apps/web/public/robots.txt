@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /invoices
+Disallow: /imports
+Disallow: /customers
+Disallow: /payments
+Disallow: /receipts
+Disallow: /billing
+Disallow: /settings
+Disallow: /pay/
