@@ -22,6 +22,16 @@ export class AuthService {
 
   /** Self-service onboarding: user + tenant + owner membership in ONE transaction. */
   async register(dto: RegisterDto) {
+    // Admin kill-switch (feature flag A-17): pause self-service signups.
+    const flags = await this.prisma.platformSetting.findUnique({ where: { key: 'features' } });
+    if (flags && (flags.value as any)?.registrationOpen === false) {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'REGISTRATION_CLOSED',
+        'Шинэ бүртгэл түр хаалттай байна. Удахгүй нээгдэнэ.',
+        'Self-service registration is temporarily closed.',
+      );
+    }
     const email = dto.email.trim().toLowerCase();
     const phone = dto.phone ? normalizeMnPhone(dto.phone) : null;
     if (dto.phone && !phone) {

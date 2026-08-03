@@ -15,7 +15,9 @@ export const PRICING = {
   SMS_PER_SEGMENT: 25,
   EBARIMT_CONNECTION: 20_000,
   POS_PER_DEVICE: 20_000,
-} as const;
+};
+
+type Pricing = typeof PRICING;
 
 const TOGGLABLE = ['SMS', 'EBARIMT', 'POS', 'REMINDER'] as const;
 
@@ -23,8 +25,15 @@ const TOGGLABLE = ['SMS', 'EBARIMT', 'POS', 'REMINDER'] as const;
 export class BillingService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Admin-editable rates (PlatformSetting 'pricing') with the PRD defaults. */
+  private async pricing(): Promise<Pricing> {
+    const row = await this.prisma.platformSetting.findUnique({ where: { key: 'pricing' } });
+    return row ? { ...PRICING, ...(row.value as Partial<Pricing>) } : PRICING;
+  }
+
   async overview(tenantId: string) {
     const since = monthStart();
+    const PRICING_NOW = await this.pricing();
     const [modules, usage] = await Promise.all([
       this.prisma.tenantModule.findMany({ where: { tenantId }, orderBy: { code: 'asc' } }),
       this.prisma.usageEvent.groupBy({
@@ -40,19 +49,19 @@ export class BillingService {
     const posCount = moduleOn('POS') ? (modules.find((m) => m.code === 'POS')?.quantity ?? 0) : 0;
 
     const lines = [
-      { code: 'BASE', label: 'Суурь хураамж', qty: 1, unitPrice: PRICING.BASE_FEE, amount: PRICING.BASE_FEE },
+      { code: 'BASE', label: 'Суурь хураамж', qty: 1, unitPrice: PRICING_NOW.BASE_FEE, amount: PRICING_NOW.BASE_FEE },
       {
         code: 'SMS',
         label: 'SMS (segment)',
         qty: smsSegments,
-        unitPrice: PRICING.SMS_PER_SEGMENT,
-        amount: smsSegments * PRICING.SMS_PER_SEGMENT,
+        unitPrice: PRICING_NOW.SMS_PER_SEGMENT,
+        amount: smsSegments * PRICING_NOW.SMS_PER_SEGMENT,
       },
       ...(moduleOn('EBARIMT')
-        ? [{ code: 'EBARIMT', label: 'eBarimt холболт', qty: 1, unitPrice: PRICING.EBARIMT_CONNECTION, amount: PRICING.EBARIMT_CONNECTION }]
+        ? [{ code: 'EBARIMT', label: 'eBarimt холболт', qty: 1, unitPrice: PRICING_NOW.EBARIMT_CONNECTION, amount: PRICING_NOW.EBARIMT_CONNECTION }]
         : []),
       ...(posCount > 0
-        ? [{ code: 'POS', label: 'POS төхөөрөмж', qty: posCount, unitPrice: PRICING.POS_PER_DEVICE, amount: posCount * PRICING.POS_PER_DEVICE }]
+        ? [{ code: 'POS', label: 'POS төхөөрөмж', qty: posCount, unitPrice: PRICING_NOW.POS_PER_DEVICE, amount: posCount * PRICING_NOW.POS_PER_DEVICE }]
         : []),
     ];
 

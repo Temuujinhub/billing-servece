@@ -20,6 +20,9 @@ export const envValidationSchema = Joi.object({
   SEED_ON_START: Joi.string().valid('true', 'false').default('false'),
   // Comma-separated emails that get platform-admin access on login.
   ADMIN_EMAILS: Joi.string().allow('').default(''),
+  // One-time admin account provisioning (never stored in the repo).
+  ADMIN_BOOTSTRAP_EMAIL: Joi.string().email().allow('').default(''),
+  ADMIN_BOOTSTRAP_PASSWORD: Joi.string().allow('').default(''),
 
   // --- Payment provider selection (real credentials only via droplet .env) ---
   PAYMENT_PROVIDER: Joi.string().valid('qpay_mock', 'qpay').default('qpay_mock'),

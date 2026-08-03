@@ -209,6 +209,18 @@ export class QpayAdapter implements PaymentProviderPort {
     }
   }
 
+  async refundPayment(providerPaymentId: string, tenantId: string, note?: string): Promise<void> {
+    const cfg = await this.cfg(tenantId);
+    // QPay Merchant V2: DELETE /v2/payment/refund/{payment_id}
+    await this.request(cfg, 'DELETE', `/v2/payment/refund/${encodeURIComponent(providerPaymentId)}`, note ? { note } : undefined);
+  }
+
+  /** Best-effort tax receipt cancellation after a refund. */
+  async cancelEbarimt(tenantId: string, paymentId: string): Promise<void> {
+    const cfg = await this.cfg(tenantId);
+    await this.request(cfg, 'POST', '/v2/ebarimt/cancel', { payment_id: paymentId });
+  }
+
   // --------------------------------------------------------------- ebarimt
 
   /** Create the tax receipt for a confirmed payment (QPay eBarimt integration). */

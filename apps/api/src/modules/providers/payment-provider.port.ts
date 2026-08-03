@@ -29,4 +29,6 @@ export interface PaymentProviderPort {
   /** Authoritative check — callbacks alone are never trusted (PAY-03). */
   getPaymentStatus(providerInvoiceId: string, tenantId: string): Promise<ProviderPaymentStatus>;
   cancelInvoice(providerInvoiceId: string, tenantId: string): Promise<void>;
+  /** Return the money for a confirmed payment (PAY-06). */
+  refundPayment(providerPaymentId: string, tenantId: string, note?: string): Promise<void>;
 }

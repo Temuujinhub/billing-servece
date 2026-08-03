@@ -21,7 +21,17 @@ const NAV = [
 // Visible ONLY to platform admins (user.isAdmin) — merchants never see these.
 const ADMIN_NAV = [
   { href: '/admin', label: 'Админ самбар', icon: '🛡️' },
+  { href: '/admin/merchants', label: 'Байгууллага / KYB', icon: '🏢' },
+  { href: '/admin/transactions', label: 'Гүйлгээ', icon: '🧮' },
+  { href: '/admin/ops', label: 'Ops дараалал', icon: '🚦' },
+  { href: '/admin/reconciliation', label: 'Тулгалт', icon: '⚖️' },
+  { href: '/admin/providers', label: 'Provider health', icon: '💓' },
   { href: '/admin/integrations', label: 'Интеграци', icon: '🔌' },
+  { href: '/admin/pricing', label: 'Үнэ & Flags', icon: '🏷️' },
+  { href: '/admin/incidents', label: 'Incident', icon: '🚨' },
+  { href: '/admin/support', label: 'Хайлт', icon: '🔎' },
+  { href: '/admin/audit', label: 'Audit', icon: '📜' },
+  { href: '/admin/access', label: 'Админ эрх', icon: '🔐' },
 ];
 
 const ROLE_MN: Record<string, string> = {
@@ -121,7 +131,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <>
                 <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-[0.14em] text-amber-500">Admin</p>
                 {ADMIN_NAV.map((item) => {
-                  const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  const active = item.href === '/admin' ? pathname === '/admin' : pathname === item.href || pathname.startsWith(`${item.href}/`);
                   return (
                     <Link
                       key={item.href}

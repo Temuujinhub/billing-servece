@@ -54,6 +54,16 @@ export class MockQpayAdapter implements PaymentProviderPort {
     this.paidInvoices.delete(providerInvoiceId);
   }
 
+  async refundPayment(providerPaymentId: string, _tenantId: string, _note?: string): Promise<void> {
+    // Mock provider: refunds always succeed instantly.
+    for (const [invoiceId, marker] of this.paidInvoices.entries()) {
+      if (marker.providerPaymentId === providerPaymentId) {
+        this.paidInvoices.delete(invoiceId);
+        break;
+      }
+    }
+  }
+
   /** Sandbox hook: mark an invoice as paid, as if a payer scanned the QR. */
   simulatePayment(providerInvoiceId: string): { providerPaymentId: string } | null {
     const amount = this.amounts.get(providerInvoiceId);

@@ -344,16 +344,18 @@ enum TxStatus {
 }
 
 model PaymentTransaction {
-  id                String   @id @default(uuid())
+  id                String    @id @default(uuid())
   intentId          String
   provider          String
   providerPaymentId String
   gross             Int
-  fee               Int      @default(0)
+  fee               Int       @default(0)
   net               Int
-  status            TxStatus @default(SUCCEEDED)
-  paidAt            DateTime @default(now())
-  createdAt         DateTime @default(now())
+  status            TxStatus  @default(SUCCEEDED)
+  paidAt            DateTime  @default(now())
+  refundedAt        DateTime?
+  refundReason      String?
+  createdAt         DateTime  @default(now())
 
   intent   PaymentIntent   @relation(fields: [intentId], references: [id])
   receipts EbarimtReceipt[]
@@ -452,6 +454,46 @@ model IdempotencyKey {
   createdAt   DateTime @default(now())
 
   @@unique([tenantId, key])
+}
+
+// Platform-wide key-value settings: pricing, feature flags (admin-editable).
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+enum IncidentStatus {
+  OPEN
+  MONITORING
+  RESOLVED
+}
+
+model Incident {
+  id         String         @id @default(uuid())
+  title      String
+  severity   String         @default("SEV3") // SEV1..SEV4
+  status     IncidentStatus @default(OPEN)
+  note       String?
+  createdBy  String?
+  createdAt  DateTime       @default(now())
+  resolvedAt DateTime?
+
+  @@index([status, createdAt])
+}
+
+// Admin-triggered ledger-vs-provider verification sweep (PRD A-12/13).
+model ReconciliationRun {
+  id          String   @id @default(uuid())
+  provider    String
+  periodStart DateTime
+  periodEnd   DateTime
+  total       Int      @default(0)
+  matched     Int      @default(0)
+  mismatched  Int      @default(0)
+  items       Json // [{intentId, invoiceNumber, tenantName, issue, gross}]
+  createdBy   String?
+  createdAt   DateTime @default(now())
 }
 
 model AuditLog {
