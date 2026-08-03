@@ -1,0 +1,66 @@
+name: Deploy billingservice.mn
+
+# Deploys the stack to the DigitalOcean droplet and (temporarily) pauses the
+# hotel PMS stack that currently occupies ports 80/443.
+#   • Manually  : Actions tab → "Deploy billingservice.mn" → "Run workflow"
+#   • Automatic : on every push to main
+#
+# Required secret: DEPLOY_SSH_KEY — private SSH key whose public key is in the
+# droplet's ~/.ssh/authorized_keys (same key the HOTEL_PMS repo uses).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-billing-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to DigitalOcean
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST || '168.144.41.111' }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER || 'root' }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || secrets.DEPLOY_SSH_KEY1 }}
+        run: |
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "::error title=Missing SSH key secret::Add DEPLOY_SSH_KEY under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Sync project to droplet
+        run: |
+          rsync -az --delete \
+            --exclude '.git' --exclude 'node_modules' --exclude '.next' --exclude 'dist' \
+            --exclude '.env' \
+            -e "ssh -i ~/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new" \
+            ./ "$DEPLOY_USER@$DEPLOY_HOST:/opt/billingservice/"
+
+      - name: Run remote deploy script
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "PUBLIC_URL=https://billing.mastrsys.com bash /opt/billingservice/deploy/remote-deploy.sh"
+
+      - name: Verify public endpoint
+        run: |
+          for i in $(seq 1 20); do
+            if curl -fsS --max-time 10 https://billing.mastrsys.com/health/live > /dev/null 2>&1; then
+              echo "✅ https://billing.mastrsys.com is live"
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "::warning::Public HTTPS endpoint not confirmed yet (cert may still be provisioning)."

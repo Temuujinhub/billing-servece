@@ -1,0 +1,449 @@
+// =============================================================================
+// billingservice.mn — data model (MVP scope of the PRD data dictionary).
+//
+// Conventions
+//   • Every tenant-owned table carries `tenantId` — queries MUST scope by it.
+//   • Money is integer MNT (no minor units in circulation).
+//   • Financial facts (payments, refunds, usage) are append-only; balances are
+//     derived, never hand-edited.
+//   • Raw secrets/tokens are never stored — only SHA-256 hashes.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity & tenancy
+// ---------------------------------------------------------------------------
+
+enum TenantType {
+  ORGANIZATION
+  INDIVIDUAL
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum KybStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  NEEDS_INFO
+}
+
+model Tenant {
+  id            String       @id @default(uuid())
+  type          TenantType   @default(ORGANIZATION)
+  name          String
+  regNo         String?
+  status        TenantStatus @default(ACTIVE)
+  kybStatus     KybStatus    @default(DRAFT)
+  invoicePrefix String       @default("INV")
+  timezone      String       @default("Asia/Ulaanbaatar")
+  contactEmail  String?
+  contactPhone  String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  memberships  Membership[]
+  customers    Customer[]
+  invoices     Invoice[]
+  batches      InvoiceBatch[]
+  modules      TenantModule[]
+  usageEvents  UsageEvent[]
+  auditLogs    AuditLog[]
+  invoiceSeq   InvoiceSequence?
+}
+
+enum Role {
+  OWNER
+  OPERATOR
+  ACCOUNTANT
+  VIEWER
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  phone        String?
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships   Membership[]
+  refreshTokens RefreshToken[]
+}
+
+model Membership {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String
+  role      Role     @default(VIEWER)
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Customers (payers)
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id          String   @id @default(uuid())
+  tenantId    String
+  externalRef String?
+  name        String
+  phone       String?
+  email       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  invoices Invoice[]
+
+  @@unique([tenantId, externalRef])
+  @@index([tenantId, name])
+  @@index([tenantId, phone])
+}
+
+// ---------------------------------------------------------------------------
+// Invoices & bulk import
+// ---------------------------------------------------------------------------
+
+enum BatchStatus {
+  UPLOADED
+  VALIDATED
+  APPROVED
+  DISPATCHED
+  CANCELLED
+}
+
+model InvoiceBatch {
+  id          String      @id @default(uuid())
+  tenantId    String
+  source      String      @default("excel") // excel | csv | api | ui
+  fileName    String?
+  status      BatchStatus @default(UPLOADED)
+  rowCount    Int         @default(0)
+  validCount  Int         @default(0)
+  errorCount  Int         @default(0)
+  totalAmount Int         @default(0)
+  createdById String?
+  approvedAt  DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id])
+  rows     ImportRow[]
+  invoices Invoice[]
+
+  @@index([tenantId, createdAt])
+}
+
+model ImportRow {
+  id         String  @id @default(uuid())
+  batchId    String
+  rowNo      Int
+  raw        Json
+  normalized Json?
+  errors     Json?
+  warnings   Json?
+  valid      Boolean @default(false)
+
+  batch InvoiceBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, rowNo])
+}
+
+enum InvoiceState {
+  DRAFT
+  SENT
+  VIEWED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+  EXPIRED
+}
+
+model Invoice {
+  id          String       @id @default(uuid())
+  tenantId    String
+  customerId  String
+  batchId     String?
+  number      String
+  description String
+  amount      Int // gross amount, MNT
+  balance     Int // derived: amount - confirmed payments
+  state       InvoiceState @default(DRAFT)
+  dueDate     DateTime?
+  sentAt      DateTime?
+  viewedAt    DateTime?
+  paidAt      DateTime?
+  cancelledAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  tenant      Tenant          @relation(fields: [tenantId], references: [id])
+  customer    Customer        @relation(fields: [customerId], references: [id])
+  batch       InvoiceBatch?   @relation(fields: [batchId], references: [id])
+  shortLinks  ShortLink[]
+  messageJobs MessageJob[]
+  intents     PaymentIntent[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, state, dueDate])
+  @@index([tenantId, customerId, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+// Per-tenant monotonically increasing invoice numbers.
+model InvoiceSequence {
+  tenantId String @id
+  next     Int    @default(1)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+model ShortLink {
+  id        String    @id @default(uuid())
+  invoiceId String
+  tokenHash String    @unique
+  expiresAt DateTime?
+  revokedAt DateTime?
+  clicks    Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+}
+
+// ---------------------------------------------------------------------------
+// Messaging (SMS / email jobs — mock provider in MVP)
+// ---------------------------------------------------------------------------
+
+enum MessageStatus {
+  QUEUED
+  SUBMITTED
+  DELIVERED
+  FAILED
+}
+
+model MessageJob {
+  id          String        @id @default(uuid())
+  tenantId    String
+  invoiceId   String?
+  channel     String        @default("sms")
+  recipient   String
+  body        String
+  segments    Int           @default(1)
+  status      MessageStatus @default(QUEUED)
+  providerRef String?
+  error       String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+
+  @@index([tenantId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Payments (orchestration over external PSPs; mock QPay adapter in MVP)
+// ---------------------------------------------------------------------------
+
+enum IntentState {
+  CREATED
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+model PaymentIntent {
+  id                String      @id @default(uuid())
+  tenantId          String
+  invoiceId         String
+  amount            Int
+  provider          String      @default("qpay_mock")
+  providerInvoiceId String?
+  state             IntentState @default(CREATED)
+  idemKey           String?
+  qrText            String?
+  expiresAt         DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  invoice      Invoice              @relation(fields: [invoiceId], references: [id])
+  transactions PaymentTransaction[]
+  events       PaymentEvent[]
+
+  @@unique([provider, providerInvoiceId])
+  @@unique([tenantId, idemKey])
+  @@index([tenantId, createdAt])
+  @@index([invoiceId])
+}
+
+enum TxStatus {
+  SUCCEEDED
+  REFUND_PENDING
+  REFUNDED
+}
+
+model PaymentTransaction {
+  id                String   @id @default(uuid())
+  intentId          String
+  provider          String
+  providerPaymentId String
+  gross             Int
+  fee               Int      @default(0)
+  net               Int
+  status            TxStatus @default(SUCCEEDED)
+  paidAt            DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  intent   PaymentIntent   @relation(fields: [intentId], references: [id])
+  receipts EbarimtReceipt[]
+
+  @@unique([provider, providerPaymentId])
+  @@index([intentId])
+}
+
+// Append-only timeline of everything a provider told us (audit/forensics).
+model PaymentEvent {
+  id        String   @id @default(uuid())
+  intentId  String
+  type      String
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  intent PaymentIntent @relation(fields: [intentId], references: [id])
+
+  @@index([intentId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// eBarimt receipts (mock provider in MVP)
+// ---------------------------------------------------------------------------
+
+enum ReceiptState {
+  NOT_REQUIRED
+  PENDING
+  CREATED
+  DELIVERED
+  CANCEL_PENDING
+  CANCELLED
+  FAILED
+}
+
+model EbarimtReceipt {
+  id            String       @id @default(uuid())
+  tenantId      String
+  transactionId String       @unique
+  receiptNo     String?
+  lottery       String?
+  qrData        String?
+  receiptType   String       @default("CITIZEN") // CITIZEN | ORGANIZATION
+  payerRegNo    String?
+  state         ReceiptState @default(PENDING)
+  error         String?
+  retries       Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  transaction PaymentTransaction @relation(fields: [transactionId], references: [id])
+
+  @@index([tenantId, state, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Modules, usage metering & platform billing
+// ---------------------------------------------------------------------------
+
+model TenantModule {
+  id        String   @id @default(uuid())
+  tenantId  String
+  code      String // SMS | EBARIMT | POS | API | REMINDER
+  enabled   Boolean  @default(false)
+  quantity  Int      @default(1) // e.g. number of POS devices
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, code])
+}
+
+model UsageEvent {
+  id            String   @id @default(uuid())
+  tenantId      String
+  meterCode     String // SMS_SEGMENT_SENT | RECEIPT_CREATED | INVOICE_CREATED | PAYMENT_SUCCEEDED
+  qty           Int      @default(1)
+  occurredAt    DateTime @default(now())
+  sourceEventId String   @unique
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, meterCode, occurredAt])
+}
+
+// ---------------------------------------------------------------------------
+// Cross-cutting reliability & audit
+// ---------------------------------------------------------------------------
+
+model IdempotencyKey {
+  id          String   @id @default(uuid())
+  tenantId    String
+  key         String
+  requestHash String
+  response    Json?
+  createdAt   DateTime @default(now())
+
+  @@unique([tenantId, key])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String?
+  actorId    String?
+  actorEmail String?
+  action     String
+  targetType String?
+  targetId   String?
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, createdAt])
+}

@@ -1,0 +1,27 @@
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Role } from '@prisma/client';
+import { AuthUser, ROLES_KEY } from '../decorators';
+
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  canActivate(ctx: ExecutionContext): boolean {
+    const required = this.reflector.getAllAndOverride<Role[] | undefined>(ROLES_KEY, [
+      ctx.getHandler(),
+      ctx.getClass(),
+    ]);
+    if (!required || required.length === 0) return true;
+
+    const user = ctx.switchToHttp().getRequest().user as AuthUser | undefined;
+    if (!user) return false;
+    if (user.role === Role.OWNER) return true; // owner can do everything in-tenant
+    if (required.includes(user.role)) return true;
+    throw new ForbiddenException({
+      code: 'FORBIDDEN_ROLE',
+      message_mn: 'Таны эрх энэ үйлдлийг хийхэд хүрэлцэхгүй байна.',
+      message_en: 'Your role is not allowed to perform this action.',
+    });
+  }
+}

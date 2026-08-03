@@ -1,0 +1,104 @@
+# =============================================================================
+# billingservice.mn — PRODUCTION stack (self-contained)
+#
+# Used by the GitHub Actions "Deploy" workflow on the DigitalOcean droplet:
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+#
+# Only Caddy publishes host ports (80/443). Postgres, the API and the web app
+# are reachable only on the internal Docker network and through the proxy, so
+# the database is never exposed to the public internet.
+#
+#   Public site : https://billing.mastrsys.com/
+#   API docs    : https://billing.mastrsys.com/api/docs
+# =============================================================================
+name: billingservice
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-billing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-billingservice}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-billing} -d ${POSTGRES_DB:-billingservice}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-billing}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-billingservice}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-900}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-604800}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET:?WEBHOOK_SIGNING_SECRET is required}
+      PUBLIC_URL: ${PUBLIC_URL:-https://billing.mastrsys.com}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://billing.mastrsys.com}
+      PAYMENT_SANDBOX: ${PAYMENT_SANDBOX:-true}
+      SEED_ON_START: ${SEED_ON_START:-false}
+      # Provider selection — real credentials live only in the droplet's .env
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-qpay_mock}
+      QPAY_BASE_URL: ${QPAY_BASE_URL:-https://merchant.qpay.mn}
+      QPAY_USERNAME: ${QPAY_USERNAME:-}
+      QPAY_PASSWORD: ${QPAY_PASSWORD:-}
+      QPAY_INVOICE_CODE: ${QPAY_INVOICE_CODE:-}
+      SMS_PROVIDER: ${SMS_PROVIDER:-mock}
+      CALLPRO_BASE_URL: ${CALLPRO_BASE_URL:-https://api-text.callpro.mn/v1/sms}
+      CALLPRO_API_KEY: ${CALLPRO_API_KEY:-}
+      CALLPRO_FROM: ${CALLPRO_FROM:-}
+    expose:
+      - '4000'
+    healthcheck:
+      # 127.0.0.1 (not "localhost") so the check forces IPv4 — the API binds
+      # 0.0.0.0:4000 and "localhost" can resolve to IPv6 ::1 in Alpine.
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:4000/health/live']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+    expose:
+      - '3000'
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+      - api
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
