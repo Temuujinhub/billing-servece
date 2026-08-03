@@ -10,6 +10,7 @@ interface JwtPayload {
   name: string;
   tenantId: string;
   role: AuthUser['role'];
+  isAdmin?: boolean;
 }
 
 @Injectable()
@@ -29,6 +30,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       name: payload.name,
       tenantId: payload.tenantId,
       role: payload.role,
+      isAdmin: payload.isAdmin === true,
     };
   }
 }

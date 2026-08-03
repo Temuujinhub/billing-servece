@@ -51,6 +51,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://billing.mastrsys.com}
       PAYMENT_SANDBOX: ${PAYMENT_SANDBOX:-true}
       SEED_ON_START: ${SEED_ON_START:-false}
+      # Comma-separated emails that get the /admin area on login
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       # Provider selection — real credentials live only in the droplet's .env
       PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-qpay_mock}
       QPAY_BASE_URL: ${QPAY_BASE_URL:-https://merchant.qpay.mn}

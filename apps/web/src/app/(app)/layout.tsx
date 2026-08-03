@@ -15,8 +15,13 @@ const NAV = [
   { href: '/payments', label: 'Төлбөр', icon: '💳' },
   { href: '/receipts', label: 'eBarimt', icon: '🧿' },
   { href: '/billing', label: 'Billing & Modules', icon: '⚙️' },
-  { href: '/integrations', label: 'Интеграци', icon: '🔌' },
   { href: '/settings', label: 'Тохиргоо', icon: '🛠' },
+];
+
+// Visible ONLY to platform admins (user.isAdmin) — merchants never see these.
+const ADMIN_NAV = [
+  { href: '/admin', label: 'Админ самбар', icon: '🛡️' },
+  { href: '/admin/integrations', label: 'Интеграци', icon: '🔌' },
 ];
 
 const ROLE_MN: Record<string, string> = {
@@ -102,6 +107,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </Link>
               );
             })}
+            {user.isAdmin && (
+              <>
+                <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-widest text-gold">Admin</p>
+                {ADMIN_NAV.map((item) => {
+                  const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMenuOpen(false)}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium transition ${
+                        active ? 'bg-amber-50 text-amber-700' : 'text-navy-700 hover:bg-navy-50'
+                      }`}
+                      aria-current={active ? 'page' : undefined}
+                    >
+                      <span aria-hidden="true">{item.icon}</span>
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </>
+            )}
             <div className="mt-auto rounded-xl bg-navy-50 p-4 text-[12.5px] leading-snug text-navy-600">
               <p className="font-bold text-navy-800">billingservice.mn</p>
               <p className="mt-1">MVP v0.1 · Тусламж хэрэгтэй бол Тохиргоо хэсгээс холбоо барих мэдээллээ шинэчлээрэй.</p>

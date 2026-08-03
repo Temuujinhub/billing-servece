@@ -1,9 +1,8 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { Role } from '@prisma/client';
 import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
-import { AuthUser, CurrentUser, Roles } from '../../common/decorators';
+import { AdminOnly, AuthUser, CurrentUser } from '../../common/decorators';
 import { apiError } from '../../common/filters/http-exception.filter';
 import { ProviderCode, ProviderConfigService } from './provider-config.service';
 
@@ -53,10 +52,10 @@ function parseCode(code: string): ProviderCode {
   return upper;
 }
 
-/** Dashboard-editable provider settings — OWNER only, secrets stay masked. */
+/** Provider settings — platform-admin area only, secrets stay masked. */
 @ApiTags('integrations')
 @ApiBearerAuth()
-@Roles(Role.OWNER)
+@AdminOnly()
 @Controller('integrations')
 export class IntegrationsController {
   constructor(private readonly configs: ProviderConfigService) {}

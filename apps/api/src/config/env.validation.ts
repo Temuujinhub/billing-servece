@@ -18,6 +18,8 @@ export const envValidationSchema = Joi.object({
   CORS_ORIGINS: Joi.string().default('http://localhost:3000'),
   PAYMENT_SANDBOX: Joi.string().valid('true', 'false').default('true'),
   SEED_ON_START: Joi.string().valid('true', 'false').default('false'),
+  // Comma-separated emails that get platform-admin access on login.
+  ADMIN_EMAILS: Joi.string().allow('').default(''),
 
   // --- Payment provider selection (real credentials only via droplet .env) ---
   PAYMENT_PROVIDER: Joi.string().valid('qpay_mock', 'qpay').default('qpay_mock'),

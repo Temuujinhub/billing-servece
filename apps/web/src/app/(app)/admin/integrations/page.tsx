@@ -51,7 +51,7 @@ function StatusPill({ enabled, configured }: { enabled: boolean; configured: boo
 export default function IntegrationsPage() {
   const [data, setData] = useState<Integrations | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const isOwner = getSessionUser()?.role === 'OWNER';
+  const isAdmin = getSessionUser()?.isAdmin === true;
 
   // QPay form
   const [qForm, setQForm] = useState({ username: '', password: '', invoiceCode: '' });
@@ -141,12 +141,12 @@ export default function IntegrationsPage() {
   if (error && !data) return <ErrorNote message={error} />;
   if (!data) return <PageLoader />;
 
-  if (!isOwner) {
+  if (!isAdmin) {
     return (
       <div className="max-w-2xl">
         <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Интеграци</h1>
         <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Интеграцийн тохиргоог зөвхөн байгууллагын эзэмшигч удирдана.
+          Энэ хэсэгт зөвхөн платформын админ хандана.
         </p>
       </div>
     );

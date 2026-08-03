@@ -8,11 +8,17 @@ export interface AuthUser {
   name: string;
   tenantId: string;
   role: Role;
+  /** Platform-operator flag — unlocks the /admin area. */
+  isAdmin: boolean;
 }
 
 export const IS_PUBLIC_KEY = 'isPublic';
 /** Marks a route as reachable without a JWT (payment page, webhooks, auth). */
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
+
+export const ADMIN_KEY = 'adminOnly';
+/** Restricts a route to platform admins (billingservice.mn operators). */
+export const AdminOnly = () => SetMetadata(ADMIN_KEY, true);
 
 export const ROLES_KEY = 'roles';
 /** Restricts a route to the given tenant roles (OWNER always passes). */

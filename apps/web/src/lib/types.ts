@@ -8,6 +8,7 @@ export interface SessionUser {
   name: string;
   role: Role;
   tenantId: string;
+  isAdmin?: boolean;
 }
 
 export interface AuthResponse {

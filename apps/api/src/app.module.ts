@@ -6,6 +6,7 @@ import { envValidationSchema } from './config/env.validation';
 import { RolesGuard } from './common/guards/roles.guard';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProvidersModule } from './modules/providers/providers.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
@@ -26,6 +27,7 @@ import { TenantsModule } from './modules/tenants/tenants.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
     PrismaModule,
     ProvidersModule,
+    AdminModule,
     AuthModule,
     TenantsModule,
     CustomersModule,

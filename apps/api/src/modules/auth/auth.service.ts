@@ -73,7 +73,14 @@ export class AuthService {
       return { user, tenant, membership };
     });
 
-    return this.issueTokens({ userId: user.id, email, name: user.name, tenantId: tenant.id, role: membership.role });
+    return this.issueTokens({
+      userId: user.id,
+      email,
+      name: user.name,
+      tenantId: tenant.id,
+      role: membership.role,
+      isAdmin: this.isAdminUser(email, user.platformAdmin),
+    });
   }
 
   async login(dto: LoginDto) {
@@ -99,6 +106,7 @@ export class AuthService {
       name: user.name,
       tenantId: membership.tenantId,
       role: membership.role,
+      isAdmin: this.isAdminUser(user.email, user.platformAdmin),
     });
   }
 
@@ -124,6 +132,7 @@ export class AuthService {
       name: stored.user.name,
       tenantId: membership.tenantId,
       role: membership.role,
+      isAdmin: this.isAdminUser(stored.user.email, stored.user.platformAdmin),
     });
   }
 
@@ -136,12 +145,29 @@ export class AuthService {
     return { ok: true };
   }
 
+  /** platformAdmin column OR the ADMIN_EMAILS env allowlist. */
+  private isAdminUser(email: string, platformAdmin: boolean): boolean {
+    if (platformAdmin) return true;
+    const list = (this.config.get<string>('ADMIN_EMAILS') ?? '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    return list.includes(email.toLowerCase());
+  }
+
   private async issueTokens(claims: AuthUser) {
     const accessTtl = Number(this.config.get('JWT_ACCESS_TTL') ?? 900);
     const refreshTtl = Number(this.config.get('JWT_REFRESH_TTL') ?? 604800);
 
     const accessToken = await this.jwt.signAsync(
-      { sub: claims.userId, email: claims.email, name: claims.name, tenantId: claims.tenantId, role: claims.role },
+      {
+        sub: claims.userId,
+        email: claims.email,
+        name: claims.name,
+        tenantId: claims.tenantId,
+        role: claims.role,
+        isAdmin: claims.isAdmin,
+      },
       { secret: this.config.getOrThrow('JWT_ACCESS_SECRET'), expiresIn: accessTtl },
     );
 
@@ -158,7 +184,14 @@ export class AuthService {
       accessToken,
       refreshToken,
       expiresIn: accessTtl,
-      user: { id: claims.userId, email: claims.email, name: claims.name, role: claims.role, tenantId: claims.tenantId },
+      user: {
+        id: claims.userId,
+        email: claims.email,
+        name: claims.name,
+        role: claims.role,
+        tenantId: claims.tenantId,
+        isAdmin: claims.isAdmin,
+      },
     };
   }
 }
