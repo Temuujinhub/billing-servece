@@ -102,8 +102,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               );
             })}
             <div className="mt-auto rounded-xl bg-navy-50 p-4 text-[12.5px] leading-snug text-navy-600">
-              <p className="font-bold text-navy-800">Туршилтын горим</p>
-              <p className="mt-1">Төлбөр mock provider-ээр симуляц хийгдэнэ. Бодит мөнгө хөдлөхгүй.</p>
+              <p className="font-bold text-navy-800">billingservice.mn</p>
+              <p className="mt-1">MVP v0.1 · Тусламж хэрэгтэй бол Тохиргоо хэсгээс холбоо барих мэдээллээ шинэчлээрэй.</p>
             </div>
           </nav>
         </aside>

@@ -150,6 +150,9 @@ export class InvoicesService {
       return { invoiceId: invoice.id, payUrl };
     });
 
+    // Submit queued SMS only after the transaction has committed.
+    await this.messaging.dispatchQueued(user.tenantId);
+
     return this.get(user.tenantId, result.invoiceId).then((inv) => ({ ...inv, payUrl: result.payUrl }));
   }
 
@@ -293,6 +296,7 @@ export class InvoicesService {
         `Cannot send an invoice in state ${invoice.state}.`,
       );
     });
+    await this.messaging.dispatchQueued(user.tenantId);
     await this.prisma.auditLog.create({
       data: { tenantId: user.tenantId, actorId: user.userId, actorEmail: user.email, action: 'invoice.sent', targetType: 'invoice', targetId: id },
     });

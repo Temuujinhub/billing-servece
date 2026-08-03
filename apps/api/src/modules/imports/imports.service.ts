@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { InvoicesService } from '../invoices/invoices.service';
 import { MAX_INVOICE_AMOUNT } from '../invoices/invoices.dto';
+import { MessagingService } from '../messaging/messaging.service';
 
 const MAX_ROWS = 5000; // MVP guardrail; PRD targets 50k rows via async workers in Phase 2
 const HEADER_ALIASES: Record<string, string> = {
@@ -47,6 +48,7 @@ export class ImportsService {
     private readonly prisma: PrismaService,
     private readonly customers: CustomersService,
     private readonly invoices: InvoicesService,
+    private readonly messaging: MessagingService,
   ) {}
 
   /** Upload + parse + validate in one step; nothing financial is created yet. */
@@ -246,6 +248,9 @@ export class ImportsService {
         }
       });
     }
+
+    // Submit the queued SMS jobs now that all chunks are committed.
+    await this.messaging.dispatchQueued(user.tenantId);
 
     await this.prisma.$transaction([
       this.prisma.invoiceBatch.update({ where: { id: batchId }, data: { status: 'DISPATCHED' } }),

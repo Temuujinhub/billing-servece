@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'crypto';
-import { CreateProviderInvoiceResult, PaymentProviderPort, ProviderPaymentStatus } from './provider.port';
+import { CreateProviderInvoiceResult, PaymentProviderPort, ProviderPaymentStatus } from './payment-provider.port';
 
 /**
  * MOCK QPay adapter — производствод бодит мөнгө хөдөлгөдөггүй.

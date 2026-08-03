@@ -1,18 +1,24 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { randomUUID } from 'crypto';
 import { formatMnt, smsSegments } from '../../common/utils';
+import { PrismaService } from '../../prisma/prisma.service';
+import { SMS_PORT, SmsPort } from '../providers/sms.port';
 
 /**
- * SMS dispatch port. The MVP ships a MOCK adapter: jobs are recorded with
- * real segment accounting (that drives billing meters) and marked DELIVERED,
- * but nothing leaves the platform. Swap `submitToProvider` with a real
- * Mongolian SMS provider (Unitel/Mobicom/Skytel gateway) once contracts and
- * sender-ID registration are in place — the call sites do not change.
+ * SMS dispatch. Jobs are QUEUED inside the caller's DB transaction (so the
+ * invoice + message + usage meter commit atomically), then submitted to the
+ * provider AFTER commit via `dispatchQueued` — an external HTTP call never
+ * holds a DB transaction open, and a provider outage never rolls back
+ * invoices. Failed submissions stay visible as FAILED and can be re-driven.
  */
 @Injectable()
 export class MessagingService {
   private readonly logger = new Logger(MessagingService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(SMS_PORT) private readonly sms: SmsPort,
+  ) {}
 
   buildInvoiceSms(opts: { tenantName: string; amount: number; payUrl: string; dueDate?: Date | null }): string {
     const due = opts.dueDate ? `, хугацаа: ${opts.dueDate.toISOString().slice(0, 10)}` : '';
@@ -20,8 +26,8 @@ export class MessagingService {
   }
 
   /**
-   * Queue + "send" an SMS inside the caller's transaction, and meter the
-   * segments (SMS_SEGMENT_SENT drives the 25₮/segment line on the bill).
+   * Queue an SMS inside the caller's transaction and meter the segments
+   * (SMS_SEGMENT_SENT drives the 25₮/segment line on the bill).
    */
   async sendSms(
     tx: Prisma.TransactionClient,
@@ -36,8 +42,7 @@ export class MessagingService {
         recipient: opts.recipient,
         body: opts.body,
         segments,
-        status: 'DELIVERED', // mock provider: accepted == delivered
-        providerRef: `MOCK-${randomUUID().slice(0, 8)}`,
+        status: 'QUEUED',
       },
     });
     await tx.usageEvent.create({
@@ -48,7 +53,51 @@ export class MessagingService {
         sourceEventId: `sms:${job.id}`,
       },
     });
-    this.logger.log(`[mock-sms] ${opts.recipient} ← ${segments} segment(s)`);
     return job;
+  }
+
+  /**
+   * Submit QUEUED jobs to the provider. Call AFTER the enclosing transaction
+   * has committed. Never throws — submission failures are recorded per-job.
+   */
+  async dispatchQueued(tenantId: string): Promise<{ submitted: number; failed: number }> {
+    const jobs = await this.prisma.messageJob.findMany({
+      where: { tenantId, status: 'QUEUED' },
+      orderBy: { createdAt: 'asc' },
+      take: 500,
+    });
+    let submitted = 0;
+    let failed = 0;
+    for (const job of jobs) {
+      // Claim so concurrent dispatchers never double-send one job.
+      const claimed = await this.prisma.messageJob.updateMany({
+        where: { id: job.id, status: 'QUEUED' },
+        data: { status: 'SUBMITTED' },
+      });
+      if (claimed.count === 0) continue;
+      try {
+        const result = await this.sms.send({ to: job.recipient, text: job.body });
+        await this.prisma.messageJob.update({
+          where: { id: job.id },
+          data: {
+            status: result.delivered ? 'DELIVERED' : 'SUBMITTED',
+            providerRef: result.providerRef,
+            error: null,
+          },
+        });
+        submitted += 1;
+      } catch (e: any) {
+        failed += 1;
+        await this.prisma.messageJob.update({
+          where: { id: job.id },
+          data: { status: 'FAILED', error: String(e?.message ?? e).slice(0, 500) },
+        });
+        this.logger.warn(`SMS submit failed for job ${job.id}: ${e?.message}`);
+      }
+    }
+    if (jobs.length > 0) {
+      this.logger.log(`SMS dispatch: ${submitted} submitted, ${failed} failed (provider=${this.sms.code})`);
+    }
+    return { submitted, failed };
   }
 }

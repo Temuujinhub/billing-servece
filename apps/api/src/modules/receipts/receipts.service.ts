@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { QpayAdapter } from '../providers/qpay.adapter';
 
 /**
  * eBarimt receipts. Mock provider in MVP: receipts are generated locally with
@@ -16,7 +17,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class ReceiptsService {
   private readonly logger = new Logger(ReceiptsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly qpay: QpayAdapter,
+  ) {}
 
   /** Called inside the payment-confirm transaction. */
   async createForTransaction(tx: Prisma.TransactionClient, args: { tenantId: string; transactionId: string }) {
@@ -37,11 +41,12 @@ export class ReceiptsService {
     const pending = await this.prisma.ebarimtReceipt.findMany({
       where: { tenantId, state: { in: ['PENDING', 'FAILED'] }, retries: { lt: 5 } },
       take: 20,
+      include: { transaction: { select: { provider: true, providerPaymentId: true } } },
     });
     let processed = 0;
     for (const receipt of pending) {
       try {
-        const result = await this.callProvider();
+        const result = await this.callProvider(receipt.transaction.provider, receipt.transaction.providerPaymentId);
         await this.prisma.$transaction(async (tx) => {
           const claimed = await tx.ebarimtReceipt.updateMany({
             where: { id: receipt.id, state: { in: ['PENDING', 'FAILED'] } },
@@ -106,8 +111,18 @@ export class ReceiptsService {
     return this.processPending(tenantId);
   }
 
-  /** Mock ITC/QPay eBarimt call — replace with the real adapter in production. */
-  private async callProvider(): Promise<{ receiptNo: string; lottery: string; qrData: string }> {
+  /**
+   * Real payments (provider=qpay) create the receipt through QPay's eBarimt
+   * integration; mock payments keep generating realistic local receipts.
+   */
+  private async callProvider(
+    paymentProvider: string,
+    providerPaymentId: string,
+  ): Promise<{ receiptNo: string; lottery: string | null; qrData: string | null }> {
+    if (paymentProvider === 'qpay') {
+      const result = await this.qpay.createEbarimt(providerPaymentId, 'CITIZEN');
+      return { receiptNo: result.receiptNo, lottery: result.lottery, qrData: result.qrData };
+    }
     const lottery = `${this.block(2)} ${this.block(2)} ${this.block(6)}`;
     return {
       receiptNo: randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase(),

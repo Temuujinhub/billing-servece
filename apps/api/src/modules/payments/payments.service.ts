@@ -1,26 +1,34 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { apiError } from '../../common/filters/http-exception.filter';
 import { sha256 } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MockQpayAdapter } from '../providers/mock-qpay.adapter';
+import { PaymentProviderPort } from '../providers/payment-provider.port';
+import { PAYMENT_PORT } from '../providers/sms.port';
 import { ReceiptsService } from '../receipts/receipts.service';
-import { MockQpayAdapter } from './mock-qpay.adapter';
+
+/** Bounded provider re-check from payer-page polling (callback backstop). */
+const POLL_RECHECK_MS = 15_000;
 
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
+  private readonly lastProviderCheck = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly qpay: MockQpayAdapter,
+    @Inject(PAYMENT_PORT) private readonly provider: PaymentProviderPort,
+    private readonly mockAdapter: MockQpayAdapter,
     private readonly receipts: ReceiptsService,
     private readonly config: ConfigService,
   ) {}
 
+  /** Simulation is available only on the mock provider with sandbox on. */
   get sandbox(): boolean {
-    return this.config.get('PAYMENT_SANDBOX') === 'true';
+    return this.provider.code === 'qpay_mock' && this.config.get('PAYMENT_SANDBOX') === 'true';
   }
 
   // ------------------------------------------------------------ public page
@@ -110,6 +118,7 @@ export class PaymentsService {
     const existing = await this.prisma.paymentIntent.findFirst({
       where: {
         invoiceId: invoice.id,
+        provider: this.provider.code,
         state: 'PENDING',
         expiresAt: { gt: new Date() },
       },
@@ -119,27 +128,51 @@ export class PaymentsService {
       return this.intentView(existing.id);
     }
 
-    const provider = await this.qpay.createInvoice({
-      amount: invoice.balance,
-      description: `${invoice.number} ${invoice.description}`.slice(0, 100),
-      internalRef: invoice.id,
-    });
-
+    // Create the intent row first so the provider callback URL can carry its id.
     const intent = await this.prisma.paymentIntent.create({
       data: {
         tenantId: invoice.tenantId,
         invoiceId: invoice.id,
         amount: invoice.balance,
-        provider: this.qpay.code,
-        providerInvoiceId: provider.providerInvoiceId,
-        state: 'PENDING',
+        provider: this.provider.code,
+        state: 'CREATED',
         idemKey: randomUUID(),
-        qrText: provider.qrText,
-        expiresAt: provider.expiresAt,
-        events: { create: { type: 'intent.created', payload: { providerInvoiceId: provider.providerInvoiceId } } },
+        events: { create: { type: 'intent.created' } },
       },
     });
-    return { ...(await this.intentView(intent.id)), deeplinks: provider.deeplinks };
+
+    let providerInvoice;
+    try {
+      providerInvoice = await this.provider.createInvoice({
+        amount: invoice.balance,
+        description: `${invoice.number} ${invoice.description}`.slice(0, 100),
+        internalRef: intent.id,
+      });
+    } catch (e: any) {
+      await this.prisma.paymentIntent.update({
+        where: { id: intent.id },
+        data: { state: 'FAILED', events: { create: { type: 'provider.create_failed', payload: { error: String(e?.message).slice(0, 300) } } } },
+      });
+      this.logger.error(`Provider invoice create failed: ${e?.message}`);
+      throw apiError(
+        HttpStatus.BAD_GATEWAY,
+        'PROVIDER_ERROR',
+        'Төлбөрийн систем түр хариу өгсөнгүй. Дахин оролдоно уу.',
+        'Payment provider is temporarily unavailable.',
+      );
+    }
+
+    await this.prisma.paymentIntent.update({
+      where: { id: intent.id },
+      data: {
+        providerInvoiceId: providerInvoice.providerInvoiceId,
+        qrText: providerInvoice.qrText,
+        expiresAt: providerInvoice.expiresAt,
+        state: 'PENDING',
+        events: { create: { type: 'provider.invoice_created', payload: { providerInvoiceId: providerInvoice.providerInvoiceId } } },
+      },
+    });
+    return { ...(await this.intentView(intent.id)), deeplinks: providerInvoice.deeplinks };
   }
 
   private async intentView(intentId: string) {
@@ -174,7 +207,7 @@ export class PaymentsService {
     if (!intent?.providerInvoiceId) {
       throw apiError(HttpStatus.CONFLICT, 'NO_PENDING_INTENT', 'Эхлээд төлбөрийн QR үүсгэнэ үү.', 'Create a payment intent first.');
     }
-    const marker = this.qpay.simulatePayment(intent.providerInvoiceId);
+    const marker = this.mockAdapter.simulatePayment(intent.providerInvoiceId);
     if (!marker) {
       throw apiError(HttpStatus.CONFLICT, 'PROVIDER_UNKNOWN_INVOICE', 'Provider дээр нэхэмжлэх олдсонгүй.', 'Provider does not know this invoice.');
     }
@@ -191,9 +224,11 @@ export class PaymentsService {
     const intent = await this.prisma.paymentIntent.findUnique({ where: { id: intentId } });
     if (!intent) throw apiError(HttpStatus.NOT_FOUND, 'INTENT_NOT_FOUND', 'Төлбөрийн хүсэлт олдсонгүй.', 'Payment intent not found.');
 
-    await this.prisma.paymentEvent.create({
-      data: { intentId, type: `callback.received`, payload: { source } },
-    });
+    if (source !== 'poll') {
+      await this.prisma.paymentEvent.create({
+        data: { intentId, type: 'callback.received', payload: { source } },
+      });
+    }
 
     if (intent.state === 'SUCCEEDED') {
       return { intentId, state: 'SUCCEEDED' as const, duplicate: true };
@@ -203,9 +238,12 @@ export class PaymentsService {
     }
 
     // Authoritative provider check — never trust the callback alone.
-    const status = await this.qpay.getPaymentStatus(intent.providerInvoiceId);
+    this.lastProviderCheck.set(intentId, Date.now());
+    const status = await this.provider.getPaymentStatus(intent.providerInvoiceId);
     if (!status.paid || !status.providerPaymentId) {
-      await this.prisma.paymentEvent.create({ data: { intentId, type: 'payment_check.unpaid' } });
+      if (source !== 'poll') {
+        await this.prisma.paymentEvent.create({ data: { intentId, type: 'payment_check.unpaid' } });
+      }
       return { intentId, state: intent.state, verified: false };
     }
 
@@ -284,6 +322,22 @@ export class PaymentsService {
     return { intentId, state: 'SUCCEEDED' as const };
   }
 
+  /**
+   * QPay GET callback. The spec requires HTTP 200 body "SUCCESS"; the callback
+   * itself is only a trigger — payment truth comes from payment/check.
+   */
+  async handleQpayCallback(intentId: string | undefined): Promise<string> {
+    if (intentId) {
+      try {
+        await this.confirmIntent(intentId, 'qpay_callback');
+      } catch (e: any) {
+        // Never fail the callback response — the poll backstop re-checks.
+        this.logger.warn(`QPay callback processing for ${intentId}: ${e?.message}`);
+      }
+    }
+    return 'SUCCESS';
+  }
+
   /** Payer-side polling: bounded status check for the pay page. */
   async checkToken(token: string) {
     const link = await this.prisma.shortLink.findUnique({
@@ -291,11 +345,29 @@ export class PaymentsService {
       select: { invoiceId: true },
     });
     if (!link) throw apiError(HttpStatus.NOT_FOUND, 'LINK_INVALID', 'Холбоос хүчингүй байна.', 'Invalid link.');
-    const intent = await this.prisma.paymentIntent.findFirst({
+    let intent = await this.prisma.paymentIntent.findFirst({
       where: { invoiceId: link.invoiceId },
       orderBy: { createdAt: 'desc' },
       include: { transactions: { include: { receipts: true } } },
     });
+
+    // Callback backstop: while an intent is pending on a REAL provider, poll
+    // requests may trigger a provider re-check at most every 15 seconds.
+    if (
+      intent &&
+      intent.providerInvoiceId &&
+      ['PENDING', 'PROCESSING'].includes(intent.state) &&
+      this.provider.code !== 'qpay_mock' &&
+      Date.now() - (this.lastProviderCheck.get(intent.id) ?? 0) > POLL_RECHECK_MS
+    ) {
+      await this.confirmIntent(intent.id, 'poll').catch(() => undefined);
+      intent = await this.prisma.paymentIntent.findFirst({
+        where: { invoiceId: link.invoiceId },
+        orderBy: { createdAt: 'desc' },
+        include: { transactions: { include: { receipts: true } } },
+      });
+    }
+
     const invoice = await this.prisma.invoice.findUniqueOrThrow({
       where: { id: link.invoiceId },
       select: { state: true, balance: true },
@@ -334,12 +406,12 @@ export class PaymentsService {
     return { items, total };
   }
 
+  /** Legacy HMAC-signed webhook (mock provider / internal integrations). */
   async webhook(rawBody: Buffer | undefined, signature: string | undefined, payload: { providerInvoiceId?: string }) {
     const secret = this.config.getOrThrow<string>('WEBHOOK_SIGNING_SECRET');
     const body = rawBody?.toString('utf8') ?? JSON.stringify(payload ?? {});
     const expected = sha256(`${secret}.${body}`);
     if (!signature || signature !== expected) {
-      // PAY-02: invalid callbacks are blocked and audited.
       await this.prisma.auditLog.create({
         data: { action: 'webhook.rejected', targetType: 'webhook', meta: { reason: 'bad_signature' } },
       });
@@ -349,7 +421,7 @@ export class PaymentsService {
       throw apiError(HttpStatus.BAD_REQUEST, 'BAD_PAYLOAD', 'providerInvoiceId дутуу.', 'providerInvoiceId is required.');
     }
     const intent = await this.prisma.paymentIntent.findUnique({
-      where: { provider_providerInvoiceId: { provider: this.qpay.code, providerInvoiceId: payload.providerInvoiceId } },
+      where: { provider_providerInvoiceId: { provider: this.provider.code, providerInvoiceId: payload.providerInvoiceId } },
     });
     if (!intent) {
       throw apiError(HttpStatus.NOT_FOUND, 'INTENT_NOT_FOUND', 'Төлбөрийн хүсэлт олдсонгүй.', 'Unknown provider invoice.');

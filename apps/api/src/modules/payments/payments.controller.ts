@@ -43,7 +43,17 @@ export class PaymentsController {
     return this.payments.simulatePayment(token);
   }
 
-  // ---- provider webhook (HMAC-signed)
+  // ---- QPay V2 GET callback: must answer HTTP 200 body "SUCCESS" (spec).
+  //      Treated only as a trigger — truth comes from /v2/payment/check.
+
+  @Public()
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @Get('webhooks/qpay/callback')
+  qpayCallback(@Query('intent') intent?: string) {
+    return this.payments.handleQpayCallback(intent);
+  }
+
+  // ---- legacy HMAC-signed webhook (mock/internal)
 
   @Public()
   @HttpCode(200)

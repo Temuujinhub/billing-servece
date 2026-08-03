@@ -82,6 +82,18 @@ CORS_ORIGINS=${PUBLIC_URL}
 # Mock providers + demo data until real QPay/eBarimt/SMS contracts are signed.
 PAYMENT_SANDBOX=true
 SEED_ON_START=true
+
+# --- Real provider switch (fill in and set the *_PROVIDER values) ----------
+# PAYMENT_PROVIDER=qpay
+# QPAY_BASE_URL=https://merchant.qpay.mn
+# QPAY_USERNAME=...
+# QPAY_PASSWORD=...
+# QPAY_INVOICE_CODE=...
+# SMS_PROVIDER=callpro
+# CALLPRO_API_KEY=...
+# CALLPRO_FROM=72225700
+PAYMENT_PROVIDER=qpay_mock
+SMS_PROVIDER=mock
 EOF
 fi
 
@@ -122,6 +134,31 @@ if curl -fsSk --resolve billing.mastrsys.com:443:127.0.0.1 \
   echo "✅ Reachable end-to-end through Caddy (HTTPS)."
 else
   echo "ℹ Proxy/TLS check not green yet — certificate provisioning can take a minute."
+fi
+
+# --- 9. Provider connectivity checks (status codes only — never secrets)
+set +u
+# shellcheck disable=SC1091
+. ./.env 2>/dev/null || true
+set -u
+if [ "${PAYMENT_PROVIDER:-qpay_mock}" = "qpay" ] && [ -n "${QPAY_USERNAME:-}" ]; then
+  QPAY_CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 15 -X POST \
+    -u "${QPAY_USERNAME}:${QPAY_PASSWORD}" "${QPAY_BASE_URL:-https://merchant.qpay.mn}/v2/auth/token" || echo "ERR")
+  if [ "$QPAY_CODE" = "200" ]; then
+    echo "✅ QPay auth OK (HTTP $QPAY_CODE)"
+  else
+    echo "⚠ QPay auth check returned HTTP $QPAY_CODE — шалгана уу (credential/whitelist)."
+  fi
+fi
+if [ "${SMS_PROVIDER:-mock}" = "callpro" ] && [ -n "${CALLPRO_API_KEY:-}" ]; then
+  SMS_CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 15 \
+    -H "x-api-key: ${CALLPRO_API_KEY}" \
+    "${CALLPRO_BASE_URL:-https://api-text.callpro.mn/v1/sms}/tenant-daily-message-count?operator=unitel" || echo "ERR")
+  if [ "$SMS_CODE" = "200" ]; then
+    echo "✅ CallPro SMS API OK (HTTP $SMS_CODE)"
+  else
+    echo "⚠ CallPro check returned HTTP $SMS_CODE — API key-г шалгана уу."
+  fi
 fi
 
 log "Deploy complete → ${PUBLIC_URL}"

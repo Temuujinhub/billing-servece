@@ -18,4 +18,17 @@ export const envValidationSchema = Joi.object({
   CORS_ORIGINS: Joi.string().default('http://localhost:3000'),
   PAYMENT_SANDBOX: Joi.string().valid('true', 'false').default('true'),
   SEED_ON_START: Joi.string().valid('true', 'false').default('false'),
+
+  // --- Payment provider selection (real credentials only via droplet .env) ---
+  PAYMENT_PROVIDER: Joi.string().valid('qpay_mock', 'qpay').default('qpay_mock'),
+  QPAY_BASE_URL: Joi.string().uri().default('https://merchant.qpay.mn'),
+  QPAY_USERNAME: Joi.string().when('PAYMENT_PROVIDER', { is: 'qpay', then: Joi.required(), otherwise: Joi.optional().allow('') }),
+  QPAY_PASSWORD: Joi.string().when('PAYMENT_PROVIDER', { is: 'qpay', then: Joi.required(), otherwise: Joi.optional().allow('') }),
+  QPAY_INVOICE_CODE: Joi.string().when('PAYMENT_PROVIDER', { is: 'qpay', then: Joi.required(), otherwise: Joi.optional().allow('') }),
+
+  // --- SMS provider selection ---
+  SMS_PROVIDER: Joi.string().valid('mock', 'callpro').default('mock'),
+  CALLPRO_BASE_URL: Joi.string().uri().default('https://api-text.callpro.mn/v1/sms'),
+  CALLPRO_API_KEY: Joi.string().when('SMS_PROVIDER', { is: 'callpro', then: Joi.required(), otherwise: Joi.optional().allow('') }),
+  CALLPRO_FROM: Joi.string().when('SMS_PROVIDER', { is: 'callpro', then: Joi.required(), otherwise: Joi.optional().allow('') }),
 });
