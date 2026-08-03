@@ -8,8 +8,5 @@ export interface SmsSendResult {
 
 export interface SmsPort {
   readonly code: string;
-  send(args: { to: string; text: string }): Promise<SmsSendResult>;
+  send(args: { tenantId: string; to: string; text: string }): Promise<SmsSendResult>;
 }
-
-export const SMS_PORT = 'SMS_PORT';
-export const PAYMENT_PORT = 'PAYMENT_PORT';

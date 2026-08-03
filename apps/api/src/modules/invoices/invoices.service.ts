@@ -6,7 +6,7 @@ import { apiError } from '../../common/filters/http-exception.filter';
 import { newPublicToken, normalizeMnPhone, sha256 } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
-import { MessagingService } from '../messaging/messaging.service';
+import { MessagingService, renderSmsTemplate } from '../messaging/messaging.service';
 import { CreateInvoiceDto, ListInvoicesDto } from './invoices.dto';
 
 /** Legal transitions of the invoice state machine (PRD §7.1). */
@@ -209,7 +209,7 @@ export class InvoicesService {
   async dispatchInvoice(tx: Prisma.TransactionClient, invoiceId: string, tenantId: string): Promise<string> {
     const invoice = await tx.invoice.findFirstOrThrow({
       where: { id: invoiceId, tenantId },
-      include: { customer: true, tenant: { select: { name: true } } },
+      include: { customer: true, tenant: { select: { name: true, smsTemplate: true } } },
     });
     if (!canTransition(invoice.state, 'SENT')) {
       throw apiError(
@@ -232,8 +232,10 @@ export class InvoicesService {
     const payUrl = `${this.config.get('PUBLIC_URL') ?? ''}/pay/${token}`;
 
     if (invoice.customer.phone) {
-      const body = this.messaging.buildInvoiceSms({
+      const body = renderSmsTemplate(invoice.tenant.smsTemplate, {
         tenantName: invoice.tenant.name,
+        customerName: invoice.customer.name,
+        invoiceNumber: invoice.number,
         amount: invoice.amount,
         payUrl,
         dueDate: invoice.dueDate,
@@ -267,7 +269,7 @@ export class InvoicesService {
         // Reminder path: new link + SMS without a state change.
         const full = await tx.invoice.findUniqueOrThrow({
           where: { id },
-          include: { customer: true, tenant: { select: { name: true } } },
+          include: { customer: true, tenant: { select: { name: true, smsTemplate: true } } },
         });
         const token = newPublicToken();
         await tx.shortLink.create({
@@ -279,8 +281,10 @@ export class InvoicesService {
             tenantId: user.tenantId,
             invoiceId: id,
             recipient: full.customer.phone,
-            body: this.messaging.buildInvoiceSms({
+            body: renderSmsTemplate(full.tenant.smsTemplate, {
               tenantName: full.tenant.name,
+              customerName: full.customer.name,
+              invoiceNumber: full.number,
               amount: full.balance,
               payUrl,
               dueDate: full.dueDate,

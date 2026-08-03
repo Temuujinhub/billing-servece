@@ -52,17 +52,37 @@ model Tenant {
   timezone      String       @default("Asia/Ulaanbaatar")
   contactEmail  String?
   contactPhone  String?
+  // Custom payer SMS template with {{нэр}} {{дүн}} {{дугаар}} {{хугацаа}} {{линк}} {{байгууллага}} vars.
+  smsTemplate   String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  memberships  Membership[]
-  customers    Customer[]
-  invoices     Invoice[]
-  batches      InvoiceBatch[]
-  modules      TenantModule[]
-  usageEvents  UsageEvent[]
-  auditLogs    AuditLog[]
-  invoiceSeq   InvoiceSequence?
+  memberships     Membership[]
+  customers       Customer[]
+  invoices        Invoice[]
+  batches         InvoiceBatch[]
+  modules         TenantModule[]
+  usageEvents     UsageEvent[]
+  auditLogs       AuditLog[]
+  invoiceSeq      InvoiceSequence?
+  providerConfigs ProviderConfig[]
+}
+
+/// Tenant-level external provider settings (QPAY, CALLPRO). Secret fields
+/// inside `config` are AES-256-GCM encrypted before storage; the env vars act
+/// as a platform-wide fallback when no row exists.
+model ProviderConfig {
+  id        String   @id @default(uuid())
+  tenantId  String
+  code      String // QPAY | CALLPRO
+  enabled   Boolean  @default(false)
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, code])
 }
 
 enum Role {

@@ -1,4 +1,4 @@
-import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -6,8 +6,7 @@ import { apiError } from '../../common/filters/http-exception.filter';
 import { sha256 } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MockQpayAdapter } from '../providers/mock-qpay.adapter';
-import { PaymentProviderPort } from '../providers/payment-provider.port';
-import { PAYMENT_PORT } from '../providers/sms.port';
+import { ProviderResolver } from '../providers/provider-resolver.service';
 import { ReceiptsService } from '../receipts/receipts.service';
 
 /** Bounded provider re-check from payer-page polling (callback backstop). */
@@ -20,15 +19,16 @@ export class PaymentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(PAYMENT_PORT) private readonly provider: PaymentProviderPort,
+    private readonly resolver: ProviderResolver,
     private readonly mockAdapter: MockQpayAdapter,
     private readonly receipts: ReceiptsService,
     private readonly config: ConfigService,
   ) {}
 
   /** Simulation is available only on the mock provider with sandbox on. */
-  get sandbox(): boolean {
-    return this.provider.code === 'qpay_mock' && this.config.get('PAYMENT_SANDBOX') === 'true';
+  private async isSandbox(tenantId: string): Promise<boolean> {
+    const port = await this.resolver.getPaymentPort(tenantId);
+    return port.code === 'qpay_mock' && this.config.get('PAYMENT_SANDBOX') === 'true';
   }
 
   // ------------------------------------------------------------ public page
@@ -96,7 +96,7 @@ export class PaymentsService {
       receipt: receipt
         ? { receiptNo: receipt.receiptNo, lottery: receipt.lottery, qrData: receipt.qrData, state: receipt.state }
         : null,
-      sandbox: this.sandbox,
+      sandbox: await this.isSandbox(invoice.tenantId),
     };
   }
 
@@ -114,11 +114,13 @@ export class PaymentsService {
       throw apiError(HttpStatus.CONFLICT, 'NOT_PAYABLE', 'Энэ нэхэмжлэх төлөгдөх боломжгүй төлөвт байна.', 'Invoice is not payable.');
     }
 
+    const provider = await this.resolver.getPaymentPort(invoice.tenantId);
+
     // Reuse a live PENDING intent — refresh keeps one QR per invoice.
     const existing = await this.prisma.paymentIntent.findFirst({
       where: {
         invoiceId: invoice.id,
-        provider: this.provider.code,
+        provider: provider.code,
         state: 'PENDING',
         expiresAt: { gt: new Date() },
       },
@@ -134,7 +136,7 @@ export class PaymentsService {
         tenantId: invoice.tenantId,
         invoiceId: invoice.id,
         amount: invoice.balance,
-        provider: this.provider.code,
+        provider: provider.code,
         state: 'CREATED',
         idemKey: randomUUID(),
         events: { create: { type: 'intent.created' } },
@@ -143,7 +145,8 @@ export class PaymentsService {
 
     let providerInvoice;
     try {
-      providerInvoice = await this.provider.createInvoice({
+      providerInvoice = await provider.createInvoice({
+        tenantId: invoice.tenantId,
         amount: invoice.balance,
         description: `${invoice.number} ${invoice.description}`.slice(0, 100),
         internalRef: intent.id,
@@ -191,14 +194,14 @@ export class PaymentsService {
    * Goes through the exact same confirm path a real webhook would take.
    */
   async simulatePayment(token: string) {
-    if (!this.sandbox) {
-      throw apiError(HttpStatus.FORBIDDEN, 'SANDBOX_ONLY', 'Туршилтын горим идэвхгүй байна.', 'Sandbox mode is disabled.');
-    }
     const link = await this.prisma.shortLink.findUnique({
       where: { tokenHash: sha256(token) },
       include: { invoice: true },
     });
     if (!link) throw apiError(HttpStatus.NOT_FOUND, 'LINK_INVALID', 'Холбоос хүчингүй байна.', 'Invalid link.');
+    if (!(await this.isSandbox(link.invoice.tenantId))) {
+      throw apiError(HttpStatus.FORBIDDEN, 'SANDBOX_ONLY', 'Туршилтын горим идэвхгүй байна.', 'Sandbox mode is disabled.');
+    }
 
     const intent = await this.prisma.paymentIntent.findFirst({
       where: { invoiceId: link.invoiceId, state: 'PENDING' },
@@ -239,7 +242,9 @@ export class PaymentsService {
 
     // Authoritative provider check — never trust the callback alone.
     this.lastProviderCheck.set(intentId, Date.now());
-    const status = await this.provider.getPaymentStatus(intent.providerInvoiceId);
+    const provider =
+      intent.provider === 'qpay_mock' ? this.mockAdapter : await this.resolver.getPaymentPort(intent.tenantId);
+    const status = await provider.getPaymentStatus(intent.providerInvoiceId, intent.tenantId);
     if (!status.paid || !status.providerPaymentId) {
       if (source !== 'poll') {
         await this.prisma.paymentEvent.create({ data: { intentId, type: 'payment_check.unpaid' } });
@@ -357,7 +362,7 @@ export class PaymentsService {
       intent &&
       intent.providerInvoiceId &&
       ['PENDING', 'PROCESSING'].includes(intent.state) &&
-      this.provider.code !== 'qpay_mock' &&
+      intent.provider !== 'qpay_mock' &&
       Date.now() - (this.lastProviderCheck.get(intent.id) ?? 0) > POLL_RECHECK_MS
     ) {
       await this.confirmIntent(intent.id, 'poll').catch(() => undefined);
@@ -420,8 +425,8 @@ export class PaymentsService {
     if (!payload?.providerInvoiceId) {
       throw apiError(HttpStatus.BAD_REQUEST, 'BAD_PAYLOAD', 'providerInvoiceId дутуу.', 'providerInvoiceId is required.');
     }
-    const intent = await this.prisma.paymentIntent.findUnique({
-      where: { provider_providerInvoiceId: { provider: this.provider.code, providerInvoiceId: payload.providerInvoiceId } },
+    const intent = await this.prisma.paymentIntent.findFirst({
+      where: { providerInvoiceId: payload.providerInvoiceId },
     });
     if (!intent) {
       throw apiError(HttpStatus.NOT_FOUND, 'INTENT_NOT_FOUND', 'Төлбөрийн хүсэлт олдсонгүй.', 'Unknown provider invoice.');

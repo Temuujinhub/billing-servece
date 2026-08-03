@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { EmptyState, ErrorNote, PageLoader, Spinner } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { dateTime, mnt } from '@/lib/format';
-import type { BatchPreview } from '@/lib/types';
+import type { BatchPreview, InspectResult } from '@/lib/types';
 
 interface BatchRow {
   id: string;
@@ -44,6 +44,9 @@ function downloadTemplate() {
 export default function ImportsPage() {
   const [batches, setBatches] = useState<BatchRow[] | null>(null);
   const [preview, setPreview] = useState<BatchPreview | null>(null);
+  const [inspect, setInspect] = useState<InspectResult | null>(null);
+  const [mapping, setMapping] = useState<Record<string, number | ''>>({});
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -61,16 +64,23 @@ export default function ImportsPage() {
     loadBatches();
   }, [loadBatches]);
 
+  /** Step 1: parse only — show the column-mapping UI. */
   async function upload(file: File) {
     setUploading(true);
     setError(null);
     setDone(null);
+    setPreview(null);
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await api<BatchPreview>('/imports', { method: 'POST', body: fd });
-      setPreview(res);
-      loadBatches();
+      const res = await api<InspectResult>('/imports/inspect', { method: 'POST', body: fd });
+      setInspect(res);
+      setPendingFile(file);
+      const initial: Record<string, number | ''> = {};
+      for (const f of res.systemFields) {
+        initial[f.key] = res.suggested[f.key] ?? '';
+      }
+      setMapping(initial);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Файл боловсруулахад алдаа гарлаа');
     } finally {
@@ -78,6 +88,35 @@ export default function ImportsPage() {
       if (fileRef.current) fileRef.current.value = '';
     }
   }
+
+  /** Step 2: re-upload with the confirmed mapping → validation preview. */
+  async function confirmMapping() {
+    if (!pendingFile) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', pendingFile);
+      const clean: Record<string, number> = {};
+      for (const [k, v] of Object.entries(mapping)) {
+        if (v !== '') clean[k] = Number(v);
+      }
+      fd.append('mapping', JSON.stringify(clean));
+      const res = await api<BatchPreview>('/imports', { method: 'POST', body: fd });
+      setPreview(res);
+      setInspect(null);
+      setPendingFile(null);
+      loadBatches();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Файл боловсруулахад алдаа гарлаа');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const mappingMissing = inspect
+    ? inspect.systemFields.filter((f) => f.required && (mapping[f.key] === '' || mapping[f.key] === undefined))
+    : [];
 
   async function approve() {
     if (!preview) return;
@@ -162,6 +201,79 @@ export default function ImportsPage() {
         <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
           ✅ {done.created} нэхэмжлэх үүсгэж, SMS линкүүд илгээгдлээ.{' '}
           <Link href="/invoices" className="font-semibold underline">Нэхэмжлэхүүд үзэх</Link>
+        </div>
+      )}
+
+      {/* Column mapping step (wireframe M-08) */}
+      {inspect && (
+        <div className="card overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-6 py-4">
+            <div>
+              <h2 className="font-bold text-navy-900">Багана тааруулах — {inspect.fileName}</h2>
+              <p className="text-[13px] text-muted">{inspect.rowCount} мөр · Аль багана аль талбарт орохыг сонгоно уу</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button className="btn-secondary" onClick={() => { setInspect(null); setPendingFile(null); }}>Болих</button>
+              <button className="btn-primary" onClick={confirmMapping} disabled={uploading || mappingMissing.length > 0}>
+                {uploading ? <Spinner className="h-5 w-5 text-white" /> : 'Үргэлжлүүлж шалгах →'}
+              </button>
+            </div>
+          </div>
+          {mappingMissing.length > 0 && (
+            <p className="border-b border-line bg-amber-50 px-6 py-2.5 text-[13px] font-medium text-amber-800">
+              Заавал тааруулах: {mappingMissing.map((f) => f.label).join(', ')}
+            </p>
+          )}
+          <div className="scroll-thin overflow-x-auto">
+            <table className="w-full min-w-[640px]">
+              <thead className="bg-navy-50/60">
+                <tr>
+                  <th className="th">Системийн талбар</th>
+                  <th className="th">Файлын багана</th>
+                  <th className="th">Жишээ утгууд</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {inspect.systemFields.map((f) => {
+                  const selected = mapping[f.key];
+                  const usedElsewhere = new Set(
+                    Object.entries(mapping)
+                      .filter(([k, v]) => k !== f.key && v !== '')
+                      .map(([, v]) => Number(v)),
+                  );
+                  const col = selected !== '' && selected !== undefined ? inspect.columns[Number(selected)] : null;
+                  return (
+                    <tr key={f.key}>
+                      <td className="td">
+                        <span className="font-semibold text-navy-900">{f.label}</span>
+                        {f.required ? <span className="ml-1 text-red-500">*</span> : <span className="ml-1 text-[11px] text-muted">(заавал биш)</span>}
+                      </td>
+                      <td className="td">
+                        <select
+                          className="input max-w-[240px]"
+                          value={selected === undefined ? '' : selected}
+                          onChange={(e) =>
+                            setMapping((m) => ({ ...m, [f.key]: e.target.value === '' ? '' : Number(e.target.value) }))
+                          }
+                          aria-label={`${f.label} багана сонгох`}
+                        >
+                          <option value="">— Оруулахгүй —</option>
+                          {inspect.columns.map((c) => (
+                            <option key={c.index} value={c.index} disabled={usedElsewhere.has(c.index)}>
+                              {c.header}{usedElsewhere.has(c.index) ? ' (сонгогдсон)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="td max-w-[280px] truncate text-[12.5px] text-muted">
+                        {col ? col.samples.filter(Boolean).join(' · ') || '—' : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

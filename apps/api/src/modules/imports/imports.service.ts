@@ -11,15 +11,35 @@ import { MAX_INVOICE_AMOUNT } from '../invoices/invoices.dto';
 import { MessagingService } from '../messaging/messaging.service';
 
 const MAX_ROWS = 5000; // MVP guardrail; PRD targets 50k rows via async workers in Phase 2
-const HEADER_ALIASES: Record<string, string> = {
-  phone: 'phone_number', phone_number: 'phone_number', 'утас': 'phone_number', 'утасны дугаар': 'phone_number',
-  amount: 'amount', 'дүн': 'amount', 'мөнгөн дүн': 'amount',
-  description: 'description', 'тайлбар': 'description', 'утга': 'description',
-  email: 'email', 'имэйл': 'email', 'и-мэйл': 'email',
-  due_date: 'due_date', duedate: 'due_date', 'хугацаа': 'due_date', 'дуусах хугацаа': 'due_date',
-  customer_ref: 'customer_ref', ref: 'customer_ref', 'код': 'customer_ref',
-  name: 'customer_name', customer_name: 'customer_name', 'нэр': 'customer_name', 'харилцагч': 'customer_name',
+
+/** System fields a file column can be mapped to (wireframe M-08). */
+export const SYSTEM_FIELDS = [
+  { key: 'phone_number', label: 'Утасны дугаар', required: true },
+  { key: 'amount', label: 'Дүн (₮)', required: true },
+  { key: 'description', label: 'Тайлбар', required: true },
+  { key: 'customer_name', label: 'Харилцагчийн нэр', required: false },
+  { key: 'email', label: 'Имэйл', required: false },
+  { key: 'due_date', label: 'Төлөх хугацаа', required: false },
+  { key: 'customer_ref', label: 'Харилцагчийн код', required: false },
+] as const;
+
+type SystemFieldKey = (typeof SYSTEM_FIELDS)[number]['key'];
+
+const HEADER_ALIASES: Record<string, SystemFieldKey> = {
+  phone: 'phone_number', phone_number: 'phone_number', 'утас': 'phone_number', 'утасны дугаар': 'phone_number', 'дугаар': 'phone_number',
+  amount: 'amount', 'дүн': 'amount', 'мөнгөн дүн': 'amount', 'төлбөр': 'amount', 'үнэ': 'amount',
+  description: 'description', 'тайлбар': 'description', 'утга': 'description', 'гүйлгээний утга': 'description',
+  email: 'email', 'имэйл': 'email', 'и-мэйл': 'email', 'мэйл': 'email',
+  due_date: 'due_date', duedate: 'due_date', 'хугацаа': 'due_date', 'дуусах хугацаа': 'due_date', 'төлөх хугацаа': 'due_date', 'огноо': 'due_date',
+  customer_ref: 'customer_ref', ref: 'customer_ref', 'код': 'customer_ref', 'бүртгэлийн код': 'customer_ref',
+  name: 'customer_name', customer_name: 'customer_name', 'нэр': 'customer_name', 'харилцагч': 'customer_name', 'овог нэр': 'customer_name',
 };
+
+/** Parsed file as a raw matrix — mapping is applied afterwards. */
+interface ParsedMatrix {
+  headers: string[];
+  rows: { rowNo: number; cells: string[] }[];
+}
 
 interface ParsedRow {
   rowNo: number;
@@ -42,6 +62,8 @@ interface ValidatedRow {
   warnings: string[];
 }
 
+export type ColumnMapping = Partial<Record<SystemFieldKey, number>>;
+
 @Injectable()
 export class ImportsService {
   constructor(
@@ -51,29 +73,38 @@ export class ImportsService {
     private readonly messaging: MessagingService,
   ) {}
 
-  /** Upload + parse + validate in one step; nothing financial is created yet. */
-  async upload(user: AuthUser, file: Express.Multer.File) {
-    if (!file?.buffer?.length) {
-      throw apiError(HttpStatus.BAD_REQUEST, 'FILE_REQUIRED', 'Файл сонгоно уу.', 'A file is required.');
-    }
-    const name = (file.originalname || 'import').toLowerCase();
-    let rows: ParsedRow[];
-    if (name.endsWith('.csv')) {
-      rows = this.parseCsv(file.buffer.toString('utf8'));
-    } else if (name.endsWith('.xlsx')) {
-      rows = await this.parseXlsx(file.buffer);
-    } else {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'UNSUPPORTED_FORMAT',
-        'Зөвхөн .xlsx эсвэл .csv файл дэмжинэ.',
-        'Only .xlsx or .csv files are supported.',
-      );
-    }
-    if (rows.length === 0) {
+  // ---------------------------------------------------------------- inspect
+
+  /**
+   * Step 1 of the wizard: parse the file and return its columns + sample
+   * values + a suggested mapping. Nothing is written to the database — the
+   * client re-uploads the same file together with the confirmed mapping.
+   */
+  async inspect(file: Express.Multer.File) {
+    const matrix = await this.parseFile(file);
+    const suggested = this.suggestMapping(matrix.headers);
+    return {
+      fileName: file.originalname,
+      rowCount: matrix.rows.length,
+      columns: matrix.headers.map((header, index) => ({
+        index,
+        header: header || `Багана ${index + 1}`,
+        samples: matrix.rows.slice(0, 3).map((r) => r.cells[index] ?? ''),
+      })),
+      suggested,
+      systemFields: SYSTEM_FIELDS,
+    };
+  }
+
+  // ----------------------------------------------------------------- upload
+
+  /** Upload + map + validate in one step; nothing financial is created yet. */
+  async upload(user: AuthUser, file: Express.Multer.File, mappingRaw?: string) {
+    const matrix = await this.parseFile(file);
+    if (matrix.rows.length === 0) {
       throw apiError(HttpStatus.BAD_REQUEST, 'EMPTY_FILE', 'Файлд өгөгдөл олдсонгүй.', 'No data rows found in the file.');
     }
-    if (rows.length > MAX_ROWS) {
+    if (matrix.rows.length > MAX_ROWS) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
         'TOO_MANY_ROWS',
@@ -82,7 +113,20 @@ export class ImportsService {
       );
     }
 
+    const mapping = mappingRaw ? this.parseMapping(mappingRaw, matrix.headers.length) : this.suggestMapping(matrix.headers);
+    const missing = SYSTEM_FIELDS.filter((f) => f.required && mapping[f.key] === undefined);
+    if (missing.length > 0) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'MAPPING_REQUIRED',
+        `Дараах талбаруудыг багантай тааруулна уу: ${missing.map((f) => f.label).join(', ')}`,
+        `Map required fields: ${missing.map((f) => f.key).join(', ')}`,
+      );
+    }
+
+    const rows = this.toRecords(matrix, mapping);
     const validated = rows.map((r) => this.validateRow(r));
+
     // Duplicate detection inside the file: same phone + amount + description.
     const seen = new Map<string, number>();
     for (const v of validated) {
@@ -103,7 +147,7 @@ export class ImportsService {
       const batch = await tx.invoiceBatch.create({
         data: {
           tenantId: user.tenantId,
-          source: name.endsWith('.csv') ? 'csv' : 'excel',
+          source: (file.originalname || '').toLowerCase().endsWith('.csv') ? 'csv' : 'excel',
           fileName: file.originalname?.slice(0, 200),
           status: 'VALIDATED',
           rowCount: validated.length,
@@ -272,20 +316,31 @@ export class ImportsService {
 
   // ---------------------------------------------------------------- parsing
 
-  private parseCsv(text: string): ParsedRow[] {
-    const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim().length > 0);
-    if (lines.length < 2) return [];
-    const headers = this.splitCsvLine(lines[0]).map((h) => this.mapHeader(h));
-    const rows: ParsedRow[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const cells = this.splitCsvLine(lines[i]);
-      const raw: Record<string, string> = {};
-      headers.forEach((h, idx) => {
-        if (h) raw[h] = (cells[idx] ?? '').trim();
-      });
-      rows.push({ rowNo: i + 1, raw });
+  private async parseFile(file: Express.Multer.File): Promise<ParsedMatrix> {
+    if (!file?.buffer?.length) {
+      throw apiError(HttpStatus.BAD_REQUEST, 'FILE_REQUIRED', 'Файл сонгоно уу.', 'A file is required.');
     }
-    return rows;
+    const name = (file.originalname || 'import').toLowerCase();
+    if (name.endsWith('.csv')) return this.parseCsv(file.buffer.toString('utf8'));
+    if (name.endsWith('.xlsx')) return this.parseXlsx(file.buffer);
+    throw apiError(
+      HttpStatus.BAD_REQUEST,
+      'UNSUPPORTED_FORMAT',
+      'Зөвхөн .xlsx эсвэл .csv файл дэмжинэ.',
+      'Only .xlsx or .csv files are supported.',
+    );
+  }
+
+  private parseCsv(text: string): ParsedMatrix {
+    const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length === 0) return { headers: [], rows: [] };
+    const headers = this.splitCsvLine(lines[0]).map((h) => h.trim());
+    const rows: ParsedMatrix['rows'] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cells = this.splitCsvLine(lines[i]).map((c) => c.trim());
+      if (cells.some((c) => c !== '')) rows.push({ rowNo: i + 1, cells });
+    }
+    return { headers, rows };
   }
 
   /** Minimal RFC-4180 field splitter (quotes + escaped quotes). */
@@ -307,7 +362,7 @@ export class ImportsService {
     return out;
   }
 
-  private async parseXlsx(buffer: Buffer): Promise<ParsedRow[]> {
+  private async parseXlsx(buffer: Buffer): Promise<ParsedMatrix> {
     const wb = new ExcelJS.Workbook();
     try {
       await wb.xlsx.load(buffer as unknown as ArrayBuffer);
@@ -315,34 +370,79 @@ export class ImportsService {
       throw apiError(HttpStatus.BAD_REQUEST, 'BAD_XLSX', 'Excel файлыг уншиж чадсангүй.', 'Could not parse the .xlsx file.');
     }
     const ws = wb.worksheets[0];
-    if (!ws) return [];
-    const headers: (string | null)[] = [];
+    if (!ws) return { headers: [], rows: [] };
+
+    const cellText = (cell: ExcelJS.Cell): string => {
+      let v: unknown = cell.value;
+      if (v && typeof v === 'object') {
+        if (v instanceof Date) v = v.toISOString().slice(0, 10);
+        else if ('text' in (v as any)) v = (v as any).text;
+        else if ('result' in (v as any)) v = (v as any).result;
+      }
+      return v === null || v === undefined ? '' : String(v).trim();
+    };
+
+    const headers: string[] = [];
     ws.getRow(1).eachCell({ includeEmpty: true }, (cell, col) => {
-      headers[col] = this.mapHeader(String(cell.value ?? ''));
+      headers[col - 1] = cellText(cell);
     });
-    const rows: ParsedRow[] = [];
+    const rows: ParsedMatrix['rows'] = [];
     ws.eachRow({ includeEmpty: false }, (row, rowNo) => {
       if (rowNo === 1) return;
-      const raw: Record<string, string> = {};
+      const cells: string[] = new Array(headers.length).fill('');
       row.eachCell({ includeEmpty: true }, (cell, col) => {
-        const h = headers[col];
-        if (!h) return;
-        let v: unknown = cell.value;
-        if (v && typeof v === 'object') {
-          if (v instanceof Date) v = v.toISOString().slice(0, 10);
-          else if ('text' in (v as any)) v = (v as any).text;
-          else if ('result' in (v as any)) v = (v as any).result;
-        }
-        raw[h] = v === null || v === undefined ? '' : String(v).trim();
+        cells[col - 1] = cellText(cell);
       });
-      if (Object.values(raw).some((x) => x !== '')) rows.push({ rowNo, raw });
+      if (cells.some((c) => c !== '')) rows.push({ rowNo, cells });
     });
-    return rows;
+    return { headers, rows };
   }
 
-  private mapHeader(h: string): string | null {
-    const key = h.trim().toLowerCase();
-    return HEADER_ALIASES[key] ?? null;
+  // ---------------------------------------------------------------- mapping
+
+  private suggestMapping(headers: string[]): ColumnMapping {
+    const mapping: ColumnMapping = {};
+    headers.forEach((h, index) => {
+      const key = HEADER_ALIASES[h.trim().toLowerCase()];
+      if (key && mapping[key] === undefined) mapping[key] = index;
+    });
+    return mapping;
+  }
+
+  private parseMapping(raw: string, columnCount: number): ColumnMapping {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw apiError(HttpStatus.BAD_REQUEST, 'BAD_MAPPING', 'Багана тааруулалт буруу форматтай.', 'mapping must be a JSON object.');
+    }
+    const mapping: ColumnMapping = {};
+    const validKeys = new Set(SYSTEM_FIELDS.map((f) => f.key as string));
+    const usedColumns = new Set<number>();
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!validKeys.has(key) || value === null || value === undefined || value === '') continue;
+      const idx = Number(value);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= columnCount) {
+        throw apiError(HttpStatus.BAD_REQUEST, 'BAD_MAPPING', `«${key}» талбарын багана буруу байна.`, `Invalid column index for ${key}.`);
+      }
+      if (usedColumns.has(idx)) {
+        throw apiError(HttpStatus.BAD_REQUEST, 'DUPLICATE_COLUMN', 'Нэг баганыг хоёр талбарт тааруулж болохгүй.', 'A column cannot be mapped to two fields.');
+      }
+      usedColumns.add(idx);
+      mapping[key as SystemFieldKey] = idx;
+    }
+    return mapping;
+  }
+
+  private toRecords(matrix: ParsedMatrix, mapping: ColumnMapping): ParsedRow[] {
+    return matrix.rows.map((row) => {
+      const raw: Record<string, string> = {};
+      for (const field of SYSTEM_FIELDS) {
+        const idx = mapping[field.key];
+        if (idx !== undefined) raw[field.key] = row.cells[idx] ?? '';
+      }
+      return { rowNo: row.rowNo, raw };
+    });
   }
 
   // ------------------------------------------------------------- validation
@@ -396,7 +496,7 @@ export class ImportsService {
       raw: r,
       normalized:
         errors.length === 0 && phone
-          ? { phone, amount, description, customerName, email: email && !warnings.some((w) => w.startsWith('Имэйл')) ? email : email, dueDate, customerRef }
+          ? { phone, amount, description, customerName, email, dueDate, customerRef }
           : null,
       errors,
       warnings,

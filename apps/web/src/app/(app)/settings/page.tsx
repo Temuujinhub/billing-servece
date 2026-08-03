@@ -13,6 +13,37 @@ const ROLE_MN: Record<string, string> = {
   VIEWER: 'Үзэгч',
 };
 
+const DEFAULT_TEMPLATE = '{{байгууллага}}: Танд {{дүн}} нэхэмжлэх ирлээ{{хугацаа}}. Төлөх: {{линк}}';
+
+const TEMPLATE_VARS = [
+  { token: '{{байгууллага}}', hint: 'Байгууллагын нэр' },
+  { token: '{{нэр}}', hint: 'Төлөгчийн нэр' },
+  { token: '{{дугаар}}', hint: 'Нэхэмжлэхийн дугаар' },
+  { token: '{{дүн}}', hint: 'Мөнгөн дүн' },
+  { token: '{{хугацаа}}', hint: 'Төлөх хугацаа (байвал)' },
+  { token: '{{линк}}', hint: 'Төлбөрийн линк (заавал)' },
+];
+
+/** Mirror of the server-side renderer with sample data for live preview. */
+function templatePreview(template: string): string {
+  const tpl = template.trim() || DEFAULT_TEMPLATE;
+  let out = tpl
+    .replaceAll('{{байгууллага}}', 'Ирээдүй Сургууль')
+    .replaceAll('{{нэр}}', 'Бат Болд')
+    .replaceAll('{{дугаар}}', 'INV-00042')
+    .replaceAll('{{дүн}}', '150,000₮')
+    .replaceAll('{{хугацаа}}', ', хугацаа: 2026-09-01')
+    .replaceAll('{{линк}}', 'https://billing.mastrsys.com/pay/aB3xK9…');
+  if (!out.includes('https://billing.mastrsys.com/pay/')) out += ' https://billing.mastrsys.com/pay/aB3xK9…';
+  return out;
+}
+
+/** Cyrillic → UCS-2: 70 chars per segment (67 multipart). */
+function segmentEstimate(text: string): number {
+  if (text.length <= 70) return 1;
+  return Math.ceil(text.length / 67);
+}
+
 const KYB_MN: Record<string, string> = {
   DRAFT: 'Ноорог',
   SUBMITTED: 'Илгээсэн',
@@ -27,6 +58,7 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [prefix, setPrefix] = useState('');
+  const [smsTemplate, setSmsTemplate] = useState('');
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const isOwner = getSessionUser()?.role === 'OWNER';
@@ -37,6 +69,7 @@ export default function SettingsPage() {
         setInfo(r);
         setName(r.tenant.name);
         setPrefix(r.tenant.invoicePrefix);
+        setSmsTemplate(r.tenant.smsTemplate ?? '');
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -46,7 +79,10 @@ export default function SettingsPage() {
     setError(null);
     setSaved(false);
     try {
-      await api('/tenant', { method: 'PATCH', body: JSON.stringify({ name: name.trim(), invoicePrefix: prefix.trim().toUpperCase() }) });
+      await api('/tenant', {
+        method: 'PATCH',
+        body: JSON.stringify({ name: name.trim(), invoicePrefix: prefix.trim().toUpperCase(), smsTemplate }),
+      });
       setSaved(true);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
@@ -85,6 +121,65 @@ export default function SettingsPage() {
         {saved && <p className="text-sm font-semibold text-teal-600">✓ Хадгалагдлаа</p>}
         {isOwner && (
           <div className="flex justify-end">
+            <button className="btn-primary min-w-[130px]" onClick={save} disabled={busy}>
+              {busy ? <Spinner className="h-5 w-5 text-white" /> : 'Хадгалах'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* SMS template builder */}
+      <div className="card space-y-4 p-6">
+        <div>
+          <h2 className="font-bold text-navy-900">Мессежийн загвар</h2>
+          <p className="mt-1 text-[13px] text-muted">
+            Төлөгчид очих SMS-ийн бүтцийг өөрөө тохируулна. <b>{'{{линк}}'}</b> заавал байх ёстой.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {TEMPLATE_VARS.map((v) => (
+            <button
+              key={v.token}
+              type="button"
+              disabled={!isOwner}
+              onClick={() => setSmsTemplate((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${v.token}`)}
+              className="rounded-full bg-navy-50 px-3 py-1.5 text-[12.5px] font-semibold text-navy-700 hover:bg-teal-50 hover:text-teal-700 disabled:opacity-50"
+              title={v.hint}
+            >
+              {v.token}
+            </button>
+          ))}
+        </div>
+        <textarea
+          className="input min-h-[90px] font-mono text-[13px]"
+          value={smsTemplate}
+          onChange={(e) => setSmsTemplate(e.target.value)}
+          disabled={!isOwner}
+          maxLength={320}
+          placeholder={DEFAULT_TEMPLATE}
+        />
+        <div className="rounded-xl bg-navy-900 p-4">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Урьдчилсан харагдац</p>
+          <p className="mt-2 rounded-lg bg-white/10 px-3.5 py-3 text-[13.5px] leading-relaxed text-white">{templatePreview(smsTemplate)}</p>
+          <p className="mt-2 text-right text-[12px] text-navy-300">
+            {templatePreview(smsTemplate).length} тэмдэгт ≈ <b className="text-teal-300">{segmentEstimate(templatePreview(smsTemplate))} segment</b> ({segmentEstimate(templatePreview(smsTemplate)) * 25}₮)
+          </p>
+        </div>
+        {smsTemplate.trim() !== '' && !smsTemplate.includes('{{линк}}') && (
+          <p className="rounded-lg bg-red-50 px-4 py-2.5 text-[13px] font-medium text-red-700">
+            ⚠ Загварт {'{{линк}}'} алга — төлөгч төлбөрөө хийж чадахгүй тул хадгалагдахгүй.
+          </p>
+        )}
+        {isOwner && (
+          <div className="flex justify-between">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setSmsTemplate('')}
+              title="Хоосон үлдээвэл системийн үндсэн загвар ашиглагдана"
+            >
+              Үндсэн загвар руу буцаах
+            </button>
             <button className="btn-primary min-w-[130px]" onClick={save} disabled={busy}>
               {busy ? <Spinner className="h-5 w-5 text-white" /> : 'Хадгалах'}
             </button>

@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, Patch } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { AuthUser, CurrentUser, Roles } from '../../common/decorators';
+import { apiError } from '../../common/filters/http-exception.filter';
 import { PrismaService } from '../../prisma/prisma.service';
 
 class UpdateTenantDto {
@@ -20,6 +21,11 @@ class UpdateTenantDto {
   @IsString()
   @MaxLength(20)
   regNo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  smsTemplate?: string;
 }
 
 @ApiTags('tenants')
@@ -49,12 +55,21 @@ export class TenantsController {
   @Roles(Role.OWNER)
   @Patch()
   async update(@CurrentUser() user: AuthUser, @Body() dto: UpdateTenantDto) {
+    if (dto.smsTemplate !== undefined && dto.smsTemplate.trim() && !dto.smsTemplate.includes('{{линк}}')) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'TEMPLATE_NEEDS_LINK',
+        'Загварт {{линк}} хувьсагч заавал байх ёстой — үгүй бол төлөгч төлбөрөө хийж чадахгүй.',
+        'The template must contain the {{линк}} variable.',
+      );
+    }
     const tenant = await this.prisma.tenant.update({
       where: { id: user.tenantId },
       data: {
         name: dto.name?.trim(),
         invoicePrefix: dto.invoicePrefix,
         regNo: dto.regNo?.trim(),
+        smsTemplate: dto.smsTemplate !== undefined ? dto.smsTemplate.trim() || null : undefined,
       },
     });
     await this.prisma.auditLog.create({

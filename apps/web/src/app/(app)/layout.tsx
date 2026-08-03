@@ -15,6 +15,7 @@ const NAV = [
   { href: '/payments', label: 'Төлбөр', icon: '💳' },
   { href: '/receipts', label: 'eBarimt', icon: '🧿' },
   { href: '/billing', label: 'Billing & Modules', icon: '⚙️' },
+  { href: '/integrations', label: 'Интеграци', icon: '🔌' },
   { href: '/settings', label: 'Тохиргоо', icon: '🛠' },
 ];
 

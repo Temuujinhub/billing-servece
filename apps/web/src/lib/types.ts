@@ -104,6 +104,14 @@ export interface BatchPreview {
   estimate: { smsSegments: number; smsCost: number };
 }
 
+export interface InspectResult {
+  fileName: string;
+  rowCount: number;
+  columns: { index: number; header: string; samples: string[] }[];
+  suggested: Record<string, number>;
+  systemFields: { key: string; label: string; required: boolean }[];
+}
+
 export interface DashboardData {
   kpis: {
     collectedThisMonth: number;
@@ -196,6 +204,7 @@ export interface TenantInfo {
     invoicePrefix: string;
     contactEmail: string | null;
     contactPhone: string | null;
+    smsTemplate: string | null;
     createdAt: string;
     modules: { code: string; enabled: boolean; quantity: number }[];
   };

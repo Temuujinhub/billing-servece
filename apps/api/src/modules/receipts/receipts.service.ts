@@ -46,7 +46,7 @@ export class ReceiptsService {
     let processed = 0;
     for (const receipt of pending) {
       try {
-        const result = await this.callProvider(receipt.transaction.provider, receipt.transaction.providerPaymentId);
+        const result = await this.callProvider(tenantId, receipt.transaction.provider, receipt.transaction.providerPaymentId);
         await this.prisma.$transaction(async (tx) => {
           const claimed = await tx.ebarimtReceipt.updateMany({
             where: { id: receipt.id, state: { in: ['PENDING', 'FAILED'] } },
@@ -116,11 +116,12 @@ export class ReceiptsService {
    * integration; mock payments keep generating realistic local receipts.
    */
   private async callProvider(
+    tenantId: string,
     paymentProvider: string,
     providerPaymentId: string,
   ): Promise<{ receiptNo: string; lottery: string | null; qrData: string | null }> {
     if (paymentProvider === 'qpay') {
-      const result = await this.qpay.createEbarimt(providerPaymentId, 'CITIZEN');
+      const result = await this.qpay.createEbarimt(tenantId, providerPaymentId, 'CITIZEN');
       return { receiptNo: result.receiptNo, lottery: result.lottery, qrData: result.qrData };
     }
     const lottery = `${this.block(2)} ${this.block(2)} ${this.block(6)}`;
