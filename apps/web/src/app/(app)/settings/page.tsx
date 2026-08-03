@@ -97,15 +97,15 @@ export default function SettingsPage() {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Тохиргоо</h1>
-        <p className="mt-1 text-sm text-muted">
+        <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Тохиргоо</h1>
+        <p className="mt-1 text-sm text-slate-500">
           KYB төлөв: <b className="text-navy-800">{KYB_MN[info.tenant.kybStatus] ?? info.tenant.kybStatus}</b>
           {info.tenant.regNo && <> · Регистр: {info.tenant.regNo}</>}
         </p>
       </div>
 
       <div className="card space-y-5 p-6">
-        <h2 className="font-bold text-navy-900">Байгууллага</h2>
+        <h2 className="font-bold text-slate-900">Байгууллага</h2>
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
             <label className="label">Нэр</label>
@@ -114,11 +114,11 @@ export default function SettingsPage() {
           <div>
             <label className="label">Нэхэмжлэхийн prefix</label>
             <input className="input" value={prefix} onChange={(e) => setPrefix(e.target.value)} disabled={!isOwner} maxLength={8} />
-            <p className="mt-1 text-[12px] text-muted">Жишээ: {prefix || 'INV'}-00042</p>
+            <p className="mt-1 text-[12px] text-slate-500">Жишээ: {prefix || 'INV'}-00042</p>
           </div>
         </div>
         {error && <ErrorNote message={error} />}
-        {saved && <p className="text-sm font-semibold text-teal-600">✓ Хадгалагдлаа</p>}
+        {saved && <p className="text-sm font-semibold text-indigo-600">✓ Хадгалагдлаа</p>}
         {isOwner && (
           <div className="flex justify-end">
             <button className="btn-primary min-w-[130px]" onClick={save} disabled={busy}>
@@ -131,8 +131,8 @@ export default function SettingsPage() {
       {/* SMS template builder */}
       <div className="card space-y-4 p-6">
         <div>
-          <h2 className="font-bold text-navy-900">Мессежийн загвар</h2>
-          <p className="mt-1 text-[13px] text-muted">
+          <h2 className="font-bold text-slate-900">Мессежийн загвар</h2>
+          <p className="mt-1 text-[13px] text-slate-500">
             Төлөгчид очих SMS-ийн бүтцийг өөрөө тохируулна. <b>{'{{линк}}'}</b> заавал байх ёстой.
           </p>
         </div>
@@ -143,7 +143,7 @@ export default function SettingsPage() {
               type="button"
               disabled={!isOwner}
               onClick={() => setSmsTemplate((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}${v.token}`)}
-              className="rounded-full bg-navy-50 px-3 py-1.5 text-[12.5px] font-semibold text-navy-700 hover:bg-teal-50 hover:text-teal-700 disabled:opacity-50"
+              className="rounded-full bg-navy-50 px-3 py-1.5 text-[12.5px] font-semibold text-navy-700 hover:bg-teal-50 hover:text-indigo-700 disabled:opacity-50"
               title={v.hint}
             >
               {v.token}
@@ -188,9 +188,9 @@ export default function SettingsPage() {
       </div>
 
       <div className="card overflow-hidden">
-        <h2 className="px-6 py-4 font-bold text-navy-900">Багийн гишүүд</h2>
-        <table className="w-full border-t border-line">
-          <thead className="bg-navy-50/60">
+        <h2 className="px-6 py-4 font-bold text-slate-900">Багийн гишүүд</h2>
+        <table className="w-full border-t border-slate-200/60">
+          <thead className="bg-slate-50/50">
             <tr>
               <th className="th">Нэр</th>
               <th className="th">Имэйл</th>
@@ -198,20 +198,20 @@ export default function SettingsPage() {
               <th className="th">Нэгдсэн</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-line">
+          <tbody className="divide-y divide-slate-200/60">
             {info.team.map((m) => (
               <tr key={m.id}>
                 <td className="td font-medium">{m.user.name}</td>
-                <td className="td text-muted">{m.user.email}</td>
+                <td className="td text-slate-500">{m.user.email}</td>
                 <td className="td">
                   <span className="rounded-full bg-navy-50 px-2.5 py-1 text-[12px] font-semibold text-navy-700">{ROLE_MN[m.role] ?? m.role}</span>
                 </td>
-                <td className="td text-muted">{shortDate(m.since)}</td>
+                <td className="td text-slate-500">{shortDate(m.since)}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p className="px-6 py-4 text-[12.5px] text-muted">Гишүүн урих, эрх өөрчлөх — дараагийн хувилбарт.</p>
+        <p className="px-6 py-4 text-[12.5px] text-slate-500">Гишүүн урих, эрх өөрчлөх — дараагийн хувилбарт.</p>
       </div>
     </div>
   );

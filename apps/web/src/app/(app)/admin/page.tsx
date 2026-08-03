@@ -57,7 +57,7 @@ export default function AdminOverviewPage() {
   if (!isAdmin) {
     return (
       <div className="max-w-2xl">
-        <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Админ самбар</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Админ самбар</h1>
         <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Энэ хэсэгт зөвхөн платформын админ хандана. Админ эрхтэй бол дахин нэвтэрч орно уу.
         </p>
@@ -72,10 +72,10 @@ export default function AdminOverviewPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-navy-900">
+          <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-slate-900">
             🛡️ Админ самбар
           </h1>
-          <p className="mt-1 text-sm text-muted">Платформын нийт үзүүлэлт, байгууллагууд, аудит</p>
+          <p className="mt-1 text-sm text-slate-500">Платформын нийт үзүүлэлт, байгууллагууд, аудит</p>
         </div>
         <Link href="/admin/integrations" className="btn-primary">🔌 Интеграци удирдах</Link>
       </div>
@@ -93,10 +93,10 @@ export default function AdminOverviewPage() {
       </div>
 
       <div className="card overflow-hidden">
-        <h2 className="px-6 py-4 font-bold text-navy-900">Байгууллагууд</h2>
+        <h2 className="px-6 py-4 font-bold text-slate-900">Байгууллагууд</h2>
         <div className="scroll-thin overflow-x-auto">
-          <table className="w-full min-w-[640px] border-t border-line">
-            <thead className="bg-navy-50/60">
+          <table className="w-full min-w-[640px] border-t border-slate-200/60">
+            <thead className="bg-slate-50/50">
               <tr>
                 <th className="th">Нэр</th>
                 <th className="th">KYB</th>
@@ -106,13 +106,13 @@ export default function AdminOverviewPage() {
                 <th className="th">Бүртгүүлсэн</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line">
+            <tbody className="divide-y divide-slate-200/60">
               {data.tenants.map((t) => (
-                <tr key={t.id} className="transition hover:bg-navy-50/40">
+                <tr key={t.id} className="transition hover:bg-white/60">
                   <td className="td font-semibold">{t.name}</td>
                   <td className="td">
                     <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ring-1 ring-inset ${
-                      t.kybStatus === 'APPROVED' ? 'bg-teal-50 text-teal-700 ring-teal-200' : 'bg-amber-50 text-amber-700 ring-amber-200'
+                      t.kybStatus === 'APPROVED' ? 'bg-teal-50 text-indigo-700 ring-teal-200' : 'bg-amber-50 text-amber-700 ring-amber-200'
                     }`}>
                       {KYB_MN[t.kybStatus] ?? t.kybStatus}
                     </span>
@@ -120,7 +120,7 @@ export default function AdminOverviewPage() {
                   <td className="td text-right">{t._count.invoices}</td>
                   <td className="td text-right">{t._count.customers}</td>
                   <td className="td text-right">{t._count.memberships}</td>
-                  <td className="td text-muted">{shortDate(t.createdAt)}</td>
+                  <td className="td text-slate-500">{shortDate(t.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -129,10 +129,10 @@ export default function AdminOverviewPage() {
       </div>
 
       <div className="card overflow-hidden">
-        <h2 className="px-6 py-4 font-bold text-navy-900">Сүүлийн үйлдлүүд (audit)</h2>
+        <h2 className="px-6 py-4 font-bold text-slate-900">Сүүлийн үйлдлүүд (audit)</h2>
         <div className="scroll-thin overflow-x-auto">
-          <table className="w-full min-w-[640px] border-t border-line">
-            <thead className="bg-navy-50/60">
+          <table className="w-full min-w-[640px] border-t border-slate-200/60">
+            <thead className="bg-slate-50/50">
               <tr>
                 <th className="th">Огноо</th>
                 <th className="th">Хэн</th>
@@ -140,13 +140,13 @@ export default function AdminOverviewPage() {
                 <th className="th">Объект</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line">
+            <tbody className="divide-y divide-slate-200/60">
               {data.audit.map((a) => (
                 <tr key={a.id}>
-                  <td className="td whitespace-nowrap text-muted">{dateTime(a.createdAt)}</td>
+                  <td className="td whitespace-nowrap text-slate-500">{dateTime(a.createdAt)}</td>
                   <td className="td">{a.actorEmail ?? 'систем'}</td>
                   <td className="td font-mono text-[12.5px]">{a.action}</td>
-                  <td className="td text-muted">{a.targetType ? `${a.targetType}:${(a.targetId ?? '').slice(0, 8)}` : '—'}</td>
+                  <td className="td text-slate-500">{a.targetType ? `${a.targetType}:${(a.targetId ?? '').slice(0, 8)}` : '—'}</td>
                 </tr>
               ))}
             </tbody>

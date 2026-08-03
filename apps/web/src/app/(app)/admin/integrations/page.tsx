@@ -42,7 +42,7 @@ const SOURCE_MN: Record<string, string> = {
 
 function StatusPill({ enabled, configured }: { enabled: boolean; configured: boolean }) {
   if (enabled && configured)
-    return <span className="rounded-full bg-teal-50 px-3 py-1 text-[12px] font-bold text-teal-700 ring-1 ring-inset ring-teal-200">Идэвхтэй</span>;
+    return <span className="rounded-full bg-teal-50 px-3 py-1 text-[12px] font-bold text-indigo-700 ring-1 ring-inset ring-teal-200">Идэвхтэй</span>;
   if (configured)
     return <span className="rounded-full bg-amber-50 px-3 py-1 text-[12px] font-bold text-amber-700 ring-1 ring-inset ring-amber-200">Унтраасан</span>;
   return <span className="rounded-full bg-navy-50 px-3 py-1 text-[12px] font-bold text-navy-500 ring-1 ring-inset ring-navy-200">Тохируулаагүй</span>;
@@ -144,7 +144,7 @@ export default function IntegrationsPage() {
   if (!isAdmin) {
     return (
       <div className="max-w-2xl">
-        <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Интеграци</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Интеграци</h1>
         <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Энэ хэсэгт зөвхөн платформын админ хандана.
         </p>
@@ -155,8 +155,8 @@ export default function IntegrationsPage() {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Интеграци</h1>
-        <p className="mt-1 text-sm text-muted">
+        <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Интеграци</h1>
+        <p className="mt-1 text-sm text-slate-500">
           Төлбөр, SMS-ийн холболтуудаа эндээс удирдана. Нууц утгууд серверт шифрлэгдэж хадгалагдана — энд дахин харагдахгүй.
         </p>
       </div>
@@ -169,8 +169,8 @@ export default function IntegrationsPage() {
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-navy-900 text-lg font-black text-white">Q</span>
             <div>
-              <h2 className="font-bold text-navy-900">QPay Merchant V2</h2>
-              <p className="text-[12.5px] text-muted">Төлбөрийн QR, банкны апп · {SOURCE_MN[data.qpay.source]}</p>
+              <h2 className="font-bold text-slate-900">QPay Merchant V2</h2>
+              <p className="text-[12.5px] text-slate-500">Төлбөрийн QR, банкны апп · {SOURCE_MN[data.qpay.source]}</p>
             </div>
           </div>
           <StatusPill enabled={data.qpay.enabled} configured={data.qpay.configured} />
@@ -182,7 +182,7 @@ export default function IntegrationsPage() {
             <input className="input" value={qForm.username} onChange={(e) => setQForm((f) => ({ ...f, username: e.target.value }))} placeholder="LAWTUS_MN" />
           </div>
           <div>
-            <label className="label">Password {data.qpay.passwordMask && <span className="text-muted">({data.qpay.passwordMask})</span>}</label>
+            <label className="label">Password {data.qpay.passwordMask && <span className="text-slate-500">({data.qpay.passwordMask})</span>}</label>
             <input type="password" className="input" value={qForm.password} onChange={(e) => setQForm((f) => ({ ...f, password: e.target.value }))} placeholder="Солих бол шинээр бичнэ" autoComplete="new-password" />
           </div>
           <div>
@@ -197,7 +197,7 @@ export default function IntegrationsPage() {
           </p>
         )}
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/60 pt-4">
           <button onClick={() => runTest('QPAY')} disabled={qTesting} className="btn-secondary">
             {qTesting ? <Spinner className="h-4 w-4" /> : '🔌 Холболт шалгах'}
           </button>
@@ -216,7 +216,7 @@ export default function IntegrationsPage() {
             )}
           </div>
         </div>
-        <p className="mt-3 text-[12px] leading-snug text-muted">
+        <p className="mt-3 text-[12px] leading-snug text-slate-500">
           Унтраахад төлбөр туршилтын (mock) горимд шилжинэ — бодит мөнгө хөдлөхгүй. Идэвхтэй үед төлөгчид жинхэнэ QPay QR очно.
         </p>
       </div>
@@ -227,8 +227,8 @@ export default function IntegrationsPage() {
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-500 text-lg font-black text-white">C</span>
             <div>
-              <h2 className="font-bold text-navy-900">CallPro Text API</h2>
-              <p className="text-[12.5px] text-muted">SMS илгээлт · {SOURCE_MN[data.callpro.source]}</p>
+              <h2 className="font-bold text-slate-900">CallPro Text API</h2>
+              <p className="text-[12.5px] text-slate-500">SMS илгээлт · {SOURCE_MN[data.callpro.source]}</p>
             </div>
           </div>
           <StatusPill enabled={data.callpro.enabled} configured={data.callpro.configured} />
@@ -236,7 +236,7 @@ export default function IntegrationsPage() {
 
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="label">API key {data.callpro.apiKeyMask && <span className="text-muted">({data.callpro.apiKeyMask})</span>}</label>
+            <label className="label">API key {data.callpro.apiKeyMask && <span className="text-slate-500">({data.callpro.apiKeyMask})</span>}</label>
             <input type="password" className="input" value={cForm.apiKey} onChange={(e) => setCForm((f) => ({ ...f, apiKey: e.target.value }))} placeholder="Солих бол шинээр бичнэ" autoComplete="new-password" />
           </div>
           <div>
@@ -251,7 +251,7 @@ export default function IntegrationsPage() {
           </p>
         )}
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/60 pt-4">
           <button onClick={() => runTest('CALLPRO')} disabled={cTesting} className="btn-secondary">
             {cTesting ? <Spinner className="h-4 w-4" /> : '🔌 Холболт шалгах'}
           </button>
@@ -270,7 +270,7 @@ export default function IntegrationsPage() {
             )}
           </div>
         </div>
-        <p className="mt-3 text-[12px] leading-snug text-muted">
+        <p className="mt-3 text-[12px] leading-snug text-slate-500">
           Унтраахад SMS mock горимд бичигдэнэ (бодит илгээлт хийгдэхгүй). Мессежийн бүтцийг Тохиргоо → Мессежийн загвар хэсгээс өөрчилнө.
         </p>
       </div>

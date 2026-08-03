@@ -29,14 +29,14 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-surface">
+    <main className="flex min-h-screen flex-col">
       <div className="mx-auto flex w-full max-w-content items-center px-5 py-5">
         <Logo />
       </div>
       <div className="flex flex-1 items-center justify-center px-4 pb-16">
         <div className="card w-full max-w-md animate-fade-up p-8">
-          <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Нэвтрэх</h1>
-          <p className="mt-1.5 text-sm text-muted">Демо: demo@billingservice.mn / Demo123$</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Нэвтрэх</h1>
+          <p className="mt-1.5 text-sm text-slate-500">Демо: demo@billingservice.mn / Demo123$</p>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
             <div>
@@ -71,9 +71,9 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted">
+          <p className="mt-6 text-center text-sm text-slate-500">
             Бүртгэлгүй юу?{' '}
-            <Link href="/register" className="font-semibold text-teal-600 hover:text-teal-700">
+            <Link href="/register" className="font-semibold text-indigo-600 hover:text-indigo-700">
               Үнэгүй бүртгүүлэх
             </Link>
           </p>

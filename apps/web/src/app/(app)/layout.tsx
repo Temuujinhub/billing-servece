@@ -51,30 +51,38 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-surface">
-      {/* Top bar */}
-      <header className="sticky top-0 z-40 flex h-14 items-center justify-between bg-navy-900 px-4 text-white shadow-sm">
+    <div className="min-h-screen">
+      {/* Glass top bar */}
+      <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-white/40 bg-white/60 px-4 backdrop-blur-xl sm:px-6">
         <div className="flex items-center gap-3">
           <button
-            className="rounded-md p-1.5 hover:bg-white/10 lg:hidden"
+            className="rounded-lg p-1.5 text-slate-600 hover:bg-white/70 lg:hidden"
             onClick={() => setMenuOpen((v) => !v)}
             aria-label="Цэс нээх"
           >
             ☰
           </button>
-          <Logo dark href="/dashboard" />
+          <Logo href="/dashboard" />
+          {/* Live API status with pulse */}
+          <span className="ml-2 hidden items-center gap-2 rounded-full border border-white/80 bg-white/50 px-3 py-1 text-[12px] font-semibold text-slate-600 backdrop-blur-md md:inline-flex">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500 shadow-glow-emerald" />
+            </span>
+            API идэвхтэй
+          </span>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="hidden rounded-full bg-white/10 px-3 py-1 text-[12px] font-medium text-navy-100 sm:inline">
+        <div className="flex items-center gap-3">
+          <span className="hidden rounded-full border border-white/80 bg-white/50 px-3 py-1 text-[12px] font-semibold text-indigo-700 backdrop-blur-md sm:inline">
             {ROLE_MN[user.role] ?? user.role}
           </span>
-          <span className="hidden text-sm font-medium sm:inline">{user.name}</span>
+          <span className="hidden text-sm font-semibold text-slate-800 sm:inline">{user.name}</span>
           <button
             onClick={async () => {
               await logout();
               router.replace('/login');
             }}
-            className="rounded-lg border border-white/20 px-3 py-1.5 text-[13px] font-medium hover:bg-white/10"
+            className="btn-secondary px-3 py-1.5 text-[13px]"
           >
             Гарах
           </button>
@@ -84,12 +92,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex">
         {/* Sidebar */}
         <aside
-          className={`fixed inset-y-0 top-14 z-30 w-60 shrink-0 border-r border-line bg-white transition-transform lg:static lg:translate-x-0 ${
+          className={`fixed inset-y-0 top-16 z-30 w-60 shrink-0 border-r border-white/40 bg-white/60 backdrop-blur-xl transition-transform lg:static lg:translate-x-0 ${
             menuOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
           <nav className="flex h-full flex-col gap-1 overflow-y-auto p-3" aria-label="Самбарын цэс">
-            <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-widest text-navy-300">Merchant</p>
+            <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Merchant</p>
             {NAV.map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
@@ -97,8 +105,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   key={item.href}
                   href={item.href}
                   onClick={() => setMenuOpen(false)}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium transition ${
-                    active ? 'bg-teal-50 text-teal-700' : 'text-navy-700 hover:bg-navy-50'
+                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-semibold transition-all duration-300 ${
+                    active
+                      ? 'border border-white/80 bg-white/80 text-indigo-700 shadow-[0_4px_16px_-6px_rgba(79,70,229,0.25)] backdrop-blur-md'
+                      : 'text-slate-600 hover:bg-white/60 hover:text-slate-900'
                   }`}
                   aria-current={active ? 'page' : undefined}
                 >
@@ -109,7 +119,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             })}
             {user.isAdmin && (
               <>
-                <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-widest text-gold">Admin</p>
+                <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-[0.14em] text-amber-500">Admin</p>
                 {ADMIN_NAV.map((item) => {
                   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                   return (
@@ -117,8 +127,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       key={item.href}
                       href={item.href}
                       onClick={() => setMenuOpen(false)}
-                      className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium transition ${
-                        active ? 'bg-amber-50 text-amber-700' : 'text-navy-700 hover:bg-navy-50'
+                      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-semibold transition-all duration-300 ${
+                        active
+                          ? 'border border-white/80 bg-white/80 text-amber-700 shadow-[0_4px_16px_-6px_rgba(245,158,11,0.3)] backdrop-blur-md'
+                          : 'text-slate-600 hover:bg-white/60 hover:text-slate-900'
                       }`}
                       aria-current={active ? 'page' : undefined}
                     >
@@ -129,16 +141,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 })}
               </>
             )}
-            <div className="mt-auto rounded-xl bg-navy-50 p-4 text-[12.5px] leading-snug text-navy-600">
-              <p className="font-bold text-navy-800">billingservice.mn</p>
-              <p className="mt-1">MVP v0.1 · Тусламж хэрэгтэй бол Тохиргоо хэсгээс холбоо барих мэдээллээ шинэчлээрэй.</p>
+            <div className="mt-auto rounded-2xl border border-white/70 bg-gradient-to-br from-indigo-600/90 to-blue-500/90 p-4 text-[12.5px] leading-snug text-white shadow-[0_10px_30px_-12px_rgba(79,70,229,0.5)]">
+              <p className="font-bold">billingservice.mn</p>
+              <p className="mt-1 text-indigo-100">MVP v0.1 · Нэхэмжлэхээс eBarimt хүртэл нэг урсгалаар.</p>
             </div>
           </nav>
         </aside>
-        {menuOpen && <div className="fixed inset-0 z-20 bg-navy-950/30 lg:hidden" onClick={() => setMenuOpen(false)} />}
+        {menuOpen && <div className="fixed inset-0 z-20 bg-slate-900/25 backdrop-blur-[2px] lg:hidden" onClick={() => setMenuOpen(false)} />}
 
         {/* Main content */}
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-7 sm:px-6 lg:px-8">{children}</main>
       </div>
     </div>
   );

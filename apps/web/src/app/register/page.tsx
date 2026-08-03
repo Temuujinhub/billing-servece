@@ -44,14 +44,14 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-surface">
+    <main className="flex min-h-screen flex-col">
       <div className="mx-auto flex w-full max-w-content items-center px-5 py-5">
         <Logo />
       </div>
       <div className="flex flex-1 items-center justify-center px-4 pb-16">
         <div className="card w-full max-w-md animate-fade-up p-8">
-          <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Байгууллагаа бүртгүүлэх</h1>
-          <p className="mt-1.5 text-sm text-muted">Хэдхэн минутад workspace-ээ үүсгээрэй.</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Байгууллагаа бүртгүүлэх</h1>
+          <p className="mt-1.5 text-sm text-slate-500">Хэдхэн минутад workspace-ээ үүсгээрэй.</p>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
             <div>
@@ -68,7 +68,7 @@ export default function RegisterPage() {
                 <input id="email" type="email" required autoComplete="email" className="input" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="name@company.mn" />
               </div>
               <div>
-                <label className="label" htmlFor="phone">Утас <span className="text-muted">(заавал биш)</span></label>
+                <label className="label" htmlFor="phone">Утас <span className="text-slate-500">(заавал биш)</span></label>
                 <input id="phone" className="input" value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="88112233" />
               </div>
             </div>
@@ -80,14 +80,14 @@ export default function RegisterPage() {
             <button type="submit" disabled={busy} className="btn-primary w-full py-3">
               {busy ? <Spinner className="h-5 w-5 text-white" /> : 'Бүртгүүлэх'}
             </button>
-            <p className="text-center text-[12px] leading-snug text-muted">
+            <p className="text-center text-[12px] leading-snug text-slate-500">
               Бүртгүүлснээр үйлчилгээний нөхцөл болон нууцлалын бодлогыг зөвшөөрч байна.
             </p>
           </form>
 
-          <p className="mt-4 text-center text-sm text-muted">
+          <p className="mt-4 text-center text-sm text-slate-500">
             Бүртгэлтэй юу?{' '}
-            <Link href="/login" className="font-semibold text-teal-600 hover:text-teal-700">
+            <Link href="/login" className="font-semibold text-indigo-600 hover:text-indigo-700">
               Нэвтрэх
             </Link>
           </p>

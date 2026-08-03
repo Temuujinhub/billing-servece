@@ -45,8 +45,8 @@ export default function InvoicesPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Нэхэмжлэх</h1>
-          <p className="mt-1 text-sm text-muted">{total.toLocaleString()} бичлэг</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Нэхэмжлэх</h1>
+          <p className="mt-1 text-sm text-slate-500">{total.toLocaleString()} бичлэг</p>
         </div>
         <div className="flex gap-3">
           <Link href="/imports" className="btn-secondary">📥 Excel импорт</Link>
@@ -104,7 +104,7 @@ export default function InvoicesPage() {
         <div className="card overflow-hidden">
           <div className="scroll-thin overflow-x-auto">
             <table className="w-full min-w-[720px]">
-              <thead className="bg-navy-50/60">
+              <thead className="bg-slate-50/50">
                 <tr>
                   <th className="th">№</th>
                   <th className="th">Төлөгч</th>
@@ -115,30 +115,30 @@ export default function InvoicesPage() {
                   <th className="th">Дуусах</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line">
+              <tbody className="divide-y divide-slate-200/60">
                 {items.map((inv) => (
-                  <tr key={inv.id} className="transition hover:bg-navy-50/40">
+                  <tr key={inv.id} className="transition hover:bg-white/60">
                     <td className="td">
-                      <Link href={`/invoices/${inv.id}`} className="font-semibold text-teal-700 hover:underline">
+                      <Link href={`/invoices/${inv.id}`} className="font-semibold text-indigo-700 hover:underline">
                         {inv.number}
                       </Link>
                     </td>
                     <td className="td">
                       <p className="font-medium">{inv.customer.name}</p>
-                      <p className="text-[12px] text-muted">{inv.customer.phone ?? ''}</p>
+                      <p className="text-[12px] text-slate-500">{inv.customer.phone ?? ''}</p>
                     </td>
-                    <td className="td max-w-[220px] truncate text-muted">{inv.description}</td>
+                    <td className="td max-w-[220px] truncate text-slate-500">{inv.description}</td>
                     <td className="td"><InvoiceBadge state={inv.state} /></td>
                     <td className="td text-right font-semibold">{mnt(inv.amount)}</td>
                     <td className="td text-right">{inv.balance > 0 ? mnt(inv.balance) : '—'}</td>
-                    <td className="td text-muted">{shortDate(inv.dueDate)}</td>
+                    <td className="td text-slate-500">{shortDate(inv.dueDate)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="flex items-center justify-between border-t border-line px-5 py-3 text-sm">
-            <p className="text-muted">
+          <div className="flex items-center justify-between border-t border-slate-200/60 px-5 py-3 text-sm">
+            <p className="text-slate-500">
               Хуудас {page + 1} / {pages}
             </p>
             <div className="flex gap-2">

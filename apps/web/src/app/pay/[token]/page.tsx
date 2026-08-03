@@ -124,8 +124,8 @@ export default function PayPage() {
       <main className="flex min-h-screen items-center justify-center bg-navy-900 px-4">
         <div className="card w-full max-w-sm p-8 text-center">
           <p className="text-4xl">🔗</p>
-          <h1 className="mt-3 text-lg font-bold text-navy-900">Холбоос хүчингүй байна</h1>
-          <p className="mt-2 text-sm text-muted">{error ?? 'Хугацаа дууссан эсвэл цуцлагдсан байж болно. Нэхэмжлэгчээс шинэ линк аваарай.'}</p>
+          <h1 className="mt-3 text-lg font-bold text-slate-900">Холбоос хүчингүй байна</h1>
+          <p className="mt-2 text-sm text-slate-500">{error ?? 'Хугацаа дууссан эсвэл цуцлагдсан байж болно. Нэхэмжлэгчээс шинэ линк аваарай.'}</p>
         </div>
       </main>
     );
@@ -148,11 +148,11 @@ export default function PayPage() {
 
         <div className="card overflow-hidden">
           {/* Amount header */}
-          <div className="border-b border-line bg-navy-50/60 px-6 py-5 text-center">
-            <p className="text-[13px] font-medium text-muted">{inv.description}</p>
+          <div className="border-b border-slate-200/60 bg-slate-50/50 px-6 py-5 text-center">
+            <p className="text-[13px] font-medium text-slate-500">{inv.description}</p>
             <p className="mt-1 text-4xl font-extrabold tracking-tight text-navy-900">{mnt(inv.balance || inv.amount)}</p>
             {inv.dueDate && !cancelled && phase !== 'paid' && (
-              <p className="mt-1 text-[12.5px] text-muted">Төлөх хугацаа: {shortDate(inv.dueDate)}</p>
+              <p className="mt-1 text-[12.5px] text-slate-500">Төлөх хугацаа: {shortDate(inv.dueDate)}</p>
             )}
             <p className="mt-1 text-[12.5px] text-navy-400">Төлөгч: {inv.customerName}</p>
           </div>
@@ -162,7 +162,7 @@ export default function PayPage() {
               <div className="rounded-xl bg-navy-50 px-4 py-5 text-center">
                 <p className="text-2xl">🚫</p>
                 <p className="mt-2 font-bold text-navy-800">Энэ нэхэмжлэх цуцлагдсан байна</p>
-                <p className="mt-1 text-[13px] text-muted">Асуулт байвал {data.merchant.name}-тай холбогдоно уу.</p>
+                <p className="mt-1 text-[13px] text-slate-500">Асуулт байвал {data.merchant.name}-тай холбогдоно уу.</p>
               </div>
             )}
 
@@ -178,7 +178,7 @@ export default function PayPage() {
                 <div className="mx-auto mt-3 w-fit rounded-2xl border border-line bg-white p-3 shadow-card">
                   <canvas ref={canvasRef} aria-label="Төлбөрийн QR код" />
                 </div>
-                <div className="mt-3 flex items-center justify-center gap-2 text-[13px] text-muted">
+                <div className="mt-3 flex items-center justify-center gap-2 text-[13px] text-slate-500">
                   <span className="h-2 w-2 animate-pulse-soft rounded-full bg-teal-500" />
                   Төлөлтийг шалгаж байна…
                 </div>
@@ -205,7 +205,7 @@ export default function PayPage() {
               <div className="flex flex-col items-center gap-3 py-6">
                 <Spinner className="h-8 w-8" />
                 <p className="text-sm font-medium text-navy-700">Төлбөрийг provider-ээс баталгаажуулж байна…</p>
-                <p className="text-[12.5px] text-muted">«Амжилтгүй» гэж эрт дүгнэхгүй — түр хүлээнэ үү.</p>
+                <p className="text-[12.5px] text-slate-500">«Амжилтгүй» гэж эрт дүгнэхгүй — түр хүлээнэ үү.</p>
               </div>
             )}
 
@@ -213,14 +213,14 @@ export default function PayPage() {
               <div className="text-center">
                 <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-teal-50 text-3xl">✅</div>
                 <h2 className="mt-3 text-xl font-extrabold text-navy-900">Төлбөр амжилттай</h2>
-                <p className="mt-1 text-[13.5px] text-muted">{mnt(inv.amount)} — {data.merchant.name}</p>
+                <p className="mt-1 text-[13.5px] text-slate-500">{mnt(inv.amount)} — {data.merchant.name}</p>
 
                 {receipt && receipt.state === 'CREATED' && (
                   <div className="mt-5 rounded-2xl border border-teal-200 bg-teal-50/60 p-5 text-left">
-                    <p className="text-center text-[13px] font-bold uppercase tracking-wider text-teal-700">eBarimt баримт</p>
+                    <p className="text-center text-[13px] font-bold uppercase tracking-wider text-indigo-700">eBarimt баримт</p>
                     <div className="mt-3 space-y-1.5 text-[13.5px]">
-                      <div className="flex justify-between"><span className="text-muted">Баримтын №</span><span className="font-mono text-[12px] font-semibold">{receipt.receiptNo}</span></div>
-                      <div className="flex justify-between"><span className="text-muted">Сугалааны дугаар</span><b className="tracking-widest text-navy-900">{receipt.lottery}</b></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Баримтын №</span><span className="font-mono text-[12px] font-semibold">{receipt.receiptNo}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Сугалааны дугаар</span><b className="tracking-widest text-navy-900">{receipt.lottery}</b></div>
                     </div>
                   </div>
                 )}
