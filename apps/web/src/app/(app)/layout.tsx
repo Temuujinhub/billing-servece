@@ -27,6 +27,7 @@ const ADMIN_NAV = [
   { href: '/admin/transactions', label: 'Гүйлгээ', icon: '🧮' },
   { href: '/admin/ops', label: 'Ops дараалал', icon: '🚦' },
   { href: '/admin/reconciliation', label: 'Тулгалт', icon: '⚖️' },
+  { href: '/admin/health', label: 'System health', icon: '🩺' },
   { href: '/admin/providers', label: 'Provider health', icon: '💓' },
   { href: '/admin/integrations', label: 'Интеграци', icon: '🔌' },
   { href: '/admin/pricing', label: 'Үнэ & Flags', icon: '🏷️' },

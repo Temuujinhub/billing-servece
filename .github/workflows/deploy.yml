@@ -26,6 +26,10 @@ on:
         description: Old server IP to copy /opt/billingservice/.env from during bootstrap
         required: false
         default: "168.144.41.111"
+      migrate_db_from:
+        description: One-time full DB copy from this old server IP (empty = skip). OVERWRITES the target DB.
+        required: false
+        default: ""
 
 concurrency:
   group: deploy-billing-production
@@ -36,7 +40,10 @@ jobs:
     name: Deploy to DigitalOcean
     runs-on: ubuntu-latest
     env:
-      DEPLOY_HOST: ${{ inputs.host || vars.DEPLOY_HOST || '168.144.41.111' }}
+      # Production moved to the Mongolia-hosted server (api.ebarimt.mn is
+      # geo-restricted to MN address space); the old DO droplet goes back to
+      # hotel PMS duty.
+      DEPLOY_HOST: ${{ inputs.host || vars.DEPLOY_HOST || '202.37.235.16' }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER || 'root' }}
       DEPLOY_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
     steps:
@@ -122,6 +129,36 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
             "PUBLIC_URL=https://billing.mastrsys.com bash /opt/billingservice/deploy/remote-deploy.sh"
+
+      # One-time data move: pg_dump on the old server → full restore on the
+      # target (drops the target schema first — target data is REPLACED).
+      # Only row counts are printed, never data.
+      - name: Migrate database from old server
+        if: ${{ inputs.migrate_db_from != '' }}
+        env:
+          OLD_DB_HOST: ${{ inputs.migrate_db_from }}
+        run: |
+          C="docker compose -f docker-compose.prod.yml"
+          echo "→ Dumping database on $OLD_DB_HOST…"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "root@$OLD_DB_HOST" \
+            "cd /opt/billingservice && $C exec -T postgres sh -c 'pg_dump -U \"\$POSTGRES_USER\" \"\$POSTGRES_DB\"'" | gzip -1 > dump.sql.gz
+          ls -lh dump.sql.gz
+          scp -i ~/.ssh/deploy_key -P "$DEPLOY_PORT" dump.sql.gz "$DEPLOY_USER@$DEPLOY_HOST:/opt/billingservice/dump.sql.gz"
+          echo "→ Restoring on $DEPLOY_HOST (api paused during restore)…"
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<'EOSSH'
+          set -e
+          cd /opt/billingservice
+          C="docker compose -f docker-compose.prod.yml"
+          $C stop api > /dev/null
+          $C exec -T postgres sh -c 'psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
+          gunzip -c dump.sql.gz | $C exec -T postgres sh -c 'psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > /dev/null
+          rm -f dump.sql.gz
+          $C start api > /dev/null
+          echo "→ Row counts after restore:"
+          $C exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -t -c "SELECT '\''tenants: '\'' || count(*) FROM \"Tenant\"; SELECT '\''users: '\'' || count(*) FROM \"User\"; SELECT '\''invoices: '\'' || count(*) FROM \"Invoice\";"'
+          EOSSH
+          rm -f dump.sql.gz
+          echo "✅ Database migrated."
 
       - name: Verify public endpoint
         run: |

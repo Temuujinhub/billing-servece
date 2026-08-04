@@ -2,7 +2,20 @@ import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query } from 
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AdminOnly, AuthUser, CurrentUser } from '../../common/decorators';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ProviderConfigService } from '../providers/provider-config.service';
 import { AdminService } from './admin.service';
+
+/** Best-effort HTTP probe: status + latency + a short body sample, never throws. */
+async function probe(url: string, init?: RequestInit) {
+  const t0 = Date.now();
+  try {
+    const res = await fetch(url, { ...init, signal: AbortSignal.timeout(10_000) });
+    const body = (await res.text().catch(() => '')).slice(0, 140);
+    return { reachable: true, httpStatus: res.status, latencyMs: Date.now() - t0, sample: body };
+  } catch (e: any) {
+    return { reachable: false, httpStatus: null, latencyMs: Date.now() - t0, sample: String(e?.message ?? e).slice(0, 140) };
+  }
+}
 
 /**
  * Platform-operator console (PRD A-02..A-22). Every route requires the
@@ -16,7 +29,49 @@ export class AdminController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly admin: AdminService,
+    private readonly providerConfigs: ProviderConfigService,
   ) {}
+
+  // ---------------------------------------------- System health (ops runbook)
+
+  /**
+   * One-stop dependency check: DB, provider APIs, ebarimt registry, queues,
+   * and the platform-admin roster — everything an operator needs to see at
+   * a glance when "something is off".
+   */
+  @Get('health/system')
+  async systemHealth(@CurrentUser() user: AuthUser) {
+    const dbT0 = Date.now();
+    const [tenants, users, invoices, smsQueued, smsFailed24h, receiptsPending, intentsProcessing, reminderTenants, admins] =
+      await Promise.all([
+        this.prisma.tenant.count(),
+        this.prisma.user.count(),
+        this.prisma.invoice.count(),
+        this.prisma.messageJob.count({ where: { status: 'QUEUED' } }),
+        this.prisma.messageJob.count({ where: { status: 'FAILED', createdAt: { gte: new Date(Date.now() - 864e5) } } }),
+        this.prisma.ebarimtReceipt.count({ where: { state: { in: ['PENDING', 'FAILED'] } } }),
+        this.prisma.paymentIntent.count({ where: { state: { in: ['PENDING', 'PROCESSING'] } } }),
+        this.prisma.tenantModule.count({ where: { code: 'REMINDER', enabled: true } }),
+        this.prisma.user.findMany({ where: { platformAdmin: true }, select: { email: true, name: true, createdAt: true } }),
+      ]);
+    const dbLatencyMs = Date.now() - dbT0;
+
+    const [qpay, callpro, ebarimtTin, ebarimtInfo] = await Promise.all([
+      this.providerConfigs.test(user.tenantId, 'QPAY').catch((e) => ({ ok: false, httpStatus: null, message_mn: String(e?.message ?? e) })),
+      this.providerConfigs.test(user.tenantId, 'CALLPRO').catch((e) => ({ ok: false, httpStatus: null, message_mn: String(e?.message ?? e) })),
+      probe('https://api.ebarimt.mn/api/info/check/getTinInfo?regNo=2657457'),
+      probe('https://api.ebarimt.mn/api/info/check/getInfo?regNo=2657457'),
+    ]);
+
+    return {
+      checkedAt: new Date(),
+      db: { ok: true, latencyMs: dbLatencyMs, tenants, users, invoices },
+      queues: { smsQueued, smsFailed24h, receiptsPending, intentsProcessing, reminderTenants },
+      providers: { qpay, callpro },
+      ebarimt: { tinLookup: ebarimtTin, infoLookup: ebarimtInfo },
+      admins,
+    };
+  }
 
   // ------------------------------------------------------- A-02 overview
 

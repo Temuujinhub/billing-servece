@@ -142,11 +142,28 @@ export class TenantsController {
     if (!/^([0-9]{7,10}|[А-ЯЁӨҮ]{2}[0-9]{8})$/u.test(regNo)) {
       throw apiError(HttpStatus.BAD_REQUEST, 'REGNO_INVALID', 'Регистрийн дугаар буруу байна.', 'Invalid registration number.');
     }
-    const [info, tinInfo] = await Promise.all([
-      ebarimtInfoGet(`/getInfo?regNo=${encodeURIComponent(regNo)}`),
-      ebarimtInfoGet(`/getTinInfo?regNo=${encodeURIComponent(regNo)}`),
-    ]);
-    if (info === null && tinInfo === null) {
+    // ebarimt 3.0 flow: regNo → ТТД (getTinInfo), then ТТД → нэр (getInfo?tin=).
+    const tinInfo = await ebarimtInfoGet(`/getTinInfo?regNo=${encodeURIComponent(regNo)}`);
+    const tin = tinInfo?.data != null && String(tinInfo.data).trim() ? String(tinInfo.data).trim() : null;
+
+    let name: string | null = null;
+    const infoSources = tin
+      ? [`/getInfo?tin=${encodeURIComponent(tin)}`, `/getInfo?regNo=${encodeURIComponent(regNo)}`]
+      : [`/getInfo?regNo=${encodeURIComponent(regNo)}`];
+    for (const path of infoSources) {
+      const info = await ebarimtInfoGet(path);
+      const candidate =
+        (typeof info?.name === 'string' && info.name) ||
+        (typeof info?.data === 'string' && info.data) ||
+        (typeof info?.data?.name === 'string' && info.data.name) ||
+        '';
+      if (candidate.trim()) {
+        name = candidate.trim();
+        break;
+      }
+    }
+
+    if (tin === null && name === null) {
       throw apiError(
         HttpStatus.BAD_GATEWAY,
         'EBARIMT_INFO_UNAVAILABLE',
@@ -154,13 +171,7 @@ export class TenantsController {
         'The ebarimt registry is temporarily unavailable.',
       );
     }
-    const tin = tinInfo?.data != null ? String(tinInfo.data) : null;
-    return {
-      regNo,
-      found: info?.found === true || Boolean(tin),
-      name: typeof info?.name === 'string' && info.name.trim() ? info.name.trim() : null,
-      tin,
-    };
+    return { regNo, found: Boolean(tin || name), name, tin };
   }
 
   /** Onboarding step: eBarimt үүсгүүлэх хүсэлт — saves regNo/ТТД, enables the module. */
