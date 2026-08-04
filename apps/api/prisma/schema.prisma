@@ -46,6 +46,8 @@ model Tenant {
   type          TenantType   @default(ORGANIZATION)
   name          String
   regNo         String?
+  // Татвар төлөгчийн дугаар (ТТД) — resolved from api.ebarimt.mn by regNo.
+  tin           String?
   status        TenantStatus @default(ACTIVE)
   kybStatus     KybStatus    @default(DRAFT)
   invoicePrefix String       @default("INV")

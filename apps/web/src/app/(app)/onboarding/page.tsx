@@ -15,7 +15,14 @@ const KYB_MN: Record<string, string> = {
   NEEDS_INFO: 'Мэдээлэл дутуу — засаад дахин илгээнэ үү',
 };
 
-const STEPS = ['Байгууллага', 'Банкны данс', 'Баталгаажуулалт'];
+const STEPS = ['Байгууллага', 'Банкны данс', 'eBarimt', 'Баталгаажуулалт'];
+
+interface EbarimtInfo {
+  regNo: string;
+  found: boolean;
+  name: string | null;
+  tin: string | null;
+}
 
 /** M-03: KYB onboarding wizard — fill the org profile, submit for review. */
 export default function OnboardingPage() {
@@ -35,6 +42,12 @@ export default function OnboardingPage() {
     bankName: '',
     bankAccount: '',
   });
+
+  // eBarimt step state
+  const [ebarimt, setEbarimt] = useState<EbarimtInfo | null>(null);
+  const [ebarimtWanted, setEbarimtWanted] = useState(true);
+  const [looking, setLooking] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
 
   useEffect(() => {
     api<TenantInfo>('/tenant')
@@ -72,6 +85,41 @@ export default function OnboardingPage() {
         }),
       });
       setStep(next);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Регистрийн дугаараар НӨАТ-ын нээлттэй бүртгэлээс нэр + ТТД татна. */
+  async function lookupEbarimt() {
+    setLooking(true);
+    setLookupError(null);
+    setEbarimt(null);
+    try {
+      const res = await api<EbarimtInfo>(`/tenant/ebarimt-info?regNo=${encodeURIComponent(form.regNo.trim())}`);
+      setEbarimt(res);
+      if (res.name && !form.name.trim()) set('name', res.name);
+    } catch (e) {
+      setLookupError(e instanceof ApiError ? e.message : 'Шалгаж чадсангүй');
+    } finally {
+      setLooking(false);
+    }
+  }
+
+  /** eBarimt алхам: хүсэлтэй бол модулийг идэвхжүүлж regNo/ТТД хадгална. */
+  async function saveEbarimtStep() {
+    setBusy(true);
+    setError(null);
+    try {
+      if (ebarimtWanted) {
+        await api('/tenant/ebarimt-request', {
+          method: 'POST',
+          body: JSON.stringify({ regNo: form.regNo.trim(), tin: ebarimt?.tin ?? undefined }),
+        });
+      }
+      setStep(3);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
     } finally {
@@ -214,11 +262,71 @@ export default function OnboardingPage() {
 
       {step === 2 && (
         <div className="card space-y-5 p-6">
+          <div>
+            <h2 className="font-bold text-slate-900">eBarimt үүсгүүлэх хүсэлт</h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
+              Төлбөр бүрд НӨАТ-ын баримт автоматаар үүсгэхийг хүсвэл регистрийн дугаараа НӨАТ-ын бүртгэлээс шалгаад хүсэлтээ илгээнэ.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[200px] flex-1">
+              <label className="label">Регистрийн дугаар</label>
+              <input className="input" value={form.regNo} onChange={(e) => { set('regNo', e.target.value); setEbarimt(null); }} maxLength={20} placeholder="1234567" />
+            </div>
+            <button className="btn-secondary min-w-[150px]" onClick={lookupEbarimt} disabled={looking || form.regNo.trim().length < 7}>
+              {looking ? <Spinner className="h-5 w-5" /> : '🔍 НӨАТ-аас шалгах'}
+            </button>
+          </div>
+          {lookupError && <ErrorNote message={lookupError} />}
+          {ebarimt && (
+            ebarimt.found ? (
+              <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/80 px-4 py-3.5">
+                <p className="text-[12px] font-bold uppercase tracking-widest text-emerald-600">НӨАТ-ын бүртгэлээс олдлоо</p>
+                <p className="mt-1.5 text-[15px] font-extrabold tracking-tight text-slate-900">{ebarimt.name ?? '— нэр бүртгэлгүй —'}</p>
+                <p className="mt-0.5 text-[13.5px] text-slate-600">
+                  Регистр: <b>{ebarimt.regNo}</b>
+                  {ebarimt.tin && <> · Татвар төлөгчийн дугаар (ТТД): <b>{ebarimt.tin}</b></>}
+                </p>
+              </div>
+            ) : (
+              <p className="rounded-xl bg-amber-50 px-4 py-3 text-[13.5px] font-medium text-amber-800">
+                Энэ регистрээр НӨАТ-ын бүртгэлд байгууллага олдсонгүй — дугаараа шалгаад дахин оролдоно уу.
+              </p>
+            )
+          )}
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-navy-50 px-4 py-3.5">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-indigo-600"
+              checked={ebarimtWanted}
+              onChange={(e) => setEbarimtWanted(e.target.checked)}
+            />
+            <span className="text-[13.5px] leading-relaxed text-navy-800">
+              <b>eBarimt үүсгүүлэх хүсэлт илгээх</b> — модуль идэвхжиж, амжилттай төлбөр бүрд НӨАТ-ын баримт автоматаар үүснэ (20,000₮/сар).
+            </span>
+          </label>
+          <div className="flex justify-between">
+            <button className="btn-secondary" disabled={busy} onClick={() => setStep(1)}>← Буцах</button>
+            <button
+              className="btn-primary min-w-[140px]"
+              disabled={busy || (ebarimtWanted && form.regNo.trim().length < 7)}
+              onClick={saveEbarimtStep}
+            >
+              {busy ? <Spinner className="h-5 w-5 text-white" /> : 'Үргэлжлүүлэх →'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div className="card space-y-5 p-6">
           <h2 className="font-bold text-slate-900">Мэдээллээ шалгаад илгээнэ үү</h2>
           <dl className="divide-y divide-slate-200/60 text-[14px]">
             {[
               ['Нэр', form.name],
               ['Регистр', form.regNo],
+              ['ТТД', ebarimt?.tin ?? '—'],
+              ['eBarimt хүсэлт', ebarimtWanted ? '✓ Илгээнэ' : 'Илгээхгүй'],
               ['Хаяг', form.address || '—'],
               ['Төлөөлөгч', form.representative || '—'],
               ['Банк', form.bankName],
@@ -234,7 +342,7 @@ export default function OnboardingPage() {
             Илгээснээр мэдээлэл үнэн зөв гэдгийг баталж, платформын үйлчилгээний нөхцөлийг зөвшөөрч байна.
           </p>
           <div className="flex justify-between">
-            <button className="btn-secondary" disabled={busy} onClick={() => setStep(1)}>← Буцах</button>
+            <button className="btn-secondary" disabled={busy} onClick={() => setStep(2)}>← Буцах</button>
             <button className="btn-primary min-w-[180px]" disabled={busy} onClick={submit}>
               {busy ? <Spinner className="h-5 w-5 text-white" /> : 'Баталгаажуулалтад илгээх'}
             </button>

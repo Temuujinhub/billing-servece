@@ -201,6 +201,7 @@ export interface TenantInfo {
     id: string;
     name: string;
     regNo: string | null;
+    tin: string | null;
     kybStatus: string;
     invoicePrefix: string;
     contactEmail: string | null;

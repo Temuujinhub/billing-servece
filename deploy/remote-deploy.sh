@@ -160,5 +160,13 @@ if [ "${SMS_PROVIDER:-mock}" = "callpro" ] && [ -n "${CALLPRO_API_KEY:-}" ]; the
     echo "⚠ CallPro check returned HTTP $SMS_CODE — API key-г шалгана уу."
   fi
 fi
+# Open ebarimt registry (no auth) — used by the onboarding regNo→name/ТТД lookup.
+EBARIMT_CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 15 \
+  "https://api.ebarimt.mn/api/info/check/getInfo?regNo=2657457" || echo "ERR")
+if [ "$EBARIMT_CODE" = "200" ]; then
+  echo "✅ ebarimt registry lookup OK (HTTP $EBARIMT_CODE)"
+else
+  echo "⚠ ebarimt registry check returned HTTP $EBARIMT_CODE — onboarding lookup ажиллахгүй байж магадгүй."
+fi
 
 log "Deploy complete → ${PUBLIC_URL}"
