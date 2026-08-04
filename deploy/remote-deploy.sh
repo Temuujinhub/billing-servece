@@ -99,7 +99,16 @@ fi
 
 # --- 5. Build and (re)start the stack
 log "Building and starting containers"
-docker compose -f "$COMPOSE_FILE" --env-file .env up -d --build --remove-orphans
+# Prefer CI-built images (docker load) — an on-droplet build starves the live
+# API/Postgres on a small droplet and causes 5xx during every deploy.
+UP_FLAGS="--build"
+if [ -f images.tar.gz ]; then
+  log "Loading prebuilt images from CI (no on-droplet build)"
+  gunzip -c images.tar.gz | docker load
+  rm -f images.tar.gz
+  UP_FLAGS="--no-build"
+fi
+docker compose -f "$COMPOSE_FILE" --env-file .env up -d $UP_FLAGS --remove-orphans
 
 # --- 6. After a successful first run, stop re-seeding on later deploys
 if [ "$FIRST_RUN" = "1" ]; then

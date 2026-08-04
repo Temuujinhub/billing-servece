@@ -114,9 +114,9 @@ function InvoicesInner() {
         </div>
       </div>
 
-      {error && <ErrorNote message={error} />}
+      {error && <ErrorNote message={error} onRetry={() => void load()} />}
       {!items ? (
-        <PageLoader />
+        error ? null : <PageLoader />
       ) : items.length === 0 ? (
         <EmptyState
           title="Нэхэмжлэх олдсонгүй"

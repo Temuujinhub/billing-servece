@@ -21,10 +21,15 @@ export function PageLoader() {
   );
 }
 
-export function ErrorNote({ message }: { message: string }) {
+export function ErrorNote({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="rounded-2xl border border-red-200/80 bg-red-50/80 px-4 py-3 text-sm text-red-700 backdrop-blur-md" role="alert">
-      {message}
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-200/80 bg-red-50/80 px-4 py-3 text-sm text-red-700 backdrop-blur-md" role="alert">
+      <span>{message}</span>
+      {onRetry && (
+        <button onClick={onRetry} className="shrink-0 rounded-lg bg-white/80 px-3 py-1.5 text-[13px] font-semibold text-red-700 shadow-sm hover:bg-white">
+          ↻ Дахин оролдох
+        </button>
+      )}
     </div>
   );
 }

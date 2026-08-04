@@ -76,9 +76,9 @@ export default function CustomersPage() {
         <button type="submit" className="btn-secondary shrink-0">Хайх</button>
       </form>
 
-      {error && <ErrorNote message={error} />}
+      {error && <ErrorNote message={error} onRetry={() => window.location.reload()} />}
       {!items ? (
-        <PageLoader />
+        error ? null : <PageLoader />
       ) : items.length === 0 ? (
         <EmptyState title="Харилцагч алга" hint="Excel импорт хийхэд харилцагчид автоматаар үүснэ." />
       ) : (

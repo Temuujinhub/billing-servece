@@ -28,6 +28,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Build images on the runner so the small droplet never runs a Docker
+      # build — on-droplet builds starve the live API and cause 5xx blips.
+      - name: Build images in CI
+        run: |
+          docker compose -f docker-compose.prod.yml build api web
+          docker save billingservice-api billingservice-web | gzip -1 > images.tar.gz
+          ls -lh images.tar.gz
+
       - name: Configure SSH key
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || secrets.DEPLOY_SSH_KEY1 }}
@@ -45,9 +53,14 @@ jobs:
         run: |
           rsync -az --delete \
             --exclude '.git' --exclude 'node_modules' --exclude '.next' --exclude 'dist' \
-            --exclude '.env' \
+            --exclude '.env' --exclude 'images.tar.gz' \
             -e "ssh -i ~/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new" \
             ./ "$DEPLOY_USER@$DEPLOY_HOST:/opt/billingservice/"
+
+      - name: Ship prebuilt images
+        run: |
+          scp -i ~/.ssh/deploy_key -P "$DEPLOY_PORT" images.tar.gz \
+            "$DEPLOY_USER@$DEPLOY_HOST:/opt/billingservice/images.tar.gz"
 
       - name: Run remote deploy script
         run: |

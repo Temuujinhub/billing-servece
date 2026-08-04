@@ -51,9 +51,9 @@ export default function ReceiptsPage() {
         </p>
       </div>
 
-      {error && <ErrorNote message={error} />}
+      {error && <ErrorNote message={error} onRetry={() => window.location.reload()} />}
       {!items ? (
-        <PageLoader />
+        error ? null : <PageLoader />
       ) : items.length === 0 ? (
         <EmptyState title="Баримт үүсээгүй байна" hint="Төлбөр амжилттай болмогц eBarimt автоматаар үүснэ." />
       ) : (

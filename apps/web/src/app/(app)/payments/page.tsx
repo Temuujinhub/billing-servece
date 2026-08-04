@@ -37,9 +37,9 @@ export default function PaymentsPage() {
         )}
       </div>
 
-      {error && <ErrorNote message={error} />}
+      {error && <ErrorNote message={error} onRetry={() => window.location.reload()} />}
       {!items ? (
-        <PageLoader />
+        error ? null : <PageLoader />
       ) : items.length === 0 ? (
         <EmptyState title="Төлбөр бүртгэгдээгүй" hint="Төлөгч линкээр орж төлснөөр энд харагдана." />
       ) : (

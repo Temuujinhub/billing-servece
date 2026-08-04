@@ -57,7 +57,10 @@ export default function ImportsPage() {
   const loadBatches = useCallback(() => {
     api<{ items: BatchRow[]; total: number }>('/imports?take=10')
       .then((r) => setBatches(r.items))
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        setError(e.message);
+        setBatches([]); // stop the skeleton spinner — the error note explains
+      });
   }, []);
 
   useEffect(() => {
@@ -196,7 +199,7 @@ export default function ImportsPage() {
         )}
       </div>
 
-      {error && <ErrorNote message={error} />}
+      {error && <ErrorNote message={error} onRetry={() => { setError(null); loadBatches(); }} />}
       {done && (
         <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
           ✅ {done.created} нэхэмжлэх үүсгэж, SMS линкүүд илгээгдлээ.{' '}
