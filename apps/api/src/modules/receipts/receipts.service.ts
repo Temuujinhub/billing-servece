@@ -25,15 +25,20 @@ export class ReceiptsService {
   ) {}
 
   /** Called inside the payment-confirm transaction. */
-  async createForTransaction(tx: Prisma.TransactionClient, args: { tenantId: string; transactionId: string }) {
+  async createForTransaction(
+    tx: Prisma.TransactionClient,
+    args: { tenantId: string; transactionId: string; invoiceOptIn?: boolean },
+  ) {
     const module = await tx.tenantModule.findUnique({
       where: { tenantId_code: { tenantId: args.tenantId, code: 'EBARIMT' } },
     });
+    // Both the tenant module AND the per-invoice checkbox must allow it.
+    const wanted = Boolean(module?.enabled) && args.invoiceOptIn !== false;
     await tx.ebarimtReceipt.create({
       data: {
         tenantId: args.tenantId,
         transactionId: args.transactionId,
-        state: module?.enabled ? 'PENDING' : 'NOT_REQUIRED',
+        state: wanted ? 'PENDING' : 'NOT_REQUIRED',
       },
     });
   }

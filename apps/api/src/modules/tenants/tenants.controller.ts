@@ -22,6 +22,12 @@ class UpdateTenantDto {
   @MaxLength(20)
   regNo?: string;
 
+  /** Татвар төлөгчийн дугаар (ТТД). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  tin?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(320)
@@ -103,6 +109,7 @@ export class TenantsController {
         name: dto.name?.trim(),
         invoicePrefix: dto.invoicePrefix,
         regNo: dto.regNo?.trim(),
+        tin: dto.tin?.trim(),
         smsTemplate: dto.smsTemplate !== undefined ? dto.smsTemplate.trim() || null : undefined,
         address: dto.address?.trim(),
         bankName: dto.bankName?.trim(),

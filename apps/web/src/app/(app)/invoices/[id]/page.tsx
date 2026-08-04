@@ -61,11 +61,16 @@ export default function InvoiceDetailPage() {
   const canCancel = ['DRAFT', 'SENT', 'VIEWED', 'OVERDUE'].includes(inv.state) && paidAmount === 0;
 
   // Unified chronological timeline (UX §12.1 — auditability).
-  const timeline: { ts: string; label: string; tone?: string }[] = [];
+  const timeline: { ts: string; label: string; tone?: string; detail?: string }[] = [];
   timeline.push({ ts: inv.createdAt, label: 'Нэхэмжлэх үүсгэсэн' });
   if (inv.sentAt) timeline.push({ ts: inv.sentAt, label: 'Илгээсэн (SMS + линк)' });
   for (const job of inv.messageJobs) {
-    timeline.push({ ts: job.createdAt, label: `SMS → ${job.recipient} · ${job.segments} segment · ${MESSAGE_STATE_MN[job.status] ?? job.status}` });
+    timeline.push({
+      ts: job.createdAt,
+      label: `SMS → ${job.recipient} · ${job.segments} segment · ${MESSAGE_STATE_MN[job.status] ?? job.status}`,
+      tone: job.status === 'FAILED' ? 'text-red-600' : undefined,
+      detail: job.status === 'FAILED' && job.error ? job.error : undefined,
+    });
   }
   for (const intent of inv.intents) {
     for (const ev of intent.events) {
@@ -171,8 +176,11 @@ export default function InvoiceDetailPage() {
           <ol className="mt-4 space-y-3 border-l-2 border-line pl-4">
             {timeline.map((t, i) => (
               <li key={i} className="relative">
-                <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-teal-400 ring-4 ring-white" />
+                <span className={`absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full ring-4 ring-white ${t.tone === 'text-red-600' ? 'bg-red-400' : 'bg-teal-400'}`} />
                 <p className={`text-[13.5px] font-medium ${t.tone ?? 'text-navy-800'}`}>{t.label}</p>
+                {t.detail && (
+                  <p className="mt-1 rounded-lg bg-red-50 px-2.5 py-1.5 text-[12px] leading-snug text-red-700">Шалтгаан: {t.detail}</p>
+                )}
                 <p className="text-[12px] text-slate-500">{dateTime(t.ts)}</p>
               </li>
             ))}

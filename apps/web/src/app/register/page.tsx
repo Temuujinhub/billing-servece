@@ -11,6 +11,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const [form, setForm] = useState({
     organizationName: '',
+    regNo: '',
     name: '',
     email: '',
     phone: '',
@@ -45,6 +46,7 @@ export default function RegisterPage() {
     try {
       await registerAccount({
         organizationName: form.organizationName.trim(),
+        regNo: form.regNo.trim() || undefined,
         name: form.name.trim(),
         email: form.email.trim(),
         phone: form.phone.trim() || undefined,
@@ -74,9 +76,16 @@ export default function RegisterPage() {
           <p className="mt-1.5 text-sm text-slate-500">Хэдхэн минутад workspace-ээ үүсгээрэй.</p>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
-            <div>
-              <label className="label" htmlFor="org">Байгууллагын нэр</label>
-              <input id="org" required className="input" value={form.organizationName} onChange={(e) => set('organizationName', e.target.value)} placeholder="Жишээ: Ирээдүй Сургууль ХХК" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="label" htmlFor="org">Байгууллагын нэр</label>
+                <input id="org" required className="input" value={form.organizationName} onChange={(e) => set('organizationName', e.target.value)} placeholder="Жишээ: Ирээдүй Сургууль ХХК" />
+              </div>
+              <div>
+                <label className="label" htmlFor="regno">Регистрийн дугаар <span className="text-slate-500">(заавал биш)</span></label>
+                <input id="regno" className="input" value={form.regNo} onChange={(e) => set('regNo', e.target.value)} placeholder="1234567" maxLength={20} />
+                <p className="mt-1 text-[11.5px] text-slate-500">eBarimt үүсгэхэд ашиглагдана — дараа нь Тохиргооноос ч нэмж болно.</p>
+              </div>
             </div>
             <div>
               <label className="label" htmlFor="name">Таны нэр</label>

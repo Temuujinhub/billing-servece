@@ -130,6 +130,7 @@ export class InvoicesService {
         amount: dto.amount,
         description: dto.description.trim(),
         dueDate,
+        ebarimtEnabled: dto.ebarimt,
       });
 
       let payUrl: string | null = null;
@@ -166,6 +167,7 @@ export class InvoicesService {
       description: string;
       dueDate: Date | null;
       batchId?: string;
+      ebarimtEnabled?: boolean;
     },
   ) {
     // Atomic per-tenant sequence (UPDATE … RETURNING keeps concurrent creates safe).
@@ -189,6 +191,7 @@ export class InvoicesService {
         balance: data.amount,
         state: 'DRAFT',
         dueDate: data.dueDate,
+        ebarimtEnabled: data.ebarimtEnabled ?? true,
       },
     });
     await tx.usageEvent.create({

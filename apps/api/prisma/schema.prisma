@@ -240,6 +240,8 @@ model Invoice {
   viewedAt    DateTime?
   paidAt      DateTime?
   cancelledAt DateTime?
+  // Per-invoice opt-in: create an eBarimt receipt after payment (module must also be on).
+  ebarimtEnabled Boolean   @default(true)
   remindersSent  Int       @default(0)
   lastReminderAt DateTime?
   createdAt   DateTime     @default(now())

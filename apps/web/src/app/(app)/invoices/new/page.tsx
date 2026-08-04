@@ -17,6 +17,7 @@ export default function NewInvoicePage() {
     description: '',
     dueDate: '',
     send: true,
+    ebarimt: true,
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -38,6 +39,7 @@ export default function NewInvoicePage() {
           description: form.description.trim(),
           dueDate: form.dueDate || undefined,
           send: form.send,
+          ebarimt: form.ebarimt,
         }),
       });
       router.replace(`/invoices/${created.id}`);
@@ -89,14 +91,26 @@ export default function NewInvoicePage() {
           <input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={form.send} onChange={(e) => setForm((f) => ({ ...f, send: e.target.checked }))} />
           Үүсгэмэгц SMS-ээр төлбөрийн линк илгээх
         </label>
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-navy-50/50 px-4 py-3.5 text-sm font-medium text-navy-800">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 accent-indigo-600" checked={form.ebarimt} onChange={(e) => setForm((f) => ({ ...f, ebarimt: e.target.checked }))} />
+          <span>
+            Төлбөр төлөгдсөний дараа eBarimt баримт автоматаар үүсгэх
+            <span className="mt-0.5 block text-[12px] font-normal text-slate-500">eBarimt модуль идэвхтэй үед л үүснэ. Байгууллагын регистр Тохиргоонд хадгалагдсан байх шаардлагатай.</span>
+          </span>
+        </label>
 
         {/* Money confirmation summary (UX rule §12.3) */}
         {amountNum > 0 && (
           <div className="rounded-xl bg-navy-900 px-5 py-4 text-white">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-navy-200">1 төлөгч · {form.send ? 'SMS илгээгдэнэ (~2 segment ≈ 50₮)' : 'илгээхгүй'}</span>
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <span className="text-navy-200">Нэхэмжлэхийн дүн (төлөгч төлнө)</span>
               <span className="text-lg font-extrabold text-teal-300">{mnt(amountNum)}</span>
             </div>
+            {form.send && (
+              <p className="mt-2 border-t border-white/10 pt-2 text-[12.5px] leading-snug text-navy-300">
+                + SMS илгээх зардал ~2 segment ≈ 50₮ — энэ нь <b className="text-navy-100">танай байгууллагын сарын billing-д</b> нэмэгдэх үйлчилгээний зардал бөгөөд нэхэмжлэхийн дүнд орохгүй.
+              </p>
+            )}
           </div>
         )}
 

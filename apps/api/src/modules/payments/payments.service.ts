@@ -311,6 +311,7 @@ export class PaymentsService {
         await this.receipts.createForTransaction(tx, {
           tenantId: intent.tenantId,
           transactionId: txRow.id,
+          invoiceOptIn: invoice.ebarimtEnabled,
         });
       });
     } catch (e) {

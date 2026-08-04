@@ -59,6 +59,10 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [prefix, setPrefix] = useState('');
+  const [regNo, setRegNo] = useState('');
+  const [tin, setTin] = useState('');
+  const [looking, setLooking] = useState(false);
+  const [lookupNote, setLookupNote] = useState<string | null>(null);
   const [smsTemplate, setSmsTemplate] = useState('');
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -79,6 +83,8 @@ export default function SettingsPage() {
         if (first) {
           setName(r.tenant.name);
           setPrefix(r.tenant.invoicePrefix);
+          setRegNo(r.tenant.regNo ?? '');
+          setTin(r.tenant.tin ?? '');
           setSmsTemplate(r.tenant.smsTemplate ?? '');
         }
       })
@@ -142,13 +148,41 @@ export default function SettingsPage() {
     try {
       await api('/tenant', {
         method: 'PATCH',
-        body: JSON.stringify({ name: name.trim(), invoicePrefix: prefix.trim().toUpperCase(), smsTemplate }),
+        body: JSON.stringify({
+          name: name.trim(),
+          invoicePrefix: prefix.trim().toUpperCase(),
+          regNo: regNo.trim() || undefined,
+          tin: tin.trim() || undefined,
+          smsTemplate,
+        }),
       });
       setSaved(true);
+      load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Регистрээр НӨАТ-ын бүртгэлээс нэр + ТТД татаж бөглөнө. */
+  async function lookupRegNo() {
+    setLooking(true);
+    setLookupNote(null);
+    try {
+      const res = await api<{ found: boolean; name: string | null; tin: string | null }>(
+        `/tenant/ebarimt-info?regNo=${encodeURIComponent(regNo.trim())}`,
+      );
+      if (res.found) {
+        if (res.tin) setTin(res.tin);
+        setLookupNote(`✓ НӨАТ-ын бүртгэл: ${res.name ?? '—'}${res.tin ? ` · ТТД ${res.tin}` : ''}`);
+      } else {
+        setLookupNote('Энэ регистрээр НӨАТ-ын бүртгэлд олдсонгүй.');
+      }
+    } catch (e) {
+      setLookupNote(e instanceof ApiError ? e.message : 'Шалгаж чадсангүй');
+    } finally {
+      setLooking(false);
     }
   }
 
@@ -185,7 +219,28 @@ export default function SettingsPage() {
             <input className="input" value={prefix} onChange={(e) => setPrefix(e.target.value)} disabled={!isOwner} maxLength={8} />
             <p className="mt-1 text-[12px] text-slate-500">Жишээ: {prefix || 'INV'}-00042</p>
           </div>
+          <div>
+            <label className="label">Регистрийн дугаар</label>
+            <div className="flex gap-2">
+              <input className="input" value={regNo} onChange={(e) => setRegNo(e.target.value)} disabled={!isOwner} maxLength={20} placeholder="1234567" />
+              {isOwner && (
+                <button type="button" className="btn-secondary shrink-0 px-3 text-[12.5px]" onClick={lookupRegNo} disabled={looking || regNo.trim().length < 7}>
+                  {looking ? '…' : '🔍 Шалгах'}
+                </button>
+              )}
+            </div>
+            <p className="mt-1 text-[12px] text-slate-500">eBarimt баримт үүсгэхэд ашиглагдана</p>
+          </div>
+          <div>
+            <label className="label">Татвар төлөгчийн дугаар (ТТД)</label>
+            <input className="input" value={tin} onChange={(e) => setTin(e.target.value)} disabled={!isOwner} maxLength={20} placeholder="Шалгах товчоор автоматаар бөглөгдөнө" />
+          </div>
         </div>
+        {lookupNote && (
+          <p className={`rounded-lg px-4 py-2.5 text-[13px] font-medium ${lookupNote.startsWith('✓') ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
+            {lookupNote}
+          </p>
+        )}
         {error && <ErrorNote message={error} />}
         {saved && <p className="text-sm font-semibold text-indigo-600">✓ Хадгалагдлаа</p>}
         {isOwner && (
