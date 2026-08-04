@@ -56,7 +56,7 @@ export class ImportsController {
 
   @Get()
   list(@CurrentUser() user: AuthUser, @Query('take') take?: number, @Query('skip') skip?: number) {
-    return this.imports.listBatches(user.tenantId, take ?? 20, skip ?? 0);
+    return this.imports.listBatches(user.tenantId, Number(take) || 20, Number(skip) || 0);
   }
 
   @Get(':id')

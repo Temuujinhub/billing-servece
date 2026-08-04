@@ -12,7 +12,7 @@ export class ReceiptsController {
 
   @Get()
   list(@CurrentUser() user: AuthUser, @Query('take') take?: number, @Query('skip') skip?: number) {
-    return this.receipts.list(user.tenantId, take ?? 50, skip ?? 0);
+    return this.receipts.list(user.tenantId, Number(take) || 50, Number(skip) || 0);
   }
 
   @Roles(Role.ACCOUNTANT, Role.OPERATOR)
