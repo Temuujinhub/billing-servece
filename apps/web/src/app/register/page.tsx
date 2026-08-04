@@ -26,19 +26,39 @@ export default function RegisterPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
-    setBusy(true);
     setError(null);
+
+    // Client-side pre-checks with the exact same rules as the API.
+    const problems: string[] = [];
+    if (!form.organizationName.trim()) problems.push('Байгууллагын нэрээ оруулна уу');
+    if (!form.name.trim()) problems.push('Нэрээ оруулна уу');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) problems.push('Имэйл хаяг буруу байна');
+    if (form.password.length < 8) problems.push('Нууц үг доод тал нь 8 тэмдэгт байна');
+    else if (!/[A-Za-zА-Яа-яЁёӨөҮү]/.test(form.password) || !/\d/.test(form.password))
+      problems.push('Нууц үг үсэг болон тоо хоёуланг агуулсан байх ёстой');
+    if (problems.length) {
+      setError(problems.join(' · '));
+      return;
+    }
+
+    setBusy(true);
     try {
       await registerAccount({
-        organizationName: form.organizationName,
-        name: form.name,
-        email: form.email,
-        phone: form.phone || undefined,
+        organizationName: form.organizationName.trim(),
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim() || undefined,
         password: form.password,
       });
       router.replace('/dashboard');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Сүлжээний алдаа. Дахин оролдоно уу.');
+      if (err instanceof ApiError) {
+        // Surface per-field validation details when the server provides them.
+        const fe = Array.isArray(err.fieldErrors) ? err.fieldErrors.filter((x): x is string => typeof x === 'string') : [];
+        setError(fe.length ? fe.join(' · ') : err.message);
+      } else {
+        setError('Сүлжээний алдаа. Дахин оролдоно уу.');
+      }
       setBusy(false);
     }
   }
@@ -75,6 +95,7 @@ export default function RegisterPage() {
             <div>
               <label className="label" htmlFor="password">Нууц үг</label>
               <input id="password" type="password" required minLength={8} autoComplete="new-password" className="input" value={form.password} onChange={(e) => set('password', e.target.value)} placeholder="Доод тал нь 8 тэмдэгт, үсэг + тоо" />
+              <p className="mt-1 text-[12px] text-slate-500">Доод тал нь 8 тэмдэгт бөгөөд үсэг, тоо хоёуланг агуулна. Жишээ: Fleex2026</p>
             </div>
             {error && <ErrorNote message={error} />}
             <button type="submit" disabled={busy} className="btn-primary w-full py-3">
