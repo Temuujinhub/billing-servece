@@ -17,6 +17,15 @@ on:
         description: Override target server IP (empty = DEPLOY_HOST var / default)
         required: false
         default: ""
+      bootstrap:
+        description: One-time new-server setup (needs DEPLOY_PASSWORD secret)
+        type: boolean
+        required: false
+        default: false
+      copy_env_from:
+        description: Old server IP to copy /opt/billingservice/.env from during bootstrap
+        required: false
+        default: "168.144.41.111"
 
 concurrency:
   group: deploy-billing-production
@@ -64,6 +73,37 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      # One-time new-server setup: installs the deploy key via password auth,
+      # copies .env from the old server (never printed), probes ebarimt.
+      - name: Bootstrap new host
+        if: ${{ inputs.bootstrap }}
+        env:
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          OLD_HOST: ${{ inputs.copy_env_from }}
+        run: |
+          if [ -z "$DEPLOY_PASSWORD" ]; then
+            echo "::error::Add the new server's root password as the DEPLOY_PASSWORD secret first."; exit 1
+          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          ssh-keygen -y -f ~/.ssh/deploy_key > ~/.ssh/deploy_key.pub
+          sshpass -p "$DEPLOY_PASSWORD" ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" \
+            'mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'
+          sshpass -p "$DEPLOY_PASSWORD" ssh "$DEPLOY_USER@$DEPLOY_HOST" 'cat >> ~/.ssh/authorized_keys' < ~/.ssh/deploy_key.pub
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" 'echo "✅ key auth OK on $(hostname)"'
+          if [ -n "$OLD_HOST" ]; then
+            if ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "root@$OLD_HOST" 'cat /opt/billingservice/.env' > env.transfer 2>/dev/null; then
+              ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+                'mkdir -p /opt/billingservice && cat > /opt/billingservice/.env && chmod 600 /opt/billingservice/.env' < env.transfer
+              rm -f env.transfer
+              echo "✅ .env transferred (contents not shown)"
+            else
+              echo "::warning::Could not read old .env — a fresh one will be generated on first deploy."
+            fi
+          fi
+          CODE=$(ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            'curl -s -o /dev/null -w "%{http_code}" -m 15 "https://api.ebarimt.mn/api/info/check/getInfo?regNo=2657457"' || echo ERR)
+          echo "ebarimt registry from new host: HTTP $CODE"
 
       - name: Sync project to droplet
         run: |
