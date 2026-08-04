@@ -61,6 +61,8 @@ model Tenant {
   representative String?
   // Custom payer SMS template with {{нэр}} {{дүн}} {{дугаар}} {{хугацаа}} {{линк}} {{байгууллага}} vars.
   smsTemplate   String?
+  // Send SMS transliterated to Latin (GSM-7: 160 chars/segment vs 70 — ~half the cost).
+  smsTransliterate Boolean @default(false)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 

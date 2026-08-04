@@ -34,15 +34,36 @@ function templatePreview(template: string): string {
     .replaceAll('{{дугаар}}', 'INV-00042')
     .replaceAll('{{дүн}}', '150,000₮')
     .replaceAll('{{хугацаа}}', ', хугацаа: 2026-09-01')
-    .replaceAll('{{линк}}', 'https://billing.mastrsys.com/pay/aB3xK9…');
-  if (!out.includes('https://billing.mastrsys.com/pay/')) out += ' https://billing.mastrsys.com/pay/aB3xK9…';
+    .replaceAll('{{линк}}', 'https://billing.mastrsys.com/p/aB3xK9pQ');
+  if (!out.includes('https://billing.mastrsys.com/p/')) out += ' https://billing.mastrsys.com/p/aB3xK9pQ';
   return out;
 }
 
-/** Cyrillic → UCS-2: 70 chars per segment (67 multipart). */
-function segmentEstimate(text: string): number {
-  if (text.length <= 70) return 1;
-  return Math.ceil(text.length / 67);
+// Client-side mirror of the server transliteration (for the live preview).
+const MN_LATIN: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'ye', ё: 'yo', ж: 'j', з: 'z', и: 'i',
+  й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', ө: 'u', п: 'p', р: 'r', с: 's',
+  т: 't', у: 'u', ү: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh',
+  ъ: '', ы: 'y', ь: 'i', э: 'e', ю: 'yu', я: 'ya', '₮': 'T', '№': 'No',
+};
+
+function transliterate(text: string): string {
+  let out = '';
+  for (const ch of text) {
+    const mapped = MN_LATIN[ch.toLowerCase()];
+    if (mapped === undefined) out += ch;
+    else if (ch === ch.toLowerCase()) out += mapped;
+    else out += mapped.charAt(0).toUpperCase() + mapped.slice(1);
+  }
+  return out;
+}
+
+/** UCS-2 (кирилл): 70/67 · GSM-7 (латин): 160/153 chars per segment. */
+function segmentEstimate(text: string, latin: boolean): number {
+  const single = latin ? 160 : 70;
+  const multi = latin ? 153 : 67;
+  if (text.length <= single) return 1;
+  return Math.ceil(text.length / multi);
 }
 
 const KYB_MN: Record<string, string> = {
@@ -64,6 +85,7 @@ export default function SettingsPage() {
   const [looking, setLooking] = useState(false);
   const [lookupNote, setLookupNote] = useState<string | null>(null);
   const [smsTemplate, setSmsTemplate] = useState('');
+  const [smsLatin, setSmsLatin] = useState(false);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const isOwner = getSessionUser()?.role === 'OWNER';
@@ -86,6 +108,7 @@ export default function SettingsPage() {
           setRegNo(r.tenant.regNo ?? '');
           setTin(r.tenant.tin ?? '');
           setSmsTemplate(r.tenant.smsTemplate ?? '');
+          setSmsLatin(r.tenant.smsTransliterate === true);
         }
       })
       .catch((e) => setError(e.message));
@@ -154,6 +177,7 @@ export default function SettingsPage() {
           regNo: regNo.trim() || undefined,
           tin: tin.trim() || undefined,
           smsTemplate,
+          smsTransliterate: smsLatin,
         }),
       });
       setSaved(true);
@@ -175,6 +199,7 @@ export default function SettingsPage() {
       );
       if (res.found) {
         if (res.tin) setTin(res.tin);
+        if (res.name) setName(res.name);
         setLookupNote(`✓ НӨАТ-ын бүртгэл: ${res.name ?? '—'}${res.tin ? ` · ТТД ${res.tin}` : ''}`);
       } else {
         setLookupNote('Энэ регистрээр НӨАТ-ын бүртгэлд олдсонгүй.');
@@ -282,13 +307,47 @@ export default function SettingsPage() {
           maxLength={320}
           placeholder={DEFAULT_TEMPLATE}
         />
-        <div className="rounded-xl bg-navy-900 p-4">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Урьдчилсан харагдац</p>
-          <p className="mt-2 rounded-lg bg-white/10 px-3.5 py-3 text-[13.5px] leading-relaxed text-white">{templatePreview(smsTemplate)}</p>
-          <p className="mt-2 text-right text-[12px] text-navy-300">
-            {templatePreview(smsTemplate).length} тэмдэгт ≈ <b className="text-teal-300">{segmentEstimate(templatePreview(smsTemplate))} segment</b> ({segmentEstimate(templatePreview(smsTemplate)) * 25}₮)
-          </p>
+        {/* Кирилл / Латин: латин нь GSM-7 тул segment 70→160 тэмдэгт болж зардал ~2 дахин хэмнэнэ */}
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-navy-50 px-4 py-3">
+          <div>
+            <p className="text-[13.5px] font-semibold text-navy-900">Илгээх үсгийн сонголт</p>
+            <p className="text-[12px] text-navy-600">Латинаар илгээвэл 1 segment = 160 тэмдэгт (кирилл 70) — зардал ~2 дахин хэмнэнэ</p>
+          </div>
+          <div className="flex shrink-0 gap-1 rounded-full bg-white p-1">
+            <button
+              type="button"
+              disabled={!isOwner}
+              onClick={() => setSmsLatin(false)}
+              className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-bold transition ${!smsLatin ? 'bg-navy-900 text-white' : 'text-navy-600'}`}
+            >
+              Кирилл
+            </button>
+            <button
+              type="button"
+              disabled={!isOwner}
+              onClick={() => setSmsLatin(true)}
+              className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-bold transition ${smsLatin ? 'bg-teal-500 text-white' : 'text-navy-600'}`}
+            >
+              Латин 💰
+            </button>
+          </div>
         </div>
+        {(() => {
+          const raw = templatePreview(smsTemplate);
+          const shown = smsLatin ? transliterate(raw) : raw;
+          const seg = segmentEstimate(shown, smsLatin);
+          const segCyr = segmentEstimate(raw, false);
+          return (
+            <div className="rounded-xl bg-navy-900 p-4">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Урьдчилсан харагдац {smsLatin && '· латин'}</p>
+              <p className="mt-2 rounded-lg bg-white/10 px-3.5 py-3 text-[13.5px] leading-relaxed text-white">{shown}</p>
+              <p className="mt-2 text-right text-[12px] text-navy-300">
+                {shown.length} тэмдэгт ≈ <b className="text-teal-300">{seg} segment</b> ({seg * 25}₮)
+                {smsLatin && segCyr > seg && <span className="ml-1.5 rounded-full bg-teal-500/20 px-2 py-0.5 font-bold text-teal-300">−{(segCyr - seg) * 25}₮ хэмнэлт</span>}
+              </p>
+            </div>
+          );
+        })()}
         {smsTemplate.trim() !== '' && !smsTemplate.includes('{{линк}}') && (
           <p className="rounded-lg bg-red-50 px-4 py-2.5 text-[13px] font-medium text-red-700">
             ⚠ Загварт {'{{линк}}'} алга — төлөгч төлбөрөө хийж чадахгүй тул хадгалагдахгүй.

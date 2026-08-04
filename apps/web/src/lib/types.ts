@@ -207,6 +207,7 @@ export interface TenantInfo {
     contactEmail: string | null;
     contactPhone: string | null;
     smsTemplate: string | null;
+    smsTransliterate: boolean;
     address: string | null;
     bankName: string | null;
     bankAccount: string | null;

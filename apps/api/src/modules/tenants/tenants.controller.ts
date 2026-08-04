@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
-import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { AuthUser, CurrentUser, Roles } from '../../common/decorators';
 import { apiError } from '../../common/filters/http-exception.filter';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -32,6 +32,11 @@ class UpdateTenantDto {
   @IsString()
   @MaxLength(320)
   smsTemplate?: string;
+
+  /** Send SMS transliterated to Latin (GSM-7 → ~half the segment cost). */
+  @IsOptional()
+  @IsBoolean()
+  smsTransliterate?: boolean;
 
   // KYB onboarding fields (M-03)
   @IsOptional() @IsString() @MaxLength(300) address?: string;
@@ -111,6 +116,7 @@ export class TenantsController {
         regNo: dto.regNo?.trim(),
         tin: dto.tin?.trim(),
         smsTemplate: dto.smsTemplate !== undefined ? dto.smsTemplate.trim() || null : undefined,
+        smsTransliterate: dto.smsTransliterate,
         address: dto.address?.trim(),
         bankName: dto.bankName?.trim(),
         bankAccount: dto.bankAccount?.trim(),

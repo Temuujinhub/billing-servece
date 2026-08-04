@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { formatMnt, smsSegments } from '../../common/utils';
+import { formatMnt, smsSegments, transliterateMn } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProviderResolver } from '../providers/provider-resolver.service';
 
@@ -59,14 +59,21 @@ export class MessagingService {
     tx: Prisma.TransactionClient,
     opts: { tenantId: string; invoiceId?: string; recipient: string; body: string },
   ) {
-    const segments = smsSegments(opts.body);
+    // Tenant opt-in: transliterate to Latin so the SMS packs GSM-7 segments
+    // (160/153 chars) instead of UCS-2 (70/67) — roughly half the cost.
+    const tenant = await tx.tenant.findUnique({
+      where: { id: opts.tenantId },
+      select: { smsTransliterate: true },
+    });
+    const body = tenant?.smsTransliterate ? transliterateMn(opts.body) : opts.body;
+    const segments = smsSegments(body);
     const job = await tx.messageJob.create({
       data: {
         tenantId: opts.tenantId,
         invoiceId: opts.invoiceId,
         channel: 'sms',
         recipient: opts.recipient,
-        body: opts.body,
+        body,
         segments,
         status: 'QUEUED',
       },

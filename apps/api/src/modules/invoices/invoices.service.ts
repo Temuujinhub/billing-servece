@@ -232,7 +232,7 @@ export class InvoicesService {
         expiresAt: new Date(Math.max(Date.now() + 60 * 864e5, (invoice.dueDate?.getTime() ?? 0) + 30 * 864e5)),
       },
     });
-    const payUrl = `${this.config.get('PUBLIC_URL') ?? ''}/pay/${token}`;
+    const payUrl = `${this.config.get('PUBLIC_URL') ?? ''}/p/${token}`;
 
     if (invoice.customer.phone) {
       const body = renderSmsTemplate(invoice.tenant.smsTemplate, {
@@ -278,7 +278,7 @@ export class InvoicesService {
         await tx.shortLink.create({
           data: { invoiceId: id, tokenHash: sha256(token), expiresAt: new Date(Date.now() + 60 * 864e5) },
         });
-        const payUrl = `${this.config.get('PUBLIC_URL') ?? ''}/pay/${token}`;
+        const payUrl = `${this.config.get('PUBLIC_URL') ?? ''}/p/${token}`;
         if (full.customer.phone) {
           await this.messaging.sendSms(tx, {
             tenantId: user.tenantId,

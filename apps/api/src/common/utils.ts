@@ -27,9 +27,43 @@ export function smsSegments(text: string): number {
   return Math.ceil(text.length / multi);
 }
 
-/** Opaque, unguessable public token for payment short links. */
+/**
+ * Opaque public token for payment short links. 6 random bytes → 8 URL-safe
+ * chars (48 bits): short enough to keep SMS cost down, and safe because the
+ * public endpoints are rate-limited, tokens are stored hashed and expire.
+ */
 export function newPublicToken(): string {
-  return randomBytes(16).toString('base64url');
+  return randomBytes(6).toString('base64url');
+}
+
+// Mongolian Cyrillic → Latin (ASCII-only so the SMS stays pure GSM-7:
+// 160 chars/segment instead of UCS-2's 70 — roughly half the cost).
+const MN_LATIN: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'ye', ё: 'yo', ж: 'j', з: 'z', и: 'i',
+  й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', ө: 'u', п: 'p', р: 'r', с: 's',
+  т: 't', у: 'u', ү: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sh',
+  ъ: '', ы: 'y', ь: 'i', э: 'e', ю: 'yu', я: 'ya',
+  '₮': 'T', '№': 'No', '«': '"', '»': '"', '—': '-', '–': '-', '“': '"', '”': '"',
+};
+
+/** Transliterate Mongolian Cyrillic text to ASCII Latin (case-preserving). */
+export function transliterateMn(text: string): string {
+  let out = '';
+  for (const ch of text) {
+    const lower = ch.toLowerCase();
+    const mapped = MN_LATIN[lower];
+    if (mapped === undefined) {
+      out += ch;
+      continue;
+    }
+    if (ch === lower) {
+      out += mapped;
+    } else {
+      // Uppercase source: capitalise the first letter of the replacement.
+      out += mapped.charAt(0).toUpperCase() + mapped.slice(1);
+    }
+  }
+  return out;
 }
 
 /** Raw tokens are never stored — only their SHA-256 (PRD §8.2). */

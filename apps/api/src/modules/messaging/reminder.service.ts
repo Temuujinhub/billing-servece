@@ -79,7 +79,7 @@ export class ReminderService implements OnApplicationBootstrap, OnModuleDestroy 
             await tx.shortLink.create({
               data: { invoiceId: invoice.id, tokenHash: sha256(token), expiresAt: new Date(Date.now() + 60 * 864e5) },
             });
-            const payUrl = `${this.config.get('PUBLIC_URL') ?? ''}/pay/${token}`;
+            const payUrl = `${this.config.get('PUBLIC_URL') ?? ''}/p/${token}`;
             const body = `Сануулга (${invoice.remindersSent + 1}/${MAX_REMINDERS}): ${renderSmsTemplate(invoice.tenant.smsTemplate, {
               tenantName: invoice.tenant.name,
               customerName: invoice.customer.name,

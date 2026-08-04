@@ -189,7 +189,7 @@ export class ImportsService {
       if (!row.valid || !row.normalized) continue;
       const n = row.normalized as any;
       // The SMS body includes tenant name + amount + link; ~40 extra chars.
-      smsSegmentEstimate += smsSegments(`X: Танд ${n.amount}₮ нэхэмжлэх ирлээ. Төлөх: https://billing.mastrsys.com/pay/XXXXXXXXXXXXXXXXXXXXXX`);
+      smsSegmentEstimate += smsSegments(`X: Танд ${n.amount}₮ нэхэмжлэх ирлээ. Төлөх: https://billing.mastrsys.com/p/XXXXXXXX`);
     }
     return {
       batch: {
