@@ -32,7 +32,18 @@ jobs:
       # build — on-droplet builds starve the live API and cause 5xx blips.
       - name: Build images in CI
         run: |
+          # Compose interpolates runtime env even for `build`; feed throwaway
+          # values so required-var checks pass. They never reach the images —
+          # real secrets live only in the droplet's /opt/billingservice/.env.
+          cat > .env <<'EOF'
+          POSTGRES_PASSWORD=ci-build-only
+          JWT_ACCESS_SECRET=ci-build-only
+          JWT_REFRESH_SECRET=ci-build-only
+          ENCRYPTION_KEY=ci-build-only
+          WEBHOOK_SIGNING_SECRET=ci-build-only
+          EOF
           docker compose -f docker-compose.prod.yml build api web
+          rm -f .env
           docker save billingservice-api billingservice-web | gzip -1 > images.tar.gz
           ls -lh images.tar.gz
 
