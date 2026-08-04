@@ -12,6 +12,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      host:
+        description: Override target server IP (empty = DEPLOY_HOST var / default)
+        required: false
+        default: ""
 
 concurrency:
   group: deploy-billing-production
@@ -22,7 +27,7 @@ jobs:
     name: Deploy to DigitalOcean
     runs-on: ubuntu-latest
     env:
-      DEPLOY_HOST: ${{ vars.DEPLOY_HOST || '168.144.41.111' }}
+      DEPLOY_HOST: ${{ inputs.host || vars.DEPLOY_HOST || '168.144.41.111' }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER || 'root' }}
       DEPLOY_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
     steps:
