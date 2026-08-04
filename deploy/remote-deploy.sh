@@ -145,6 +145,12 @@ else
   echo "ℹ Proxy/TLS check not green yet — certificate provisioning can take a minute."
 fi
 
+# --- 8b. Diagnostics: migration state + recent API errors (no secrets in either)
+log "Migration status"
+docker compose -f "$COMPOSE_FILE" exec -T api npx prisma migrate status || true
+log "Recent API error log"
+docker compose -f "$COMPOSE_FILE" logs --no-color --tail=500 api 2>/dev/null | grep -B2 -A14 "ERROR \[" | tail -100 || echo "(no errors in recent log)"
+
 # --- 9. Provider connectivity checks (status codes only — never secrets)
 set +u
 # shellcheck disable=SC1091
