@@ -1,18 +1,25 @@
 -- Integration onboarding requests (Bonum / eBarimt-LIME) + platform admin +
 -- per-tenant Bonum merchant credentials.
+--
+-- IDEMPOTENT on purpose: the production DB may already carry overlapping
+-- objects (schema evolved via `prisma db push` before this migration landed).
 
-CREATE TYPE "IntegrationKind" AS ENUM ('BONUM', 'EBARIMT');
+DO $$ BEGIN
+  CREATE TYPE "IntegrationKind" AS ENUM ('BONUM', 'EBARIMT');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE TYPE "IntegrationRequestStatus" AS ENUM ('SUBMITTED', 'EMAIL_SENT', 'APPROVED', 'REJECTED');
+DO $$ BEGIN
+  CREATE TYPE "IntegrationRequestStatus" AS ENUM ('SUBMITTED', 'EMAIL_SENT', 'APPROVED', 'REJECTED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-ALTER TABLE "User" ADD COLUMN "isPlatformAdmin" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isPlatformAdmin" BOOLEAN NOT NULL DEFAULT false;
 
 ALTER TABLE "Tenant"
-  ADD COLUMN "bonumTerminalId" TEXT,
-  ADD COLUMN "bonumAppSecretEnc" TEXT,
-  ADD COLUMN "bonumChecksumKeyEnc" TEXT;
+  ADD COLUMN IF NOT EXISTS "bonumTerminalId" TEXT,
+  ADD COLUMN IF NOT EXISTS "bonumAppSecretEnc" TEXT,
+  ADD COLUMN IF NOT EXISTS "bonumChecksumKeyEnc" TEXT;
 
-CREATE TABLE "IntegrationRequest" (
+CREATE TABLE IF NOT EXISTS "IntegrationRequest" (
     "id" TEXT NOT NULL,
     "tenantId" TEXT NOT NULL,
     "kind" "IntegrationKind" NOT NULL,
@@ -29,8 +36,10 @@ CREATE TABLE "IntegrationRequest" (
     CONSTRAINT "IntegrationRequest_pkey" PRIMARY KEY ("id")
 );
 
-CREATE INDEX "IntegrationRequest_status_createdAt_idx" ON "IntegrationRequest"("status", "createdAt");
+CREATE INDEX IF NOT EXISTS "IntegrationRequest_status_createdAt_idx" ON "IntegrationRequest"("status", "createdAt");
 
-CREATE INDEX "IntegrationRequest_tenantId_kind_createdAt_idx" ON "IntegrationRequest"("tenantId", "kind", "createdAt");
+CREATE INDEX IF NOT EXISTS "IntegrationRequest_tenantId_kind_createdAt_idx" ON "IntegrationRequest"("tenantId", "kind", "createdAt");
 
-ALTER TABLE "IntegrationRequest" ADD CONSTRAINT "IntegrationRequest_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$ BEGIN
+  ALTER TABLE "IntegrationRequest" ADD CONSTRAINT "IntegrationRequest_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
