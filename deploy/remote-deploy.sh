@@ -124,8 +124,12 @@ for i in $(seq 1 40); do
   sleep 3
 done
 if [ "$API_OK" != "1" ]; then
-  echo "⚠ API did not report healthy within the timeout."
-  echo "  Check logs with: docker compose -f $COMPOSE_FILE logs --tail=100 api"
+  echo "❌ API did not report healthy within the timeout. Container logs:"
+  echo "----------------------------------------------------------------"
+  docker compose -f "$COMPOSE_FILE" logs --tail=120 api || true
+  echo "----------------------------------------------------------------"
+  # Fail the deploy visibly — a dead API must never look like a green deploy.
+  exit 1
 fi
 
 # -k because the very first run may still be provisioning the Let's Encrypt cert.

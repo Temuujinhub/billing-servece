@@ -54,13 +54,20 @@ jobs:
           ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
             "PUBLIC_URL=https://billing.mastrsys.com bash /opt/billingservice/deploy/remote-deploy.sh"
 
-      - name: Verify public endpoint
+      - name: Verify deployed droplet (not just DNS)
         run: |
+          # DNS may point at a DIFFERENT server than the deploy target — verify
+          # the droplet we actually deployed to, via --resolve.
+          DNS_IP=$(getent hosts billing.mastrsys.com | awk '{print $1}' | head -1)
+          if [ -n "$DNS_IP" ] && [ "$DNS_IP" != "$DEPLOY_HOST" ]; then
+            echo "::warning title=DNS mismatch::billing.mastrsys.com resolves to $DNS_IP but this workflow deployed to $DEPLOY_HOST — visitors are NOT seeing this deploy!"
+          fi
           for i in $(seq 1 20); do
-            if curl -fsS --max-time 10 https://billing.mastrsys.com/health/live > /dev/null 2>&1; then
-              echo "✅ https://billing.mastrsys.com is live"
+            if curl -fsSk --resolve "billing.mastrsys.com:443:$DEPLOY_HOST" --max-time 10 https://billing.mastrsys.com/health/live > /dev/null 2>&1; then
+              echo "✅ Droplet $DEPLOY_HOST serves https://billing.mastrsys.com/health/live"
               exit 0
             fi
             sleep 6
           done
-          echo "::warning::Public HTTPS endpoint not confirmed yet (cert may still be provisioning)."
+          echo "::error::Deployed droplet $DEPLOY_HOST did not serve /health/live."
+          exit 1
