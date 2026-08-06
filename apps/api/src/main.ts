@@ -7,7 +7,9 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // rawBody: webhook checksums (Bonum x-checksum-v2, legacy HMAC) must be
+  // computed over the exact bytes received, not a re-serialized body.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
 
   app.use(helmet());
   app.set('trust proxy', 1); // behind Caddy

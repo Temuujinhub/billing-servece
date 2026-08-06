@@ -44,10 +44,16 @@ Bonum-ийн имэйлд хариу болгон дараах WEBHOOK URL-ээ 
 https://<PUBLIC_URL домэйн>/api/v1/webhooks/bonum/callback
 ```
 
-Webhook нь зөвхөн **trigger**: төлбөрийн үнэн бодит байдлыг үргэлж Bonum-ийн
-invoice-check API-гаар дахин шалгасны дараа л данс руу бичнэ (PAY-03 дүрэм —
-QPay-тай ижил). Checksum (`MERCHANT_CHECKSUM_KEY`) шалгалтын үр дүн audit
-log-д бүртгэгдэнэ.
+**Webhook нь Bonum дээр мөнгөний үнэн** (албан doc §3.3: status endpoint нь
+зөвхөн тест орчинд — "DO NOT USE THIS SERVICE ON PRODUCTION"). Ирсэн POST-ын
+`x-checksum-v2` header = `hex(HMAC-SHA256(rawBody, MERCHANT_CHECKSUM_KEY))`
+(§7). Манай сервер:
+
+- checksum **таарвал** → криптографаар баталгаажсан тул `SUCCESS/PAID`
+  мэдээллээр төлбөрийг шууд бичнэ; `FAILED/EXPIRED` бол intent-ийг EXPIRED
+  болгоно;
+- checksum **таарахгүй/байхгүй** бол → зөвхөн trigger гэж үзээд audit-д
+  бүртгэж, invoice-check API-гаар (тест орчны backstop) дахин шалгана.
 
 ### Линкийн амьдрах хугацаа ба дахин үүсгэлт (ГОЛ ЛОЖИК)
 
@@ -71,18 +77,31 @@ SMS  →  МАНАЙ богино линк (billingservice.mn/pay/<token>, ур�
 
 ### Auth rate limit
 
-`GET /bonum-gateway/ecommerce/auth/create` нь rate-limit-тэй тул token-ийг
-нэг удаа авч кэшлэн, дуусах хүртэл дахин ашиглана (single-flight; QPay
-adapter-тай ижил дүрэм).
+`GET /bonum-gateway/ecommerce/auth/create` нь rate-limit-тэй ("Use previous
+token. Do not get token too frequently", 429) тул token терминал тус бүрээр
+кэшлэгдэж (`expiresIn`=1800 сек), дуусахын өмнө `auth/refresh`-ээр сэргээгдэнэ
+(single-flight). Headers: `Authorization: AppSecret {APP_SECRET}` +
+`X-TERMINAL-ID`.
 
-### ⚠️ Go-live-аас өмнө баталгаажуулах
+### Контрактын товчлол (албан doc-той тулгагдсан ✓)
 
-Энэ хөгжүүлэлтийн орчноос psp.bonum.mn руу хандах боломжгүй байсан тул
-`apps/api/src/modules/providers/bonum.adapter.ts` доторх endpoint зам,
-талбарын нэрс (`PATH_*` тогтмолууд, `pick()` кандидатууд) албан ёсны doc-той
-(§2 Authentication, §3 Web Payment, §7 Webhooks) тулгаж шалгах шаардлагатай.
-Бүх provider-facing нэр нэг газарт төвлөрсөн тул засвар нэг мөрөөр хийгдэнэ.
-Эхлээд `BONUM_BASE_URL=https://testapi.bonum.mn` дээр туршина.
+| Үйлдэл | Endpoint | Тайлбар |
+|---|---|---|
+| Token авах | `GET /bonum-gateway/ecommerce/auth/create` | `AppSecret` + `X-TERMINAL-ID` headers |
+| Token сэргээх | `GET /bonum-gateway/ecommerce/auth/refresh` | `Bearer {refreshToken}` |
+| Нэхэмжлэх үүсгэх | `POST /bonum-gateway/ecommerce/invoices` | `{amount, callback, transactionId, expiresIn, items?}` → `{invoiceId, followUpLink}` |
+| Статус (зөвхөн тест!) | `GET /bonum-gateway/ecommerce/invoices/{invoiceId}` | Production-д хориотой — webhook ашиглана |
+| Webhook | манай URL руу POST | `x-checksum-v2` HMAC-SHA256 |
+
+- `callback` нь төлбөрийн дараа **браузер** буцах хаяг — манай pay page.
+  Сервер-сервер webhook нь Bonum талд урьдчилан бүртгэгдсэн URL.
+- Линкийн амьдрах хугацааг бид өөрсдөө `expiresIn`-ээр тохируулна —
+  `BONUM_LINK_TTL_MINUTES` (default 60 мин). Хугацаа дуусмагц Bonum
+  `FAILED/EXPIRED` webhook илгээдэг ба бид intent-ийг EXPIRED болгоно;
+  төлөгч дахин зочлоход шинэ линк үүснэ.
+- Эхлээд `BONUM_BASE_URL=https://testapi.bonum.mn` дээр туршина —
+  `GET /invoices/paid?invoiceId=...` тест endpoint-ээр төлөлт симуляц хийж
+  болно.
 
 ### Мерчант анкет (PaymentGateway Anket.docx)
 
@@ -177,8 +196,8 @@ Checklist:
 
 - [ ] Bonum имэйлд WEBHOOK URL-ээ хариу илгээж бүртгүүлсэн
 - [ ] `testapi.bonum.mn` дээр бүтэн урсгал (линк үүсэлт → төлөлт → webhook →
-      check → ledger) туршсан
-- [ ] Bonum adapter-ийн талбарын нэрсийг албан ёсны doc-той тулгасан
+      ledger) туршсан
+- [x] Bonum adapter-ийн endpoint/талбарын нэрс албан ёсны doc-той тулгагдсан
 - [ ] POS API 3.0 instance суусан, `GET /rest/info` дээр tenant-уудын TIN зөв
 - [ ] Тохиргоо хуудсанд tenant бүрийн анкет + eBarimt талбарууд бөглөгдсөн
 - [ ] `docker compose -f docker-compose.prod.yml up -d --build` + migrate

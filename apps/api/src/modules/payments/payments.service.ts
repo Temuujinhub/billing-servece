@@ -7,7 +7,7 @@ import { sha256 } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BonumAdapter } from '../providers/bonum.adapter';
 import { MockQpayAdapter } from '../providers/mock-qpay.adapter';
-import { PaymentProviderPort } from '../providers/payment-provider.port';
+import { PaymentProviderPort, ProviderPaymentStatus } from '../providers/payment-provider.port';
 import { PAYMENT_PORT } from '../providers/sms.port';
 import { ReceiptsService } from '../receipts/receipts.service';
 
@@ -253,8 +253,12 @@ export class PaymentsService {
    * provider, then commit the transaction + balance + receipt atomically.
    * Idempotent: the unique (provider, providerPaymentId) constraint plus the
    * state guard make duplicate/out-of-order callbacks harmless.
+   *
+   * `verifiedStatus` — цорын ганц зөвшөөрөгдөх эх сурвалж нь CHECKSUM-аар
+   * баталгаажсан Bonum webhook (Bonum §3.3: status endpoint нь production-д
+   * хориотой тул криптографаар баталгаажсан webhook нь мөнгөний үнэн болно).
    */
-  async confirmIntent(intentId: string, source: string) {
+  async confirmIntent(intentId: string, source: string, verifiedStatus?: ProviderPaymentStatus) {
     const intent = await this.prisma.paymentIntent.findUnique({ where: { id: intentId } });
     if (!intent) throw apiError(HttpStatus.NOT_FOUND, 'INTENT_NOT_FOUND', 'Төлбөрийн хүсэлт олдсонгүй.', 'Payment intent not found.');
 
@@ -271,9 +275,10 @@ export class PaymentsService {
       throw apiError(HttpStatus.CONFLICT, 'INTENT_NOT_CONFIRMABLE', 'Төлбөрийн хүсэлт баталгаажих төлөвт алга.', `Intent is ${intent.state}.`);
     }
 
-    // Authoritative provider check — never trust the callback alone.
+    // Authoritative check: a checksum-verified webhook, otherwise the provider
+    // API — a bare (unverified) callback is never trusted on its own.
     this.lastProviderCheck.set(intentId, Date.now());
-    const status = await this.provider.getPaymentStatus(intent.providerInvoiceId, { tenantId: intent.tenantId });
+    const status = verifiedStatus ?? (await this.provider.getPaymentStatus(intent.providerInvoiceId, { tenantId: intent.tenantId }));
     if (!status.paid || !status.providerPaymentId) {
       if (source !== 'poll') {
         await this.prisma.paymentEvent.create({ data: { intentId, type: 'payment_check.unpaid' } });
@@ -380,18 +385,19 @@ export class PaymentsService {
    * money on its own.
    */
   async handleBonumCallback(rawBody: Buffer | undefined, checksum: string | undefined, intentId: string | undefined, body: any) {
-    // Locate the intent first: our callback query hint, then provider ids.
+    const webhook = this.bonumAdapter.parseWebhook(body);
+
+    // Locate the intent: our query hint, then §7 body.invoiceId (= the stored
+    // providerInvoiceId — the pre-registered webhook URL carries no intent id).
     let intent = intentId ? await this.prisma.paymentIntent.findUnique({ where: { id: intentId } }) : null;
-    if (!intent && body && typeof body === 'object') {
-      const providerInvoiceId = body.invoiceId ?? body.invoice_id ?? body.id ?? body.orderId;
-      if (providerInvoiceId) {
-        intent = await this.prisma.paymentIntent.findUnique({
-          where: { provider_providerInvoiceId: { provider: 'bonum', providerInvoiceId: String(providerInvoiceId) } },
-        });
-      }
+    if (!intent && webhook?.invoiceId) {
+      intent = await this.prisma.paymentIntent.findUnique({
+        where: { provider_providerInvoiceId: { provider: 'bonum', providerInvoiceId: webhook.invoiceId } },
+      });
     }
 
-    // Checksum uses the TENANT's key (per-tenant Bonum terminal), env fallback.
+    // §7: x-checksum-v2 = hex(HMAC-SHA256(rawBody, MERCHANT_CHECKSUM_KEY)).
+    // Key is per-tenant (own terminal), env fallback.
     const raw = rawBody?.toString('utf8') ?? (body ? JSON.stringify(body) : '');
     const verdict = await this.bonumAdapter.verifyChecksum(raw, checksum, intent?.tenantId);
     if (!verdict.valid) {
@@ -401,14 +407,36 @@ export class PaymentsService {
       });
     }
 
-    if (intent) {
+    if (intent && webhook?.type === 'PAYMENT') {
       try {
-        await this.confirmIntent(intent.id, 'bonum_callback');
+        if (verdict.valid && webhook.paid) {
+          // Checksum-authenticated SUCCESS webhook is authoritative (§3.3
+          // forbids the status endpoint in production).
+          await this.confirmIntent(intent.id, 'bonum_webhook', {
+            paid: true,
+            providerPaymentId: webhook.transactionId ?? webhook.invoiceId ?? intent.id,
+            gross: webhook.amount ?? undefined,
+            paidAt: webhook.completedAt ?? new Date(),
+          });
+        } else if (verdict.valid && webhook.status.toUpperCase() === 'FAILED' && webhook.invoiceStatus?.toUpperCase() === 'EXPIRED') {
+          // Invoice expired unpaid — retire the intent; a fresh link is cut on
+          // the payer's next visit.
+          await this.prisma.paymentIntent.updateMany({
+            where: { id: intent.id, state: { in: ['PENDING', 'PROCESSING'] } },
+            data: { state: 'EXPIRED' },
+          });
+          await this.prisma.paymentEvent.create({
+            data: { intentId: intent.id, type: 'intent.expired', payload: { reason: 'bonum_webhook_expired' } },
+          });
+        } else {
+          // Unverified checksum → treat as a bare trigger: re-check via API.
+          await this.confirmIntent(intent.id, 'bonum_callback');
+        }
       } catch (e: any) {
         // Never fail the callback response — the poll backstop re-checks.
         this.logger.warn(`Bonum callback processing for ${intent.id}: ${e?.message}`);
       }
-    } else {
+    } else if (!intent) {
       this.logger.warn('Bonum webhook received for unknown invoice');
     }
     return 'SUCCESS';
