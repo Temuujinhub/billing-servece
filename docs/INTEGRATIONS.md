@@ -30,6 +30,12 @@ BONUM_APP_SECRET=...       # имэйлээр ирсэн Secret Key
 BONUM_CHECKSUM_KEY=...     # имэйлээр ирсэн MERCHANT_CHECKSUM_KEY
 ```
 
+> **Multi-tenant:** env доторх credentials нь платформын өөрийн (fallback)
+> терминал. Байгууллага (tenant) бүр Bonum дээр өөрийн терминалтай — тэдгээрийн
+> Terminal ID/Secret/Checksum нь Dashboard → Тохиргоо → «Bonum холболт» хэсэгт
+> шифрлэгдэж хадгалагдан, тухайн байгууллагын нэхэмжлэхэд автоматаар
+> хэрэглэгдэнэ. Онбордингийн бүрэн дараалал: [`ONBOARDING.md`](ONBOARDING.md).
+
 ### Webhook бүртгүүлэх
 
 Bonum-ийн имэйлд хариу болгон дараах WEBHOOK URL-ээ илгээж бүртгүүлнэ:

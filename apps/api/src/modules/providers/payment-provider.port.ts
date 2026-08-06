@@ -19,6 +19,12 @@ export interface ProviderPaymentStatus {
   paidAt?: Date;
 }
 
+/** Provider-neutral call context — lets multi-tenant adapters (Bonum) resolve
+ *  the tenant's own merchant credentials; single-account adapters ignore it. */
+export interface ProviderCallContext {
+  tenantId?: string;
+}
+
 export interface PaymentProviderPort {
   readonly code: string;
   createInvoice(args: {
@@ -27,8 +33,9 @@ export interface PaymentProviderPort {
     internalRef: string;
     /** Where hosted-checkout providers send the payer back (our pay page). */
     returnUrl?: string;
+    tenantId?: string;
   }): Promise<CreateProviderInvoiceResult>;
   /** Authoritative check — callbacks alone are never trusted (PAY-03). */
-  getPaymentStatus(providerInvoiceId: string): Promise<ProviderPaymentStatus>;
-  cancelInvoice(providerInvoiceId: string): Promise<void>;
+  getPaymentStatus(providerInvoiceId: string, ctx?: ProviderCallContext): Promise<ProviderPaymentStatus>;
+  cancelInvoice(providerInvoiceId: string, ctx?: ProviderCallContext): Promise<void>;
 }

@@ -1,9 +1,12 @@
 import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { AuthUser, CurrentUser, Roles } from '../../common/decorators';
+import { encryptSecret } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BonumAdapter } from '../providers/bonum.adapter';
 
 class UpdateTenantDto {
   @IsOptional()
@@ -69,13 +72,44 @@ class UpdateTenantDto {
   @IsString()
   @MaxLength(10)
   ebarimtDistrictCode?: string;
+
+  // --- Bonum merchant credentials (write-only; шифрлэгдэж хадгалагдана) ---
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  bonumTerminalId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  bonumAppSecret?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  bonumChecksumKey?: string;
+}
+
+/** Encrypted credential columns never leave the API — flags replace them. */
+function publicTenant<T extends { bonumAppSecretEnc?: string | null; bonumChecksumKeyEnc?: string | null }>(tenant: T) {
+  const { bonumAppSecretEnc, bonumChecksumKeyEnc, ...rest } = tenant;
+  return {
+    ...rest,
+    hasBonumAppSecret: !!bonumAppSecretEnc,
+    hasBonumChecksumKey: !!bonumChecksumKeyEnc,
+  };
 }
 
 @ApiTags('tenants')
 @ApiBearerAuth()
 @Controller('tenant')
 export class TenantsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+    private readonly bonum: BonumAdapter,
+  ) {}
 
   @Get()
   async me(@CurrentUser() user: AuthUser) {
@@ -89,7 +123,7 @@ export class TenantsController {
       orderBy: { createdAt: 'asc' },
     });
     return {
-      tenant,
+      tenant: publicTenant(tenant),
       team: team.map((m) => ({ id: m.id, role: m.role, user: m.user, since: m.createdAt })),
       me: user,
     };
@@ -98,6 +132,12 @@ export class TenantsController {
   @Roles(Role.OWNER)
   @Patch()
   async update(@CurrentUser() user: AuthUser, @Body() dto: UpdateTenantDto) {
+    // Credentials are write-only: empty string means "leave unchanged".
+    const encKey = this.config.getOrThrow<string>('ENCRYPTION_KEY');
+    const secretUpdates: Record<string, string> = {};
+    if (dto.bonumAppSecret?.trim()) secretUpdates.bonumAppSecretEnc = encryptSecret(encKey, dto.bonumAppSecret.trim());
+    if (dto.bonumChecksumKey?.trim()) secretUpdates.bonumChecksumKeyEnc = encryptSecret(encKey, dto.bonumChecksumKey.trim());
+
     const tenant = await this.prisma.tenant.update({
       where: { id: user.tenantId },
       data: {
@@ -113,8 +153,12 @@ export class TenantsController {
         ebarimtPosNo: dto.ebarimtPosNo?.trim(),
         ebarimtBranchNo: dto.ebarimtBranchNo?.trim(),
         ebarimtDistrictCode: dto.ebarimtDistrictCode?.trim(),
+        bonumTerminalId: dto.bonumTerminalId?.trim(),
+        ...secretUpdates,
       },
     });
+    // Adapter caches resolved credentials briefly — drop them on change.
+    this.bonum.invalidateCreds(user.tenantId);
     await this.prisma.auditLog.create({
       data: {
         tenantId: user.tenantId,
@@ -123,8 +167,9 @@ export class TenantsController {
         action: 'tenant.updated',
         targetType: 'tenant',
         targetId: user.tenantId,
+        meta: { bonumCredentialsChanged: Object.keys(secretUpdates).length > 0 || !!dto.bonumTerminalId },
       },
     });
-    return tenant;
+    return publicTenant(tenant);
   }
 }
