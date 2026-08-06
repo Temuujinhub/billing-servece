@@ -31,30 +31,65 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure SSH key
+      - name: Configure SSH auth (key, password fallback)
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || secrets.DEPLOY_SSH_KEY1 }}
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
-          if [ -z "$DEPLOY_SSH_KEY" ]; then
-            echo "::error title=Missing SSH key secret::Add DEPLOY_SSH_KEY under Settings → Secrets and variables → Actions."
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          # Prefer key auth when the key actually opens THIS host; otherwise
+          # fall back to password auth (DEPLOY_PASSWORD secret) via sshpass.
+          if [ -n "$DEPLOY_SSH_KEY" ]; then
+            printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            if ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+                "$DEPLOY_USER@$DEPLOY_HOST" true 2>/dev/null; then
+              echo "DEPLOY_AUTH=key" >> "$GITHUB_ENV"
+              echo "✅ Key auth works for $DEPLOY_HOST"
+              exit 0
+            fi
+            echo "Key auth failed for $DEPLOY_HOST — trying password auth."
+          fi
+          if [ -n "$SSHPASS" ]; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+            if sshpass -e ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=accept-new \
+                "$DEPLOY_USER@$DEPLOY_HOST" true; then
+              echo "DEPLOY_AUTH=password" >> "$GITHUB_ENV"
+              echo "✅ Password auth works for $DEPLOY_HOST"
+              exit 0
+            fi
+            echo "::error title=SSH auth failed::Neither DEPLOY_SSH_KEY nor DEPLOY_PASSWORD can open $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PORT."
             exit 1
           fi
-          mkdir -p ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "::error title=Missing SSH secrets::Add DEPLOY_SSH_KEY (authorized on the server) or DEPLOY_PASSWORD under Settings → Secrets and variables → Actions."
+          exit 1
 
       - name: Sync project to droplet
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
+          if [ "$DEPLOY_AUTH" = "password" ]; then
+            RSH="sshpass -e ssh -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
+          else
+            RSH="ssh -i $HOME/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
+          fi
           rsync -az --delete \
             --exclude '.git' --exclude 'node_modules' --exclude '.next' --exclude 'dist' \
             --exclude '.env' \
-            -e "ssh -i ~/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new" \
+            -e "$RSH" \
             ./ "$DEPLOY_USER@$DEPLOY_HOST:/opt/billingservice/"
 
       - name: Run remote deploy script
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+          if [ "$DEPLOY_AUTH" = "password" ]; then
+            SSH="sshpass -e ssh -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
+          else
+            SSH="ssh -i $HOME/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
+          fi
+          $SSH "$DEPLOY_USER@$DEPLOY_HOST" \
             "PUBLIC_URL=https://billing.mastrsys.com bash /opt/billingservice/deploy/remote-deploy.sh"
 
       - name: Verify deployed droplet (not just DNS)
