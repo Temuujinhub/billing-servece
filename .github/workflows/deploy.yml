@@ -30,14 +30,52 @@ on:
         description: One-time full DB copy from this old server IP (empty = skip). OVERWRITES the target DB.
         required: false
         default: ""
+      diag:
+        description: Diagnostics only — print migration state and API logs, deploy nothing
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: deploy-billing-production
   cancel-in-progress: false
 
 jobs:
+  diag:
+    name: Server diagnostics
+    if: ${{ inputs.diag }}
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: ${{ inputs.host || vars.DEPLOY_HOST || '202.37.235.16' }}
+      DEPLOY_USER: root
+      DEPLOY_PORT: "22"
+    steps:
+      - name: Configure SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || secrets.DEPLOY_SSH_KEY1 }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+      - name: Collect diagnostics
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<'EOSSH'
+          cd /opt/billingservice
+          C="docker compose -f docker-compose.prod.yml"
+          echo "=== _prisma_migrations ==="
+          $C exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT migration_name, started_at, finished_at, rolled_back_at, logs FROM _prisma_migrations ORDER BY started_at;"' || true
+          echo "=== Tenant columns ==="
+          $C exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT column_name FROM information_schema.columns WHERE table_name='"'"'Tenant'"'"' ORDER BY ordinal_position;"' || true
+          echo "=== PaymentIntent columns ==="
+          $C exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT column_name FROM information_schema.columns WHERE table_name='"'"'PaymentIntent'"'"' ORDER BY ordinal_position;"' || true
+          echo "=== API log head ==="
+          $C logs --no-color api 2>/dev/null | head -120 || true
+          EOSSH
+
   deploy:
     name: Deploy to DigitalOcean
+    if: ${{ !inputs.diag }}
     runs-on: ubuntu-latest
     env:
       # Production moved to the Mongolia-hosted server (api.ebarimt.mn is
