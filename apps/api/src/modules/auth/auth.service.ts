@@ -76,9 +76,21 @@ export class AuthService {
     return this.issueTokens({ userId: user.id, email, name: user.name, tenantId: tenant.id, role: membership.role, isPlatformAdmin: false });
   }
 
+  /**
+   * Production DB-д seed ажилладаггүй тул платформын админыг env-ээр олгоно:
+   * PLATFORM_ADMIN_EMAILS (таслалаар тусгаарласан) жагсаалтад байгаа имэйл
+   * нэвтрэх мөчид нь автоматаар isPlatformAdmin=true болно.
+   */
+  private platformAdminEmails(): string[] {
+    return (this.config.get<string>('PLATFORM_ADMIN_EMAILS') ?? '')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+  }
+
   async login(dto: LoginDto) {
     const email = dto.email.trim().toLowerCase();
-    const user = await this.prisma.user.findUnique({
+    let user = await this.prisma.user.findUnique({
       where: { email },
       include: { memberships: { include: { tenant: true }, orderBy: { createdAt: 'asc' } } },
     });
@@ -87,6 +99,15 @@ export class AuthService {
     if (!user) throw invalid;
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
     if (!ok) throw invalid;
+
+    // Env-listed platform staff are promoted on login (audited).
+    if (!user.isPlatformAdmin && this.platformAdminEmails().includes(email)) {
+      await this.prisma.user.update({ where: { id: user.id }, data: { isPlatformAdmin: true } });
+      await this.prisma.auditLog.create({
+        data: { actorId: user.id, actorEmail: email, action: 'user.platform_admin_granted', targetType: 'user', targetId: user.id, meta: { source: 'PLATFORM_ADMIN_EMAILS' } },
+      });
+      user = { ...user, isPlatformAdmin: true };
+    }
 
     const membership = user.memberships[0];
     if (!membership || membership.tenant.status !== 'ACTIVE') {
