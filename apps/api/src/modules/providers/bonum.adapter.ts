@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes } from 'crypto';
 import { decryptSecret } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateProviderInvoiceResult, PaymentProviderPort, ProviderCallContext, ProviderPaymentStatus } from './payment-provider.port';
+import { CreateProviderInvoiceResult, PaymentProviderPort, ProviderPaymentStatus } from './payment-provider.port';
 
 /**
  * Bonum Gateway (psp.bonum.mn) ecommerce adapter — verified against the
