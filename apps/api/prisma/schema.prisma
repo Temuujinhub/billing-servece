@@ -54,11 +54,21 @@ model Tenant {
   timezone      String       @default("Asia/Ulaanbaatar")
   contactEmail  String?
   contactPhone  String?
-  // KYB onboarding details (M-03)
-  address        String?
-  bankName       String?
-  bankAccount    String?
-  representative String?
+  // KYB onboarding details (M-03) + PSP onboarding (Bonum anket)
+  address         String?
+  bankName        String?
+  bankAccount     String?
+  bankAccountName String?
+  representative  String?
+  // --- eBarimt POS API 3.0 (ТЕГ-т бүртгэлтэй ӨӨРИЙН merchantTin/posNo) ---
+  ebarimtMerchantTin  String?
+  ebarimtPosNo        String?
+  ebarimtBranchNo     String?
+  ebarimtDistrictCode String?
+  // --- Bonum merchant credentials (per tenant; secrets AES-256-GCM encrypted) ---
+  bonumTerminalId     String?
+  bonumAppSecretEnc   String?
+  bonumChecksumKeyEnc String?
   // Custom payer SMS template with {{нэр}} {{дүн}} {{дугаар}} {{хугацаа}} {{линк}} {{байгууллага}} vars.
   smsTemplate   String?
   // Send SMS transliterated to Latin (GSM-7: 160 chars/segment vs 70 — ~half the cost).
@@ -77,6 +87,7 @@ model Tenant {
   providerConfigs ProviderConfig[]
   apiKeys         ApiKey[]
   webhooks        WebhookEndpoint[]
+  integrationRequests IntegrationRequest[]
 }
 
 /// Tenant-level external provider settings (QPAY, CALLPRO). Secret fields
@@ -109,7 +120,7 @@ model User {
   phone         String?
   name          String
   passwordHash  String
-  // Platform-operator access: sees the admin area (integrations, ops stats).
+  // Platform-operator access: sees the admin area (production column: "platformAdmin").
   platformAdmin Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -143,6 +154,44 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Integration onboarding requests (Bonum / eBarimt-LIME мерчант бүртгэл)
+// ---------------------------------------------------------------------------
+
+enum IntegrationKind {
+  BONUM
+  EBARIMT
+}
+
+enum IntegrationRequestStatus {
+  SUBMITTED // хүсэлт үүссэн (имэйл илгээгдээгүй/амжилтгүй)
+  EMAIL_SENT // Bonum/LIME рүү имэйл илгээгдсэн
+  APPROVED // нөгөө тал бүртгэсэн — админ баталгаажуулсан
+  REJECTED
+}
+
+// Bonum/LIME талд автомат мерчант бүртгэл байхгүй тул хүсэлт бүр имэйлээр
+// илгээгдэж, platform admin гараар хянаж APPROVED/REJECTED болгоно.
+model IntegrationRequest {
+  id          String                   @id @default(uuid())
+  tenantId    String
+  kind        IntegrationKind
+  status      IntegrationRequestStatus @default(SUBMITTED)
+  payload     Json // анкетын snapshot — илгээсэн агшны мэдээлэл
+  note        String? // админы тэмдэглэл / татгалзсан шалтгаан
+  error       String? // сүүлийн имэйл илгээлтийн алдаа
+  emailedAt   DateTime?
+  decidedAt   DateTime?
+  createdById String?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([tenantId, kind, createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -338,6 +387,8 @@ model PaymentIntent {
   state             IntentState @default(CREATED)
   idemKey           String?
   qrText            String?
+  // Hosted checkout link (Bonum web payment) — short-lived on the provider side.
+  paymentUrl        String?
   expiresAt         DateTime?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt

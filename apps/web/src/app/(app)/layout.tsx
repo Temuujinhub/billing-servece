@@ -24,6 +24,7 @@ const NAV = [
 const ADMIN_NAV = [
   { href: '/admin', label: 'Админ самбар', icon: '🛡️' },
   { href: '/admin/merchants', label: 'Байгууллага / KYB', icon: '🏢' },
+  { href: '/admin/requests', label: 'Бүртгэлийн хүсэлт', icon: '📮' },
   { href: '/admin/transactions', label: 'Гүйлгээ', icon: '🧮' },
   { href: '/admin/ops', label: 'Ops дараалал', icon: '🚦' },
   { href: '/admin/reconciliation', label: 'Тулгалт', icon: '⚖️' },

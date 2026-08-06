@@ -1,10 +1,13 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Query } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { IsBoolean, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { AuthUser, CurrentUser, Roles } from '../../common/decorators';
 import { apiError } from '../../common/filters/http-exception.filter';
+import { encryptSecret } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BonumAdapter } from '../providers/bonum.adapter';
 
 class UpdateTenantDto {
   @IsOptional()
@@ -38,11 +41,34 @@ class UpdateTenantDto {
   @IsBoolean()
   smsTransliterate?: boolean;
 
-  // KYB onboarding fields (M-03)
+  // KYB onboarding fields (M-03) + PSP onboarding (Bonum anket)
   @IsOptional() @IsString() @MaxLength(300) address?: string;
+  @IsOptional() @IsString() @MaxLength(30) contactPhone?: string;
   @IsOptional() @IsString() @MaxLength(100) bankName?: string;
   @IsOptional() @IsString() @MaxLength(40) bankAccount?: string;
+  @IsOptional() @IsString() @MaxLength(150) bankAccountName?: string;
   @IsOptional() @IsString() @MaxLength(150) representative?: string;
+
+  // --- eBarimt POS API 3.0 — тухайн компанийн ӨӨРИЙН ТЕГ бүртгэл ---
+  @IsOptional() @IsString() @MaxLength(20) ebarimtMerchantTin?: string;
+  @IsOptional() @IsString() @MaxLength(20) ebarimtPosNo?: string;
+  @IsOptional() @IsString() @MaxLength(10) ebarimtBranchNo?: string;
+  @IsOptional() @IsString() @MaxLength(10) ebarimtDistrictCode?: string;
+
+  // --- Bonum merchant credentials (write-only; шифрлэгдэж хадгалагдана) ---
+  @IsOptional() @IsString() @MaxLength(30) bonumTerminalId?: string;
+  @IsOptional() @IsString() @MaxLength(300) bonumAppSecret?: string;
+  @IsOptional() @IsString() @MaxLength(300) bonumChecksumKey?: string;
+}
+
+/** Encrypted credential columns never leave the API — flags replace them. */
+function publicTenant<T extends { bonumAppSecretEnc?: string | null; bonumChecksumKeyEnc?: string | null }>(tenant: T) {
+  const { bonumAppSecretEnc, bonumChecksumKeyEnc, ...rest } = tenant;
+  return {
+    ...rest,
+    hasBonumAppSecret: !!bonumAppSecretEnc,
+    hasBonumChecksumKey: !!bonumChecksumKeyEnc,
+  };
 }
 
 class EbarimtRequestDto {
@@ -77,7 +103,11 @@ async function ebarimtInfoGet(path: string): Promise<any | null> {
 @ApiBearerAuth()
 @Controller('tenant')
 export class TenantsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+    private readonly bonum: BonumAdapter,
+  ) {}
 
   @Get()
   async me(@CurrentUser() user: AuthUser) {
@@ -91,7 +121,7 @@ export class TenantsController {
       orderBy: { createdAt: 'asc' },
     });
     return {
-      tenant,
+      tenant: publicTenant(tenant),
       team: team.map((m) => ({ id: m.id, role: m.role, user: m.user, since: m.createdAt })),
       me: user,
     };
@@ -108,6 +138,12 @@ export class TenantsController {
         'The template must contain the {{линк}} variable.',
       );
     }
+    // Credentials are write-only: empty string means "leave unchanged".
+    const encKey = this.config.getOrThrow<string>('ENCRYPTION_KEY');
+    const secretUpdates: Record<string, string> = {};
+    if (dto.bonumAppSecret?.trim()) secretUpdates.bonumAppSecretEnc = encryptSecret(encKey, dto.bonumAppSecret.trim());
+    if (dto.bonumChecksumKey?.trim()) secretUpdates.bonumChecksumKeyEnc = encryptSecret(encKey, dto.bonumChecksumKey.trim());
+
     const tenant = await this.prisma.tenant.update({
       where: { id: user.tenantId },
       data: {
@@ -118,11 +154,21 @@ export class TenantsController {
         smsTemplate: dto.smsTemplate !== undefined ? dto.smsTemplate.trim() || null : undefined,
         smsTransliterate: dto.smsTransliterate,
         address: dto.address?.trim(),
+        contactPhone: dto.contactPhone?.trim(),
         bankName: dto.bankName?.trim(),
         bankAccount: dto.bankAccount?.trim(),
+        bankAccountName: dto.bankAccountName?.trim(),
         representative: dto.representative?.trim(),
+        ebarimtMerchantTin: dto.ebarimtMerchantTin?.trim(),
+        ebarimtPosNo: dto.ebarimtPosNo?.trim(),
+        ebarimtBranchNo: dto.ebarimtBranchNo?.trim(),
+        ebarimtDistrictCode: dto.ebarimtDistrictCode?.trim(),
+        bonumTerminalId: dto.bonumTerminalId?.trim(),
+        ...secretUpdates,
       },
     });
+    // Adapter caches resolved credentials briefly — drop them on change.
+    this.bonum.invalidateCreds(user.tenantId);
     await this.prisma.auditLog.create({
       data: {
         tenantId: user.tenantId,
@@ -131,9 +177,10 @@ export class TenantsController {
         action: 'tenant.updated',
         targetType: 'tenant',
         targetId: user.tenantId,
+        meta: { bonumCredentialsChanged: Object.keys(secretUpdates).length > 0 || !!dto.bonumTerminalId },
       },
     });
-    return tenant;
+    return publicTenant(tenant);
   }
 
   /**
@@ -220,6 +267,6 @@ export class TenantsController {
         action: 'kyb.submitted', targetType: 'tenant', targetId: user.tenantId,
       },
     });
-    return tenant;
+    return publicTenant(tenant);
   }
 }

@@ -65,6 +65,20 @@ async function main() {
     },
   });
 
+  // Platform staff — /admin/* (integration onboarding requests). VIEWER
+  // membership in the demo tenant so the ordinary login flow works.
+  await prisma.user.upsert({
+    where: { email: 'admin@billingservice.mn' },
+    update: { platformAdmin: true },
+    create: {
+      email: 'admin@billingservice.mn',
+      name: 'Платформын Админ',
+      passwordHash: await bcrypt.hash('Admin123$', 12),
+      platformAdmin: true,
+      memberships: { create: { tenantId: tenant.id, role: 'VIEWER' } },
+    },
+  });
+
   // 40 customers
   const customers = [] as { id: string; phone: string | null }[];
   for (let i = 0; i < 40; i++) {

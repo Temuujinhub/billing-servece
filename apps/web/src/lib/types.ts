@@ -191,9 +191,26 @@ export interface PayPageData {
     dueDate: string | null;
     customerName: string;
   };
-  payment: { intentId: string; state: string; qrText: string | null; expiresAt: string | null } | null;
+  payment: { intentId: string; state: string; qrText: string | null; paymentUrl: string | null; expiresAt: string | null } | null;
   receipt: { receiptNo: string | null; lottery: string | null; qrData: string | null; state: string } | null;
   sandbox: boolean;
+}
+
+export type IntegrationKind = 'BONUM' | 'EBARIMT';
+export type IntegrationRequestStatus = 'SUBMITTED' | 'EMAIL_SENT' | 'APPROVED' | 'REJECTED';
+
+export interface IntegrationRequest {
+  id: string;
+  tenantId: string;
+  kind: IntegrationKind;
+  status: IntegrationRequestStatus;
+  payload: Record<string, string | null>;
+  note: string | null;
+  error: string | null;
+  emailedAt: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+  tenant?: { id: string; name: string; regNo: string | null; contactEmail: string | null; contactPhone: string | null };
 }
 
 export interface TenantInfo {
@@ -211,7 +228,15 @@ export interface TenantInfo {
     address: string | null;
     bankName: string | null;
     bankAccount: string | null;
+    bankAccountName: string | null;
     representative: string | null;
+    ebarimtMerchantTin: string | null;
+    ebarimtPosNo: string | null;
+    ebarimtBranchNo: string | null;
+    ebarimtDistrictCode: string | null;
+    bonumTerminalId: string | null;
+    hasBonumAppSecret: boolean;
+    hasBonumChecksumKey: boolean;
     createdAt: string;
     modules: { code: string; enabled: boolean; quantity: number }[];
   };

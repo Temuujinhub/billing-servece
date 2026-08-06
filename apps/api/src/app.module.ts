@@ -16,6 +16,7 @@ import { DevelopersModule } from './modules/developers/developers.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { HealthModule } from './modules/health/health.module';
 import { ImportsModule } from './modules/imports/imports.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -42,6 +43,7 @@ import { TenantsModule } from './modules/tenants/tenants.module';
     ReportsModule,
     DevelopersModule,
     AnalyticsModule,
+    IntegrationsModule,
     HealthModule,
   ],
   providers: [
