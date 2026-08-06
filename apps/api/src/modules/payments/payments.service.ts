@@ -150,7 +150,7 @@ export class PaymentsService {
           data: { intentId: existing.id, type: 'intent.expired', payload: { reason: 'provider_link_expired' } },
         });
         if (existing.providerInvoiceId) {
-          await this.provider.cancelInvoice(existing.providerInvoiceId).catch(() => undefined);
+          await this.provider.cancelInvoice(existing.providerInvoiceId, { tenantId: existing.tenantId }).catch(() => undefined);
         }
       }
     }
@@ -177,6 +177,8 @@ export class PaymentsService {
         internalRef: intent.id,
         // Hosted-checkout providers (Bonum) send the payer back to OUR page.
         returnUrl: `${publicUrl}/pay/${token}`,
+        // Multi-tenant providers bill against the tenant's own terminal.
+        tenantId: invoice.tenantId,
       });
     } catch (e: any) {
       await this.prisma.paymentIntent.update({
@@ -271,7 +273,7 @@ export class PaymentsService {
 
     // Authoritative provider check — never trust the callback alone.
     this.lastProviderCheck.set(intentId, Date.now());
-    const status = await this.provider.getPaymentStatus(intent.providerInvoiceId);
+    const status = await this.provider.getPaymentStatus(intent.providerInvoiceId, { tenantId: intent.tenantId });
     if (!status.paid || !status.providerPaymentId) {
       if (source !== 'poll') {
         await this.prisma.paymentEvent.create({ data: { intentId, type: 'payment_check.unpaid' } });
@@ -378,16 +380,7 @@ export class PaymentsService {
    * money on its own.
    */
   async handleBonumCallback(rawBody: Buffer | undefined, checksum: string | undefined, intentId: string | undefined, body: any) {
-    const raw = rawBody?.toString('utf8') ?? (body ? JSON.stringify(body) : '');
-    const verdict = this.bonumAdapter.verifyChecksum(raw, checksum);
-    if (!verdict.valid) {
-      this.logger.warn(`Bonum webhook checksum not verified (scheme=${verdict.scheme ?? 'none'})`);
-      await this.prisma.auditLog.create({
-        data: { action: 'webhook.checksum_unverified', targetType: 'webhook', meta: { provider: 'bonum' } },
-      });
-    }
-
-    // Locate the intent: our callback query hint first, then provider ids.
+    // Locate the intent first: our callback query hint, then provider ids.
     let intent = intentId ? await this.prisma.paymentIntent.findUnique({ where: { id: intentId } }) : null;
     if (!intent && body && typeof body === 'object') {
       const providerInvoiceId = body.invoiceId ?? body.invoice_id ?? body.id ?? body.orderId;
@@ -397,6 +390,17 @@ export class PaymentsService {
         });
       }
     }
+
+    // Checksum uses the TENANT's key (per-tenant Bonum terminal), env fallback.
+    const raw = rawBody?.toString('utf8') ?? (body ? JSON.stringify(body) : '');
+    const verdict = await this.bonumAdapter.verifyChecksum(raw, checksum, intent?.tenantId);
+    if (!verdict.valid) {
+      this.logger.warn(`Bonum webhook checksum not verified (scheme=${verdict.scheme ?? 'none'})`);
+      await this.prisma.auditLog.create({
+        data: { action: 'webhook.checksum_unverified', targetType: 'webhook', meta: { provider: 'bonum' } },
+      });
+    }
+
     if (intent) {
       try {
         await this.confirmIntent(intent.id, 'bonum_callback');

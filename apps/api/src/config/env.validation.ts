@@ -47,6 +47,18 @@ export const envValidationSchema = Joi.object({
   EBARIMT_DISTRICT_CODE: Joi.string().default('3505'),
   EBARIMT_CLASSIFICATION_CODE: Joi.string().default('6499999'),
 
+  // --- Email provider (onboarding хүсэлт Bonum/LIME рүү илгээх) ---
+  EMAIL_PROVIDER: Joi.string().valid('mock', 'smtp').default('mock'),
+  SMTP_HOST: Joi.string().when('EMAIL_PROVIDER', { is: 'smtp', then: Joi.required(), otherwise: Joi.optional().allow('') }),
+  SMTP_PORT: Joi.number().default(587),
+  SMTP_SECURE: Joi.string().valid('true', 'false').default('false'),
+  SMTP_USER: Joi.string().optional().allow(''),
+  SMTP_PASS: Joi.string().optional().allow(''),
+  EMAIL_FROM: Joi.string().optional().allow(''),
+  // Хүлээн авагчид — Bonum sales / LIME support имэйл хаягууд.
+  ONBOARDING_BONUM_EMAIL: Joi.string().email().optional().allow(''),
+  ONBOARDING_LIME_EMAIL: Joi.string().email().optional().allow(''),
+
   // --- SMS provider selection ---
   SMS_PROVIDER: Joi.string().valid('mock', 'callpro').default('mock'),
   CALLPRO_BASE_URL: Joi.string().uri().default('https://api-text.callpro.mn/v1/sms'),

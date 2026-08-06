@@ -3,12 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { BonumAdapter } from './bonum.adapter';
 import { CallProSmsAdapter } from './callpro-sms.adapter';
 import { EBARIMT_PORT } from './ebarimt.port';
+import { EMAIL_PORT } from './email.port';
 import { MockEbarimtAdapter } from './mock-ebarimt.adapter';
+import { MockEmailAdapter } from './mock-email.adapter';
 import { MockQpayAdapter } from './mock-qpay.adapter';
 import { MockSmsAdapter } from './mock-sms.adapter';
 import { PosApiEbarimtAdapter } from './posapi-ebarimt.adapter';
 import { QpayAdapter } from './qpay.adapter';
 import { QpayEbarimtAdapter } from './qpay-ebarimt.adapter';
+import { SmtpEmailAdapter } from './smtp-email.adapter';
 import { PAYMENT_PORT, SMS_PORT } from './sms.port';
 
 /**
@@ -28,6 +31,8 @@ import { PAYMENT_PORT, SMS_PORT } from './sms.port';
     MockEbarimtAdapter,
     QpayEbarimtAdapter,
     PosApiEbarimtAdapter,
+    MockEmailAdapter,
+    SmtpEmailAdapter,
     {
       provide: PAYMENT_PORT,
       inject: [ConfigService, MockQpayAdapter, QpayAdapter, BonumAdapter],
@@ -62,7 +67,13 @@ import { PAYMENT_PORT, SMS_PORT } from './sms.port';
         }
       },
     },
+    {
+      provide: EMAIL_PORT,
+      inject: [ConfigService, MockEmailAdapter, SmtpEmailAdapter],
+      useFactory: (config: ConfigService, mock: MockEmailAdapter, smtp: SmtpEmailAdapter) =>
+        config.get('EMAIL_PROVIDER') === 'smtp' ? smtp : mock,
+    },
   ],
-  exports: [PAYMENT_PORT, SMS_PORT, EBARIMT_PORT, MockQpayAdapter, QpayAdapter, BonumAdapter, PosApiEbarimtAdapter],
+  exports: [PAYMENT_PORT, SMS_PORT, EBARIMT_PORT, EMAIL_PORT, MockQpayAdapter, QpayAdapter, BonumAdapter, PosApiEbarimtAdapter],
 })
 export class ProvidersModule {}

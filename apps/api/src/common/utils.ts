@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes } from 'crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'crypto';
 
 /** Normalize a Mongolian mobile number to `+976XXXXXXXX`. Returns null when invalid. */
 export function normalizeMnPhone(input: unknown): string | null {
@@ -39,6 +39,26 @@ export function sha256(value: string): string {
 
 export function hmacSign(secret: string, payload: string): string {
   return createHmac('sha256', secret).update(payload).digest('hex');
+}
+
+/**
+ * Field-level crypto for provider credentials that MUST be recoverable (API
+ * calls need the plaintext) — AES-256-GCM keyed by ENCRYPTION_KEY (64 hex).
+ * Format: base64(iv).base64(tag).base64(ciphertext).
+ */
+export function encryptSecret(keyHex: string, plaintext: string): string {
+  const key = Buffer.from(keyHex, 'hex');
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  return `${iv.toString('base64')}.${cipher.getAuthTag().toString('base64')}.${enc.toString('base64')}`;
+}
+
+export function decryptSecret(keyHex: string, stored: string): string {
+  const [iv, tag, data] = stored.split('.');
+  const decipher = createDecipheriv('aes-256-gcm', Buffer.from(keyHex, 'hex'), Buffer.from(iv, 'base64'));
+  decipher.setAuthTag(Buffer.from(tag, 'base64'));
+  return Buffer.concat([decipher.update(Buffer.from(data, 'base64')), decipher.final()]).toString('utf8');
 }
 
 /** Format integer MNT for logs/messages: 1234567 → "1,234,567₮". */

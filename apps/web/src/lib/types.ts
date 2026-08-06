@@ -8,6 +8,7 @@ export interface SessionUser {
   name: string;
   role: Role;
   tenantId: string;
+  isPlatformAdmin?: boolean;
 }
 
 export interface AuthResponse {
@@ -187,6 +188,23 @@ export interface PayPageData {
   sandbox: boolean;
 }
 
+export type IntegrationKind = 'BONUM' | 'EBARIMT';
+export type IntegrationRequestStatus = 'SUBMITTED' | 'EMAIL_SENT' | 'APPROVED' | 'REJECTED';
+
+export interface IntegrationRequest {
+  id: string;
+  tenantId: string;
+  kind: IntegrationKind;
+  status: IntegrationRequestStatus;
+  payload: Record<string, string | null>;
+  note: string | null;
+  error: string | null;
+  emailedAt: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+  tenant?: { id: string; name: string; regNo: string | null; contactEmail: string | null; contactPhone: string | null };
+}
+
 export interface TenantInfo {
   tenant: {
     id: string;
@@ -204,6 +222,9 @@ export interface TenantInfo {
     ebarimtPosNo: string | null;
     ebarimtBranchNo: string | null;
     ebarimtDistrictCode: string | null;
+    bonumTerminalId: string | null;
+    hasBonumAppSecret: boolean;
+    hasBonumChecksumKey: boolean;
     createdAt: string;
     modules: { code: string; enabled: boolean; quantity: number }[];
   };

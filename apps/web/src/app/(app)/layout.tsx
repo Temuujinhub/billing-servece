@@ -101,6 +101,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </Link>
               );
             })}
+            {user.isPlatformAdmin && (
+              <>
+                <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-widest text-navy-300">Платформ</p>
+                <Link
+                  href="/admin/requests"
+                  onClick={() => setMenuOpen(false)}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium transition ${
+                    pathname.startsWith('/admin/requests') ? 'bg-teal-50 text-teal-700' : 'text-navy-700 hover:bg-navy-50'
+                  }`}
+                  aria-current={pathname.startsWith('/admin/requests') ? 'page' : undefined}
+                >
+                  <span aria-hidden="true">📮</span>
+                  Бүртгэлийн хүсэлт
+                </Link>
+              </>
+            )}
             <div className="mt-auto rounded-xl bg-navy-50 p-4 text-[12.5px] leading-snug text-navy-600">
               <p className="font-bold text-navy-800">billingservice.mn</p>
               <p className="mt-1">MVP v0.1 · Тусламж хэрэгтэй бол Тохиргоо хэсгээс холбоо барих мэдээллээ шинэчлээрэй.</p>

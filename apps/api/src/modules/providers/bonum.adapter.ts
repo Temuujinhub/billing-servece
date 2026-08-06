@@ -1,22 +1,26 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, createHash, randomBytes } from 'crypto';
-import { CreateProviderInvoiceResult, PaymentProviderPort, ProviderPaymentStatus } from './payment-provider.port';
+import { decryptSecret } from '../../common/utils';
+import { PrismaService } from '../../prisma/prisma.service';
+import { CreateProviderInvoiceResult, PaymentProviderPort, ProviderCallContext, ProviderPaymentStatus } from './payment-provider.port';
 
 /**
- * Bonum Gateway (psp.bonum.mn) ecommerce adapter — Media Professional LLC
- * contract (merchant.bonum.mn portal).
+ * Bonum Gateway (psp.bonum.mn) ecommerce adapter.
  *
  * Environments (doc §1): testing https://testapi.bonum.mn, production
  * https://apis.bonum.mn. Credentials: TERMINAL_ID + APP_SECRET (merchant
  * portal), MERCHANT_CHECKSUM_KEY (webhook verification).
  *
+ * MULTI-TENANT: tenant бүр Bonum дээр ӨӨРИЙН мерчант бүртгэл, терминал,
+ * дансаа холбуулдаг тул credentials нь tenant бүрд тусдаа (Tenant.bonum* —
+ * нууц нь AES-256-GCM шифрлэгдсэн). Env credentials нь платформын өөрийн
+ * (fallback) терминал. Token кэш терминал тус бүрээр хөтлөгдөнө.
+ *
  * Provider rules implemented per the published guidelines:
  *  • Auth (doc §2, GET /bonum-gateway/ecommerce/auth/create) is RATE LIMITED —
- *    "Excessive or too frequent requests will result in a TOO MANY REQUESTS
- *    error". The token is therefore fetched once, cached until expiry and
- *    shared across concurrent requests (single-flight), mirroring the QPay
- *    adapter.
+ *    the token is fetched once per terminal, cached until expiry and shared
+ *    across concurrent requests (single-flight), mirroring the QPay adapter.
  *  • Bonum payment links are short-lived on the provider side. We never SMS a
  *    Bonum link to a payer — the payer always receives OUR short link, and a
  *    fresh Bonum invoice/link is (re)created on demand when the payer opens
@@ -45,6 +49,15 @@ interface TokenState {
   refreshToken: string | null;
 }
 
+interface BonumCreds {
+  terminalId: string;
+  appSecret: string;
+  checksumKey: string | null;
+}
+
+/** How long resolved tenant credentials are cached in-memory. */
+const CREDS_CACHE_MS = 60_000;
+
 /** Depth-first search for the first defined candidate key (handles `data`/`result` nesting). */
 function pick(obj: any, keys: string[], depth = 3): any {
   if (!obj || typeof obj !== 'object' || depth < 0) return undefined;
@@ -64,25 +77,19 @@ function pick(obj: any, keys: string[], depth = 3): any {
 export class BonumAdapter implements PaymentProviderPort {
   readonly code = 'bonum';
   private readonly logger = new Logger(BonumAdapter.name);
-  private token: TokenState | null = null;
-  private tokenFlight: Promise<string> | null = null;
+  /** terminalId → cached token; single-flight per terminal (rate limit!). */
+  private readonly tokens = new Map<string, TokenState>();
+  private readonly tokenFlights = new Map<string, Promise<string>>();
+  /** tenantId → resolved creds (short cache; '' key = env fallback). */
+  private readonly credsCache = new Map<string, { creds: BonumCreds; at: number }>();
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   private get baseUrl(): string {
     return (this.config.get<string>('BONUM_BASE_URL') ?? 'https://apis.bonum.mn').replace(/\/$/, '');
-  }
-
-  private get terminalId(): string {
-    const v = this.config.get<string>('BONUM_TERMINAL_ID');
-    if (!v) throw new Error('Bonum is not configured (BONUM_TERMINAL_ID)');
-    return v;
-  }
-
-  private get appSecret(): string {
-    const v = this.config.get<string>('BONUM_APP_SECRET');
-    if (!v) throw new Error('Bonum is not configured (BONUM_APP_SECRET)');
-    return v;
   }
 
   private get lang(): string {
@@ -94,35 +101,82 @@ export class BonumAdapter implements PaymentProviderPort {
     return (Number(this.config.get('BONUM_LINK_TTL_MINUTES')) || 60) * 60_000;
   }
 
-  // ------------------------------------------------------------------ auth
+  // ------------------------------------------------------------- credentials
 
-  private async getAccessToken(): Promise<string> {
-    const now = Math.floor(Date.now() / 1000);
-    if (this.token && this.token.accessExpiresAt - 60 > now) {
-      return this.token.accessToken;
+  private envCreds(): BonumCreds {
+    const terminalId = this.config.get<string>('BONUM_TERMINAL_ID');
+    const appSecret = this.config.get<string>('BONUM_APP_SECRET');
+    if (!terminalId || !appSecret) {
+      throw new Error('Bonum is not configured (BONUM_TERMINAL_ID / BONUM_APP_SECRET, and no tenant credentials set)');
     }
-    // Single-flight: the auth endpoint is rate limited (doc §2 caution) — all
-    // concurrent callers must share one fetch.
-    if (!this.tokenFlight) {
-      this.tokenFlight = this.fetchToken().finally(() => {
-        this.tokenFlight = null;
-      });
-    }
-    return this.tokenFlight;
+    return { terminalId, appSecret, checksumKey: this.config.get<string>('BONUM_CHECKSUM_KEY') ?? null };
   }
 
-  private async fetchToken(): Promise<string> {
+  /**
+   * Tenant-ийн өөрийн терминал байвал түүнийг, үгүй бол env (платформын)
+   * терминалыг ашиглана. Нууцууд DB-д шифрлэгдсэн — энд тайлна.
+   */
+  async resolveCreds(tenantId?: string): Promise<BonumCreds> {
+    const cacheKey = tenantId ?? '';
+    const cached = this.credsCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < CREDS_CACHE_MS) return cached.creds;
+
+    let creds: BonumCreds | null = null;
+    if (tenantId) {
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { bonumTerminalId: true, bonumAppSecretEnc: true, bonumChecksumKeyEnc: true },
+      });
+      if (tenant?.bonumTerminalId && tenant.bonumAppSecretEnc) {
+        const key = this.config.getOrThrow<string>('ENCRYPTION_KEY');
+        creds = {
+          terminalId: tenant.bonumTerminalId,
+          appSecret: decryptSecret(key, tenant.bonumAppSecretEnc),
+          checksumKey: tenant.bonumChecksumKeyEnc ? decryptSecret(key, tenant.bonumChecksumKeyEnc) : null,
+        };
+      }
+    }
+    creds = creds ?? this.envCreds();
+    this.credsCache.set(cacheKey, { creds, at: Date.now() });
+    return creds;
+  }
+
+  /** Tenant credential өөрчлөгдөхөд кэшийг хүчингүй болгоно (PATCH /tenant). */
+  invalidateCreds(tenantId: string) {
+    this.credsCache.delete(tenantId);
+  }
+
+  // ------------------------------------------------------------------ auth
+
+  private async getAccessToken(creds: BonumCreds): Promise<string> {
+    const now = Math.floor(Date.now() / 1000);
+    const cached = this.tokens.get(creds.terminalId);
+    if (cached && cached.accessExpiresAt - 60 > now) {
+      return cached.accessToken;
+    }
+    // Single-flight per terminal: the auth endpoint is rate limited (doc §2).
+    let flight = this.tokenFlights.get(creds.terminalId);
+    if (!flight) {
+      flight = this.fetchToken(creds).finally(() => {
+        this.tokenFlights.delete(creds.terminalId);
+      });
+      this.tokenFlights.set(creds.terminalId, flight);
+    }
+    return flight;
+  }
+
+  private async fetchToken(creds: BonumCreds): Promise<string> {
     // Prefer refresh when we hold a refresh token — cheaper against the rate limit.
-    if (this.token?.refreshToken) {
+    const cached = this.tokens.get(creds.terminalId);
+    if (cached?.refreshToken) {
       try {
         const res = await fetch(`${this.baseUrl}${PATH_AUTH_REFRESH}`, {
           method: 'GET',
-          headers: { Authorization: `Bearer ${this.token.refreshToken}`, 'Accept-Language': this.lang },
+          headers: { Authorization: `Bearer ${cached.refreshToken}`, 'Accept-Language': this.lang },
           signal: AbortSignal.timeout(15_000),
         });
         if (res.ok) {
-          this.storeToken(await res.json());
-          return this.token!.accessToken;
+          return this.storeToken(creds.terminalId, await res.json());
         }
         this.logger.warn(`Bonum token refresh failed (${res.status}); falling back to auth/create`);
       } catch (e: any) {
@@ -137,10 +191,10 @@ export class BonumAdapter implements PaymentProviderPort {
       method: 'GET',
       headers: {
         'Accept-Language': this.lang,
-        'app-secret': this.appSecret,
-        appsecret: this.appSecret,
-        'terminal-id': this.terminalId,
-        terminalid: this.terminalId,
+        'app-secret': creds.appSecret,
+        appsecret: creds.appSecret,
+        'terminal-id': creds.terminalId,
+        terminalid: creds.terminalId,
       },
       signal: AbortSignal.timeout(15_000),
     });
@@ -148,28 +202,29 @@ export class BonumAdapter implements PaymentProviderPort {
       const text = await res.text().catch(() => '');
       throw new Error(`Bonum auth failed (${res.status}): ${text.slice(0, 200)}`);
     }
-    this.storeToken(await res.json());
-    this.logger.log('Bonum access token acquired');
-    return this.token!.accessToken;
+    const token = this.storeToken(creds.terminalId, await res.json());
+    this.logger.log(`Bonum access token acquired (terminal ${creds.terminalId})`);
+    return token;
   }
 
-  private storeToken(body: any) {
+  private storeToken(terminalId: string, body: any): string {
     const accessToken = pick(body, ['accessToken', 'access_token', 'token']);
     if (!accessToken) {
       throw new Error(`Bonum auth returned no access token: ${JSON.stringify(body).slice(0, 200)}`);
     }
     const expiresIn = Number(pick(body, ['expiresIn', 'expires_in', 'expiry'])) || 0;
     const now = Math.floor(Date.now() / 1000);
-    this.token = {
+    this.tokens.set(terminalId, {
       accessToken: String(accessToken),
       // expires_in may be a TTL (seconds) or an absolute unix timestamp.
       accessExpiresAt: expiresIn > now ? expiresIn : now + (expiresIn || 3000),
       refreshToken: pick(body, ['refreshToken', 'refresh_token']) ?? null,
-    };
+    });
+    return String(accessToken);
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const token = await this.getAccessToken();
+  private async request<T>(creds: BonumCreds, method: string, path: string, body?: unknown): Promise<T> {
+    const token = await this.getAccessToken(creds);
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
       headers: {
@@ -189,7 +244,7 @@ export class BonumAdapter implements PaymentProviderPort {
     }
     if (res.status === 401) {
       // Token invalidated server-side — drop the cache; the next call re-auths.
-      this.token = null;
+      this.tokens.delete(creds.terminalId);
     }
     if (!res.ok) {
       throw new Error(`Bonum ${method} ${path} failed (${res.status}): ${text.slice(0, 300)}`);
@@ -204,13 +259,15 @@ export class BonumAdapter implements PaymentProviderPort {
     description: string;
     internalRef: string;
     returnUrl?: string;
+    tenantId?: string;
   }): Promise<CreateProviderInvoiceResult> {
+    const creds = await this.resolveCreds(args.tenantId);
     const publicUrl = (this.config.get<string>('PUBLIC_URL') ?? '').replace(/\/$/, '');
     // Unique per attempt so regenerated links never collide on the order no.
     const orderId = `${args.internalRef.replace(/-/g, '').slice(0, 20)}${randomBytes(4).toString('hex')}`;
 
-    const body: any = await this.request('POST', PATH_INVOICE_CREATE, {
-      terminalId: this.terminalId,
+    const body: any = await this.request(creds, 'POST', PATH_INVOICE_CREATE, {
+      terminalId: creds.terminalId,
       amount: args.amount,
       currency: 'MNT',
       orderId,
@@ -241,9 +298,10 @@ export class BonumAdapter implements PaymentProviderPort {
     };
   }
 
-  async getPaymentStatus(providerInvoiceId: string): Promise<ProviderPaymentStatus> {
-    const body: any = await this.request('POST', PATH_INVOICE_CHECK, {
-      terminalId: this.terminalId,
+  async getPaymentStatus(providerInvoiceId: string, ctx?: ProviderCallContext): Promise<ProviderPaymentStatus> {
+    const creds = await this.resolveCreds(ctx?.tenantId);
+    const body: any = await this.request(creds, 'POST', PATH_INVOICE_CHECK, {
+      terminalId: creds.terminalId,
       invoiceId: providerInvoiceId,
     });
 
@@ -266,26 +324,34 @@ export class BonumAdapter implements PaymentProviderPort {
     };
   }
 
-  async cancelInvoice(providerInvoiceId: string): Promise<void> {
-    await this.request('POST', PATH_INVOICE_CANCEL, {
-      terminalId: this.terminalId,
-      invoiceId: providerInvoiceId,
-    }).catch((e) => {
+  async cancelInvoice(providerInvoiceId: string, ctx?: ProviderCallContext): Promise<void> {
+    try {
+      const creds = await this.resolveCreds(ctx?.tenantId);
+      await this.request(creds, 'POST', PATH_INVOICE_CANCEL, {
+        terminalId: creds.terminalId,
+        invoiceId: providerInvoiceId,
+      });
+    } catch (e: any) {
       // Best-effort — expired links die on the provider side anyway.
       this.logger.warn(`Bonum invoice cancel failed: ${e?.message}`);
-    });
+    }
   }
 
   // --------------------------------------------------------------- webhook
 
   /**
-   * Verify the webhook checksum with MERCHANT_CHECKSUM_KEY (doc §7). Several
-   * common schemes are tried; the result is used for logging/audit — payment
-   * truth still requires the invoice-check call, so a scheme mismatch can
-   * never credit or lose money.
+   * Verify the webhook checksum with the tenant's MERCHANT_CHECKSUM_KEY
+   * (doc §7); env key is the fallback. Several common schemes are tried; the
+   * result is used for logging/audit — payment truth still requires the
+   * invoice-check call, so a scheme mismatch can never credit or lose money.
    */
-  verifyChecksum(rawBody: string, provided: string | undefined): { valid: boolean; scheme?: string } {
-    const key = this.config.get<string>('BONUM_CHECKSUM_KEY');
+  async verifyChecksum(rawBody: string, provided: string | undefined, tenantId?: string): Promise<{ valid: boolean; scheme?: string }> {
+    let key: string | null = null;
+    try {
+      key = (await this.resolveCreds(tenantId)).checksumKey;
+    } catch {
+      key = this.config.get<string>('BONUM_CHECKSUM_KEY') ?? null;
+    }
     if (!key) return { valid: false, scheme: 'unconfigured' };
     if (!provided) return { valid: false };
     const candidates: [string, string][] = [

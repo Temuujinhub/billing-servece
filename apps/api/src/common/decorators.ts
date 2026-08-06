@@ -8,6 +8,8 @@ export interface AuthUser {
   name: string;
   tenantId: string;
   role: Role;
+  /** Platform staff — sees ALL tenants' integration requests (/admin/*). */
+  isPlatformAdmin?: boolean;
 }
 
 export const IS_PUBLIC_KEY = 'isPublic';

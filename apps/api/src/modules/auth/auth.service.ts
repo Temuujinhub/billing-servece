@@ -73,7 +73,7 @@ export class AuthService {
       return { user, tenant, membership };
     });
 
-    return this.issueTokens({ userId: user.id, email, name: user.name, tenantId: tenant.id, role: membership.role });
+    return this.issueTokens({ userId: user.id, email, name: user.name, tenantId: tenant.id, role: membership.role, isPlatformAdmin: false });
   }
 
   async login(dto: LoginDto) {
@@ -99,6 +99,7 @@ export class AuthService {
       name: user.name,
       tenantId: membership.tenantId,
       role: membership.role,
+      isPlatformAdmin: user.isPlatformAdmin,
     });
   }
 
@@ -124,6 +125,7 @@ export class AuthService {
       name: stored.user.name,
       tenantId: membership.tenantId,
       role: membership.role,
+      isPlatformAdmin: stored.user.isPlatformAdmin,
     });
   }
 
@@ -141,7 +143,14 @@ export class AuthService {
     const refreshTtl = Number(this.config.get('JWT_REFRESH_TTL') ?? 604800);
 
     const accessToken = await this.jwt.signAsync(
-      { sub: claims.userId, email: claims.email, name: claims.name, tenantId: claims.tenantId, role: claims.role },
+      {
+        sub: claims.userId,
+        email: claims.email,
+        name: claims.name,
+        tenantId: claims.tenantId,
+        role: claims.role,
+        isPlatformAdmin: claims.isPlatformAdmin === true,
+      },
       { secret: this.config.getOrThrow('JWT_ACCESS_SECRET'), expiresIn: accessTtl },
     );
 
@@ -158,7 +167,14 @@ export class AuthService {
       accessToken,
       refreshToken,
       expiresIn: accessTtl,
-      user: { id: claims.userId, email: claims.email, name: claims.name, role: claims.role, tenantId: claims.tenantId },
+      user: {
+        id: claims.userId,
+        email: claims.email,
+        name: claims.name,
+        role: claims.role,
+        tenantId: claims.tenantId,
+        isPlatformAdmin: claims.isPlatformAdmin === true,
+      },
     };
   }
 }

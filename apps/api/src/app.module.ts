@@ -13,6 +13,7 @@ import { BillingModule } from './modules/billing/billing.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { HealthModule } from './modules/health/health.module';
 import { ImportsModule } from './modules/imports/imports.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -36,6 +37,7 @@ import { TenantsModule } from './modules/tenants/tenants.module';
     ReceiptsModule,
     BillingModule,
     AnalyticsModule,
+    IntegrationsModule,
     HealthModule,
   ],
   providers: [

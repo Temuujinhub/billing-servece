@@ -62,6 +62,10 @@ model Tenant {
   ebarimtPosNo        String?
   ebarimtBranchNo     String?
   ebarimtDistrictCode String?
+  // --- Bonum merchant credentials (per tenant; secrets AES-256-GCM encrypted) ---
+  bonumTerminalId     String?
+  bonumAppSecretEnc   String?
+  bonumChecksumKeyEnc String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -73,6 +77,7 @@ model Tenant {
   usageEvents  UsageEvent[]
   auditLogs    AuditLog[]
   invoiceSeq   InvoiceSequence?
+  integrationRequests IntegrationRequest[]
 }
 
 enum Role {
@@ -88,6 +93,8 @@ model User {
   phone        String?
   name         String
   passwordHash String
+  // Platform staff: sees ALL tenants' integration requests (/admin/*).
+  isPlatformAdmin Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -120,6 +127,44 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Integration onboarding requests (Bonum / eBarimt-LIME мерчант бүртгэл)
+// ---------------------------------------------------------------------------
+
+enum IntegrationKind {
+  BONUM
+  EBARIMT
+}
+
+enum IntegrationRequestStatus {
+  SUBMITTED // хүсэлт үүссэн (имэйл илгээгдээгүй/амжилтгүй)
+  EMAIL_SENT // Bonum/LIME рүү имэйл илгээгдсэн
+  APPROVED // нөгөө тал бүртгэсэн — админ баталгаажуулсан
+  REJECTED
+}
+
+// Bonum/LIME талд автомат мерчант бүртгэл байхгүй тул хүсэлт бүр имэйлээр
+// илгээгдэж, platform admin гараар хянаж APPROVED/REJECTED болгоно.
+model IntegrationRequest {
+  id          String                   @id @default(uuid())
+  tenantId    String
+  kind        IntegrationKind
+  status      IntegrationRequestStatus @default(SUBMITTED)
+  payload     Json // анкетын snapshot — илгээсэн агшны мэдээлэл
+  note        String? // админы тэмдэглэл / татгалзсан шалтгаан
+  error       String? // сүүлийн имэйл илгээлтийн алдаа
+  emailedAt   DateTime?
+  decidedAt   DateTime?
+  createdById String?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([tenantId, kind, createdAt])
 }
 
 // ---------------------------------------------------------------------------
