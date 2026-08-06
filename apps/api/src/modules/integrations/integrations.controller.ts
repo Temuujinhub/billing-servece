@@ -19,6 +19,17 @@ class DecideRequestDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+
+  // --- Партнёраас ирсэн хариу (approve үед tenant-д бичигдэнэ) ---
+  // BONUM: терминалын credentials (нууцууд шифрлэгдэж хадгалагдана)
+  @IsOptional() @IsString() @MaxLength(30) terminalId?: string;
+  @IsOptional() @IsString() @MaxLength(300) appSecret?: string;
+  @IsOptional() @IsString() @MaxLength(300) checksumKey?: string;
+  // EBARIMT: ТЕГ/LIME бүртгэлийн утгууд
+  @IsOptional() @IsString() @MaxLength(20) merchantTin?: string;
+  @IsOptional() @IsString() @MaxLength(20) posNo?: string;
+  @IsOptional() @IsString() @MaxLength(10) branchNo?: string;
+  @IsOptional() @IsString() @MaxLength(10) districtCode?: string;
 }
 
 /** Tenant-facing: анкет бүрэн үед Bonum/LIME бүртгэлийн хүсэлт илгээнэ. */
@@ -63,6 +74,14 @@ export class AdminIntegrationsController {
   @HttpCode(200)
   @Post(':id/decision')
   decide(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: DecideRequestDto) {
-    return this.integrations.decide(user, id, dto.approved, dto.note);
+    return this.integrations.decide(user, id, dto.approved, dto.note, {
+      terminalId: dto.terminalId,
+      appSecret: dto.appSecret,
+      checksumKey: dto.checksumKey,
+      merchantTin: dto.merchantTin,
+      posNo: dto.posNo,
+      branchNo: dto.branchNo,
+      districtCode: dto.districtCode,
+    });
   }
 }

@@ -3,8 +3,23 @@ import { ConfigService } from '@nestjs/config';
 import { IntegrationKind, Prisma } from '@prisma/client';
 import { apiError } from '../../common/filters/http-exception.filter';
 import { AuthUser } from '../../common/decorators';
+import { encryptSecret } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BonumAdapter } from '../providers/bonum.adapter';
 import { EMAIL_PORT, EmailPort } from '../providers/email.port';
+
+/** Партнёраас (Bonum/LIME) ирсэн хариу — админ approve хийхдээ бөглөнө. */
+export interface DecisionResponseData {
+  // BONUM хариу
+  terminalId?: string;
+  appSecret?: string;
+  checksumKey?: string;
+  // EBARIMT (LIME/ТЕГ) хариу
+  merchantTin?: string;
+  posNo?: string;
+  branchNo?: string;
+  districtCode?: string;
+}
 
 /**
  * Integration onboarding requests. Bonum болон LIME талд шинэ мерчантыг
@@ -26,13 +41,14 @@ export class IntegrationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly bonum: BonumAdapter,
     @Inject(EMAIL_PORT) private readonly email: EmailPort,
   ) {}
 
   // ------------------------------------------------------------- validation
 
-  /** Танил алдааны формат: аль талбар дутуу байгааг монголоор нэрлэнэ. */
-  private requireComplete(kind: IntegrationKind, tenant: any) {
+  /** Аль талбар дутуу байгааг монголоор нэрлэсэн жагсаалт (хоосон = бүрэн). */
+  private missingFields(kind: IntegrationKind, tenant: any): string[] {
     const missing: string[] = [];
     const need = (value: unknown, label: string) => {
       if (!value || !String(value).trim()) missing.push(label);
@@ -47,6 +63,12 @@ export class IntegrationsService {
       need(tenant.bankAccount, 'Дансны дугаар');
       need(tenant.bankAccountName, 'Дансны нэр');
     }
+    return missing;
+  }
+
+  /** Танил алдааны формат: аль талбар дутуу байгааг монголоор нэрлэнэ. */
+  private requireComplete(kind: IntegrationKind, tenant: any) {
+    const missing = this.missingFields(kind, tenant);
     if (missing.length > 0) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
@@ -195,6 +217,53 @@ export class IntegrationsService {
     return this.prisma.integrationRequest.findUniqueOrThrow({ where: { id: request.id } });
   }
 
+  /**
+   * АВТОМАТ илгээлт — Тохиргоо хадгалагдах бүрд дуудагдана. Товчгүй урсгал:
+   * мэдээлэл бүрэн болмогц хүсэлт өөрөө үүсч имэйл илгээгдэнэ. Давхардал/
+   * ачааллаас хамгаалалт:
+   *   • нээлттэй (SUBMITTED/EMAIL_SENT) эсвэл APPROVED хүсэлт байвал алгасна;
+   *   • REJECTED байсан бол зөвхөн мэдээлэл ӨӨРЧЛӨГДСӨН үед л дахин илгээнэ;
+   *   • дутуу анкет — чимээгүй алгасна (хадгалалт хэзээ ч алдаа өгөхгүй).
+   * Never throws.
+   */
+  async autoSubmit(user: AuthUser): Promise<{ submitted: IntegrationKind[] }> {
+    const submitted: IntegrationKind[] = [];
+    try {
+      const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: user.tenantId } });
+      for (const kind of ['BONUM', 'EBARIMT'] as IntegrationKind[]) {
+        if (this.missingFields(kind, tenant).length > 0) continue;
+
+        const latest = await this.prisma.integrationRequest.findFirst({
+          where: { tenantId: user.tenantId, kind },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (latest && latest.status !== 'REJECTED') continue; // нээлттэй/идэвхтэй
+        const snapshot = this.snapshot(kind, tenant);
+        if (latest && JSON.stringify(latest.payload) === JSON.stringify(snapshot)) continue; // өөрчлөлтгүй
+
+        const request = await this.prisma.integrationRequest.create({
+          data: { tenantId: user.tenantId, kind, payload: snapshot, createdById: user.userId },
+        });
+        await this.prisma.auditLog.create({
+          data: {
+            tenantId: user.tenantId,
+            actorId: user.userId,
+            actorEmail: user.email,
+            action: 'integration.request_submitted',
+            targetType: 'integration_request',
+            targetId: request.id,
+            meta: { kind, auto: true },
+          },
+        });
+        await this.dispatchEmail(request.id);
+        submitted.push(kind);
+      }
+    } catch (e: any) {
+      this.logger.warn(`Auto-submit skipped for tenant ${user.tenantId}: ${e?.message}`);
+    }
+    return { submitted };
+  }
+
   /** Tenant's own requests, newest first. */
   async listMine(tenantId: string) {
     const items = await this.prisma.integrationRequest.findMany({
@@ -240,15 +309,33 @@ export class IntegrationsService {
 
   /**
    * Bonum/LIME талаас бүртгэл хийгдсэн (эсвэл татгалзсан) хариу ирмэгц админ
-   * шийднэ. EBARIMT APPROVED үед EBARIMT модуль автоматаар идэвхжинэ — модуль
-   * унтраатай үед хийгдсэн төлбөрт баримт үүсдэггүй (NOT_REQUIRED) тул энэ
-   * алхам мартагдвал баримт алдагдана.
+   * шийднэ. Ирсэн хариуны утгуудыг (`response`) админ энд бөглөснөөр tenant-д
+   * шууд бичигдэнэ — ирээдүйд партнёр API гарвал энэ цэг автоматжина:
+   *   • BONUM: Terminal ID / Secret Key / Checksum Key (шифрлэгдэж хадгална);
+   *   • EBARIMT: merchantTin / posNo / branchNo / districtCode + EBARIMT
+   *     модуль автоматаар идэвхжинэ (унтраатай үеийн төлбөрт баримт үүсдэггүй
+   *     тул энэ алхам мартагдвал баримт алдагдана).
    */
-  async decide(admin: AuthUser, requestId: string, approved: boolean, note?: string) {
+  async decide(admin: AuthUser, requestId: string, approved: boolean, note?: string, response?: DecisionResponseData) {
     const request = await this.prisma.integrationRequest.findUnique({ where: { id: requestId } });
     if (!request) throw apiError(HttpStatus.NOT_FOUND, 'REQUEST_NOT_FOUND', 'Хүсэлт олдсонгүй.', 'Request not found.');
     if (['APPROVED', 'REJECTED'].includes(request.status)) {
       throw apiError(HttpStatus.CONFLICT, 'REQUEST_CLOSED', 'Хүсэлт аль хэдийн шийдвэрлэгдсэн.', 'Request is already decided.');
+    }
+
+    // Партнёрын хариу → tenant-ийн бүртгэл (approve үед л).
+    const tenantData: Prisma.TenantUpdateInput = {};
+    if (approved && request.kind === 'BONUM') {
+      const encKey = this.config.getOrThrow<string>('ENCRYPTION_KEY');
+      if (response?.terminalId?.trim()) tenantData.bonumTerminalId = response.terminalId.trim();
+      if (response?.appSecret?.trim()) tenantData.bonumAppSecretEnc = encryptSecret(encKey, response.appSecret.trim());
+      if (response?.checksumKey?.trim()) tenantData.bonumChecksumKeyEnc = encryptSecret(encKey, response.checksumKey.trim());
+    }
+    if (approved && request.kind === 'EBARIMT') {
+      if (response?.merchantTin?.trim()) tenantData.ebarimtMerchantTin = response.merchantTin.trim();
+      if (response?.posNo?.trim()) tenantData.ebarimtPosNo = response.posNo.trim();
+      if (response?.branchNo?.trim()) tenantData.ebarimtBranchNo = response.branchNo.trim();
+      if (response?.districtCode?.trim()) tenantData.ebarimtDistrictCode = response.districtCode.trim();
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -256,6 +343,9 @@ export class IntegrationsService {
         where: { id: requestId },
         data: { status: approved ? 'APPROVED' : 'REJECTED', note: note?.slice(0, 500), decidedAt: new Date() },
       });
+      if (Object.keys(tenantData).length > 0) {
+        await tx.tenant.update({ where: { id: request.tenantId }, data: tenantData });
+      }
       if (approved && request.kind === 'EBARIMT') {
         await tx.tenantModule.upsert({
           where: { tenantId_code: { tenantId: request.tenantId, code: 'EBARIMT' } },
@@ -271,10 +361,17 @@ export class IntegrationsService {
           action: approved ? 'integration.request_approved' : 'integration.request_rejected',
           targetType: 'integration_request',
           targetId: requestId,
-          meta: { kind: request.kind, note: note ?? null },
+          meta: {
+            kind: request.kind,
+            note: note ?? null,
+            // Нууц утгыг хэзээ ч логлохгүй — зөвхөн бөглөгдсөн эсэх нь үлдэнэ.
+            responseFields: response ? Object.keys(response).filter((k) => (response as any)[k]?.trim?.()) : [],
+          },
         },
       });
     });
+    // Шинэ terminal credentials шууд хүчинтэй болно.
+    if (approved && request.kind === 'BONUM') this.bonum.invalidateCreds(request.tenantId);
     return this.prisma.integrationRequest.findUniqueOrThrow({ where: { id: requestId } });
   }
 }

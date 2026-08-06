@@ -24,12 +24,38 @@ const KIND_MN: Record<string, string> = {
   EBARIMT: 'eBarimt (LIME)',
 };
 
+/** Партнёраас ирсэн хариуны талбарууд (approve үед tenant-д бичигдэнэ). */
+interface ResponseForm {
+  terminalId: string;
+  appSecret: string;
+  checksumKey: string;
+  merchantTin: string;
+  posNo: string;
+  branchNo: string;
+  districtCode: string;
+}
+
+const EMPTY_RESPONSE: ResponseForm = {
+  terminalId: '',
+  appSecret: '',
+  checksumKey: '',
+  merchantTin: '',
+  posNo: '',
+  branchNo: '',
+  districtCode: '',
+};
+
 export default function AdminRequestsPage() {
   const [items, setItems] = useState<IntegrationRequest[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [approveId, setApproveId] = useState<string | null>(null);
+  const [resp, setResp] = useState<ResponseForm>(EMPTY_RESPONSE);
   const isAdmin = getSessionUser()?.isAdmin === true;
+
+  const setR = (key: keyof ResponseForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setResp((v) => ({ ...v, [key]: e.target.value }));
 
   const load = useCallback(() => {
     api<{ items: IntegrationRequest[] }>('/admin/integration-requests')
@@ -122,9 +148,13 @@ export default function AdminRequestsPage() {
                           <button
                             className="rounded-lg bg-teal-600 px-3 py-1.5 text-[12.5px] font-semibold text-white hover:bg-teal-700"
                             disabled={busyId === r.id}
-                            onClick={() => act(r.id, '/decision', { approved: true })}
+                            onClick={() => {
+                              setResp(EMPTY_RESPONSE);
+                              setApproveId(approveId === r.id ? null : r.id);
+                              setExpanded(r.id);
+                            }}
                           >
-                            ✓ Баталгаажуулах
+                            ✓ Баталгаажуулах…
                           </button>
                           <button
                             className="rounded-lg bg-red-50 px-3 py-1.5 text-[12.5px] font-semibold text-red-600 hover:bg-red-100"
@@ -157,6 +187,89 @@ export default function AdminRequestsPage() {
                             </p>
                           )}
                         </div>
+
+                        {/* Партнёрын ХАРИУГ бөглөж баталгаажуулах цонх: энд оруулсан
+                            утгууд tenant-ийн бүртгэлд шууд бичигдэж үйлчилгээ асна.
+                            Ирээдүйд партнёр API гарвал энэ маягт автоматаар бөглөгдөнө. */}
+                        {approveId === r.id && (
+                          <div className="mt-2 rounded-xl border border-teal-200 bg-teal-50/50 p-4">
+                            <p className="text-[13px] font-bold text-teal-800">
+                              {r.kind === 'BONUM' ? 'Bonum-оос ирсэн хариу (терминалын мэдээлэл)' : 'LIME/ТЕГ-ээс ирсэн хариу (POS бүртгэл)'}
+                            </p>
+                            <p className="mt-0.5 text-[12px] text-teal-700">
+                              Имэйлээр ирсэн утгуудыг бөглөөд баталгаажуулбал тухайн байгууллагын үйлчилгээ идэвхжинэ.
+                              {r.kind === 'BONUM' && ' Нууц түлхүүрүүд шифрлэгдэж хадгалагдана.'}
+                            </p>
+                            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                              {r.kind === 'BONUM' ? (
+                                <>
+                                  <div>
+                                    <label className="label">Terminal ID</label>
+                                    <input className="input" value={resp.terminalId} onChange={setR('terminalId')} maxLength={30} />
+                                  </div>
+                                  <div>
+                                    <label className="label">Secret Key</label>
+                                    <input className="input" type="password" value={resp.appSecret} onChange={setR('appSecret')} autoComplete="new-password" />
+                                  </div>
+                                  <div>
+                                    <label className="label">Checksum Key</label>
+                                    <input className="input" type="password" value={resp.checksumKey} onChange={setR('checksumKey')} autoComplete="new-password" />
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div>
+                                    <label className="label">Merchant TIN</label>
+                                    <input className="input" value={resp.merchantTin} onChange={setR('merchantTin')} maxLength={20} />
+                                  </div>
+                                  <div>
+                                    <label className="label">POS дугаар (posNo)</label>
+                                    <input className="input" value={resp.posNo} onChange={setR('posNo')} maxLength={20} />
+                                  </div>
+                                  <div>
+                                    <label className="label">Салбар (branchNo)</label>
+                                    <input className="input" value={resp.branchNo} onChange={setR('branchNo')} maxLength={10} placeholder="001" />
+                                  </div>
+                                  <div>
+                                    <label className="label">Дүүргийн код</label>
+                                    <input className="input" value={resp.districtCode} onChange={setR('districtCode')} maxLength={10} placeholder="3505" />
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                            <div className="mt-3 flex justify-end gap-2">
+                              <button className="btn-secondary px-3 py-1.5 text-[12.5px]" onClick={() => setApproveId(null)}>
+                                Болих
+                              </button>
+                              <button
+                                className="rounded-lg bg-teal-600 px-4 py-1.5 text-[12.5px] font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+                                disabled={
+                                  busyId === r.id ||
+                                  (r.kind === 'BONUM'
+                                    ? !resp.terminalId.trim() || !resp.appSecret.trim() || !resp.checksumKey.trim()
+                                    : !resp.merchantTin.trim() || !resp.posNo.trim())
+                                }
+                                onClick={async () => {
+                                  await act(r.id, '/decision', {
+                                    approved: true,
+                                    ...(r.kind === 'BONUM'
+                                      ? { terminalId: resp.terminalId.trim(), appSecret: resp.appSecret.trim(), checksumKey: resp.checksumKey.trim() }
+                                      : {
+                                          merchantTin: resp.merchantTin.trim(),
+                                          posNo: resp.posNo.trim(),
+                                          branchNo: resp.branchNo.trim() || undefined,
+                                          districtCode: resp.districtCode.trim() || undefined,
+                                        }),
+                                  });
+                                  setApproveId(null);
+                                  setResp(EMPTY_RESPONSE);
+                                }}
+                              >
+                                {busyId === r.id ? <Spinner className="h-4 w-4 text-white" /> : '✓ Хариуг хадгалж идэвхжүүлэх'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}
