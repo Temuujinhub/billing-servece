@@ -22,7 +22,10 @@ jobs:
     name: Deploy to DigitalOcean
     runs-on: ubuntu-latest
     env:
-      DEPLOY_HOST: ${{ vars.DEPLOY_HOST || '168.144.41.111' }}
+      # 202.37.235.16 — Монголын үндсэн production сервер (eBarimt POS API 3.0
+      # локал үйлчилгээ энд хамт ажиллана). billing.mastrsys.com DNS энд заадаг.
+      # Хуучин DigitalOcean droplet (168.144.41.111) ашиглагдахаа больсон.
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST || '202.37.235.16' }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER || 'root' }}
       DEPLOY_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
     steps:
