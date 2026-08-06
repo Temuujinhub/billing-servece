@@ -20,11 +20,32 @@ export const envValidationSchema = Joi.object({
   SEED_ON_START: Joi.string().valid('true', 'false').default('false'),
 
   // --- Payment provider selection (real credentials only via droplet .env) ---
-  PAYMENT_PROVIDER: Joi.string().valid('qpay_mock', 'qpay').default('qpay_mock'),
+  PAYMENT_PROVIDER: Joi.string().valid('qpay_mock', 'qpay', 'bonum').default('qpay_mock'),
   QPAY_BASE_URL: Joi.string().uri().default('https://merchant.qpay.mn'),
   QPAY_USERNAME: Joi.string().when('PAYMENT_PROVIDER', { is: 'qpay', then: Joi.required(), otherwise: Joi.optional().allow('') }),
   QPAY_PASSWORD: Joi.string().when('PAYMENT_PROVIDER', { is: 'qpay', then: Joi.required(), otherwise: Joi.optional().allow('') }),
   QPAY_INVOICE_CODE: Joi.string().when('PAYMENT_PROVIDER', { is: 'qpay', then: Joi.required(), otherwise: Joi.optional().allow('') }),
+
+  // --- Bonum Gateway (psp.bonum.mn; test https://testapi.bonum.mn) ---
+  BONUM_BASE_URL: Joi.string().uri().default('https://apis.bonum.mn'),
+  BONUM_TERMINAL_ID: Joi.string().when('PAYMENT_PROVIDER', { is: 'bonum', then: Joi.required(), otherwise: Joi.optional().allow('') }),
+  BONUM_APP_SECRET: Joi.string().when('PAYMENT_PROVIDER', { is: 'bonum', then: Joi.required(), otherwise: Joi.optional().allow('') }),
+  BONUM_CHECKSUM_KEY: Joi.string().when('PAYMENT_PROVIDER', { is: 'bonum', then: Joi.required(), otherwise: Joi.optional().allow('') }),
+  BONUM_LANG: Joi.string().valid('mn', 'en').default('mn'),
+  // Fallback lifetime of a Bonum checkout link when the API returns no expiry;
+  // an expired-link visit auto-regenerates a fresh link (unpaid invoices only).
+  BONUM_LINK_TTL_MINUTES: Joi.number().min(5).default(60),
+
+  // --- eBarimt provider: mock | qpay (bundled) | posapi (ТЕГ POS API 3.0 local) ---
+  EBARIMT_PROVIDER: Joi.string().valid('mock', 'qpay', 'posapi').default('mock'),
+  // Local POS API 3.0 instance (LIME-ээр суулгасан) — NOT the public ТЕГ API.
+  VAT_BASE_URL: Joi.string().uri().when('EBARIMT_PROVIDER', { is: 'posapi', then: Joi.required(), otherwise: Joi.optional().allow('') }),
+  // Env defaults; tenants override via ebarimtMerchantTin/ebarimtPosNo fields.
+  EBARIMT_MERCHANT_TIN: Joi.string().optional().allow(''),
+  EBARIMT_POS_NO: Joi.string().optional().allow(''),
+  EBARIMT_BRANCH_NO: Joi.string().default('001'),
+  EBARIMT_DISTRICT_CODE: Joi.string().default('3505'),
+  EBARIMT_CLASSIFICATION_CODE: Joi.string().default('6499999'),
 
   // --- SMS provider selection ---
   SMS_PROVIDER: Joi.string().valid('mock', 'callpro').default('mock'),

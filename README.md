@@ -6,9 +6,11 @@
 автоматаар үүсгэнэ.
 
 > **Статус:** MVP v0.1 — бүрэн ажиллагаатай, deploy хийгдэхэд бэлэн.
-> Гадаад интеграцууд (QPay, eBarimt, SMS) **mock adapter**-аар ажиллана:
-> бодит гэрээ, credential гарсны дараа adapter-ийг солиход л хангалттай —
-> дуудаж буй код өөрчлөгдөхгүй (ports & adapters).
+> Гадаад интеграцууд ports & adapters загвараар: демо орчинд **mock**,
+> production-д **Bonum Gateway** (төлбөрийн линк, `PAYMENT_PROVIDER=bonum`)
+> болон **ТЕГ eBarimt POS API 3.0** (LIME instance, `EBARIMT_PROVIDER=posapi`)
+> adapter-ууд env-ээр сонгогдоно — дуудаж буй код өөрчлөгдөхгүй.
+> Дэлгэрэнгүй: [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md)
 
 Демо нэвтрэлт: `demo@billingservice.mn` / `Demo123$`
 
