@@ -182,7 +182,7 @@ export interface PayPageData {
     dueDate: string | null;
     customerName: string;
   };
-  payment: { intentId: string; state: string; qrText: string | null; expiresAt: string | null } | null;
+  payment: { intentId: string; state: string; qrText: string | null; paymentUrl: string | null; expiresAt: string | null } | null;
   receipt: { receiptNo: string | null; lottery: string | null; qrData: string | null; state: string } | null;
   sandbox: boolean;
 }
@@ -196,6 +196,14 @@ export interface TenantInfo {
     invoicePrefix: string;
     contactEmail: string | null;
     contactPhone: string | null;
+    address: string | null;
+    bankName: string | null;
+    bankAccountNo: string | null;
+    bankAccountName: string | null;
+    ebarimtMerchantTin: string | null;
+    ebarimtPosNo: string | null;
+    ebarimtBranchNo: string | null;
+    ebarimtDistrictCode: string | null;
     createdAt: string;
     modules: { code: string; enabled: boolean; quantity: number }[];
   };

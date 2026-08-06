@@ -20,6 +20,55 @@ class UpdateTenantDto {
   @IsString()
   @MaxLength(20)
   regNo?: string;
+
+  // --- PSP onboarding (Bonum anket — байгууллагын заавал бөглөх мэдээлэл) ---
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  contactPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  bankName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  bankAccountNo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  bankAccountName?: string;
+
+  // --- eBarimt POS API 3.0 — тухайн компанийн ӨӨРИЙН ТЕГ бүртгэл ---
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  ebarimtMerchantTin?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  ebarimtPosNo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  ebarimtBranchNo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  ebarimtDistrictCode?: string;
 }
 
 @ApiTags('tenants')
@@ -55,6 +104,15 @@ export class TenantsController {
         name: dto.name?.trim(),
         invoicePrefix: dto.invoicePrefix,
         regNo: dto.regNo?.trim(),
+        address: dto.address?.trim(),
+        contactPhone: dto.contactPhone?.trim(),
+        bankName: dto.bankName?.trim(),
+        bankAccountNo: dto.bankAccountNo?.trim(),
+        bankAccountName: dto.bankAccountName?.trim(),
+        ebarimtMerchantTin: dto.ebarimtMerchantTin?.trim(),
+        ebarimtPosNo: dto.ebarimtPosNo?.trim(),
+        ebarimtBranchNo: dto.ebarimtBranchNo?.trim(),
+        ebarimtDistrictCode: dto.ebarimtDistrictCode?.trim(),
       },
     });
     await this.prisma.auditLog.create({

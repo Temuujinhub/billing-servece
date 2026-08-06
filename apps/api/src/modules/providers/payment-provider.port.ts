@@ -5,6 +5,8 @@
 export interface CreateProviderInvoiceResult {
   providerInvoiceId: string;
   qrText: string;
+  /** Hosted checkout page (web payment providers, e.g. Bonum). */
+  paymentUrl?: string;
   deeplinks: { name: string; logo?: string; link: string }[];
   expiresAt: Date;
 }
@@ -19,7 +21,13 @@ export interface ProviderPaymentStatus {
 
 export interface PaymentProviderPort {
   readonly code: string;
-  createInvoice(args: { amount: number; description: string; internalRef: string }): Promise<CreateProviderInvoiceResult>;
+  createInvoice(args: {
+    amount: number;
+    description: string;
+    internalRef: string;
+    /** Where hosted-checkout providers send the payer back (our pay page). */
+    returnUrl?: string;
+  }): Promise<CreateProviderInvoiceResult>;
   /** Authoritative check — callbacks alone are never trusted (PAY-03). */
   getPaymentStatus(providerInvoiceId: string): Promise<ProviderPaymentStatus>;
   cancelInvoice(providerInvoiceId: string): Promise<void>;

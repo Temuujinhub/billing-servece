@@ -1,14 +1,18 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { randomBytes, randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
-import { QpayAdapter } from '../providers/qpay.adapter';
+import { EBARIMT_PORT, EbarimtPort } from '../providers/ebarimt.port';
+import { PosApiEbarimtAdapter } from '../providers/posapi-ebarimt.adapter';
 
 /**
- * eBarimt receipts. Mock provider in MVP: receipts are generated locally with
- * realistic fields, following the real state machine
- * (PENDING → CREATED → DELIVERED, FAILED + retry). The real QPay eBarimt 3.0 /
- * ITC POS API 3.0 integration replaces `callProvider` only.
+ * eBarimt receipts. The actual receipt is cut by the EBARIMT_PORT adapter
+ * (EBARIMT_PROVIDER=mock|qpay|posapi); this service owns the state machine
+ * (PENDING → CREATED → DELIVERED, FAILED + retry) and usage metering.
+ *
+ * posapi = ТЕГ POS API 3.0 local instance (LIME-ээр суулгасан) — see
+ * providers/posapi-ebarimt.adapter.ts. Tenants carry their OWN ТЕГ POS
+ * registration (ebarimtMerchantTin/ebarimtPosNo/…) which overrides env
+ * defaults per receipt.
  *
  * Design rule (PRD §5.7): a payment is never blocked or rolled back because
  * the tax provider is down — the receipt waits in PENDING and is retried.
@@ -19,7 +23,8 @@ export class ReceiptsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly qpay: QpayAdapter,
+    @Inject(EBARIMT_PORT) private readonly ebarimt: EbarimtPort,
+    private readonly posapi: PosApiEbarimtAdapter,
   ) {}
 
   /** Called inside the payment-confirm transaction. */
@@ -38,15 +43,43 @@ export class ReceiptsService {
 
   /** Drain PENDING receipts for a tenant (invoked after payments + retry endpoint). */
   async processPending(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({
+      where: { id: tenantId },
+      select: { ebarimtMerchantTin: true, ebarimtPosNo: true, ebarimtBranchNo: true, ebarimtDistrictCode: true },
+    });
     const pending = await this.prisma.ebarimtReceipt.findMany({
       where: { tenantId, state: { in: ['PENDING', 'FAILED'] }, retries: { lt: 5 } },
       take: 20,
-      include: { transaction: { select: { provider: true, providerPaymentId: true } } },
+      include: {
+        transaction: {
+          select: {
+            provider: true,
+            providerPaymentId: true,
+            gross: true,
+            intent: { select: { invoice: { select: { number: true, description: true } } } },
+          },
+        },
+      },
     });
     let processed = 0;
     for (const receipt of pending) {
       try {
-        const result = await this.callProvider(receipt.transaction.provider, receipt.transaction.providerPaymentId);
+        const invoice = receipt.transaction.intent.invoice;
+        const result = await this.ebarimt.createReceipt({
+          tenantId,
+          amount: receipt.transaction.gross,
+          description: `${invoice.number} ${invoice.description}`.slice(0, 128),
+          receiptType: receipt.receiptType === 'ORGANIZATION' ? 'ORGANIZATION' : 'CITIZEN',
+          customerTin: receipt.payerRegNo,
+          paymentProvider: receipt.transaction.provider,
+          providerPaymentId: receipt.transaction.providerPaymentId,
+          merchant: {
+            merchantTin: tenant.ebarimtMerchantTin,
+            posNo: tenant.ebarimtPosNo,
+            branchNo: tenant.ebarimtBranchNo,
+            districtCode: tenant.ebarimtDistrictCode,
+          },
+        });
         await this.prisma.$transaction(async (tx) => {
           const claimed = await tx.ebarimtReceipt.updateMany({
             where: { id: receipt.id, state: { in: ['PENDING', 'FAILED'] } },
@@ -112,27 +145,17 @@ export class ReceiptsService {
   }
 
   /**
-   * Real payments (provider=qpay) create the receipt through QPay's eBarimt
-   * integration; mock payments keep generating realistic local receipts.
+   * Active eBarimt provider + (posapi only) the local instance's /rest/info —
+   * бүртгэл зөв эсэхийг холболт хийхийн ӨМНӨ эндээс шалгана (заавар §3).
    */
-  private async callProvider(
-    paymentProvider: string,
-    providerPaymentId: string,
-  ): Promise<{ receiptNo: string; lottery: string | null; qrData: string | null }> {
-    if (paymentProvider === 'qpay') {
-      const result = await this.qpay.createEbarimt(providerPaymentId, 'CITIZEN');
-      return { receiptNo: result.receiptNo, lottery: result.lottery, qrData: result.qrData };
+  async providerInfo() {
+    if (this.ebarimt.code !== this.posapi.code) {
+      return { provider: this.ebarimt.code };
     }
-    const lottery = `${this.block(2)} ${this.block(2)} ${this.block(6)}`;
-    return {
-      receiptNo: randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase(),
-      lottery,
-      qrData: randomBytes(48).toString('base64'),
-    };
-  }
-
-  private block(n: number): string {
-    const chars = '0123456789';
-    return Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    try {
+      return { provider: this.ebarimt.code, info: await this.posapi.info() };
+    } catch (e: any) {
+      return { provider: this.ebarimt.code, error: String(e?.message ?? e) };
+    }
   }
 }

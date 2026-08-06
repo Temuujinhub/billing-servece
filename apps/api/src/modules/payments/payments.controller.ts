@@ -53,6 +53,31 @@ export class PaymentsController {
     return this.payments.handleQpayCallback(intent);
   }
 
+  // ---- Bonum Gateway webhook (URL registered with Bonum via email).
+  //      Checksum (MERCHANT_CHECKSUM_KEY) is audited; truth via invoice-check.
+
+  @Public()
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('webhooks/bonum/callback')
+  bonumCallback(
+    @Req() req: Request,
+    @Headers('checksum') checksum: string | undefined,
+    @Headers('x-checksum') xChecksum: string | undefined,
+    @Query('intent') intent: string | undefined,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.payments.handleBonumCallback((req as any).rawBody, checksum ?? xChecksum, intent, body);
+  }
+
+  /** Some gateways probe/notify with GET — accept it as a trigger too. */
+  @Public()
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @Get('webhooks/bonum/callback')
+  bonumCallbackGet(@Query('intent') intent?: string) {
+    return this.payments.handleBonumCallback(undefined, undefined, intent, null);
+  }
+
   // ---- legacy HMAC-signed webhook (mock/internal)
 
   @Public()

@@ -15,6 +15,13 @@ export class ReceiptsController {
     return this.receipts.list(user.tenantId, take ?? 50, skip ?? 0);
   }
 
+  /** POS API 3.0 бүртгэлийн шалгалт — /rest/info-г дамжуулж харуулна. */
+  @Roles(Role.OWNER, Role.ACCOUNTANT)
+  @Get('provider-info')
+  providerInfo() {
+    return this.receipts.providerInfo();
+  }
+
   @Roles(Role.ACCOUNTANT, Role.OPERATOR)
   @HttpCode(200)
   @Post(':id/retry')

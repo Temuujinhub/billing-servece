@@ -14,6 +14,7 @@ interface IntentView {
   intentId: string;
   state: string;
   qrText: string | null;
+  paymentUrl: string | null;
   expiresAt: string | null;
   deeplinks?: { name: string; link: string }[];
 }
@@ -88,6 +89,12 @@ export default function PayPage() {
       setIntent(i);
       setPhase('qr');
     } catch (e) {
+      // Хуучирсан линкийг сэргээх үед нэхэмжлэх аль хэдийн төлөгдсөн байж
+      // болно — хуудсыг дахин ачаалж «Төлбөр амжилттай» төлөвийг харуулна.
+      if (e instanceof ApiError && e.code === 'NOT_PAYABLE') {
+        await load();
+        return;
+      }
       setError(e instanceof ApiError ? e.message : 'Төлбөр эхлүүлж чадсангүй');
     } finally {
       setBusy(false);
@@ -174,10 +181,20 @@ export default function PayPage() {
 
             {phase === 'qr' && intent && (
               <div className="text-center">
-                <p className="text-[14px] font-semibold text-navy-800">Банкны апп-аараа уншуулна уу</p>
-                <div className="mx-auto mt-3 w-fit rounded-2xl border border-line bg-white p-3 shadow-card">
-                  <canvas ref={canvasRef} aria-label="Төлбөрийн QR код" />
-                </div>
+                {/* Hosted checkout (Bonum): шинэхэн үүсгэсэн линк рүү шилжинэ */}
+                {intent.paymentUrl && (
+                  <a href={intent.paymentUrl} className="btn-primary w-full justify-center py-4 text-[16px]">
+                    Төлбөрийн хуудас руу шилжих →
+                  </a>
+                )}
+                {intent.qrText ? (
+                  <>
+                    <p className={`text-[14px] font-semibold text-navy-800 ${intent.paymentUrl ? 'mt-5' : ''}`}>Банкны апп-аараа уншуулна уу</p>
+                    <div className="mx-auto mt-3 w-fit rounded-2xl border border-line bg-white p-3 shadow-card">
+                      <canvas ref={canvasRef} aria-label="Төлбөрийн QR код" />
+                    </div>
+                  </>
+                ) : null}
                 <div className="mt-3 flex items-center justify-center gap-2 text-[13px] text-muted">
                   <span className="h-2 w-2 animate-pulse-soft rounded-full bg-teal-500" />
                   Төлөлтийг шалгаж байна…

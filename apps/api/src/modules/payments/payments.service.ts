@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { apiError } from '../../common/filters/http-exception.filter';
 import { sha256 } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BonumAdapter } from '../providers/bonum.adapter';
 import { MockQpayAdapter } from '../providers/mock-qpay.adapter';
 import { PaymentProviderPort } from '../providers/payment-provider.port';
 import { PAYMENT_PORT } from '../providers/sms.port';
@@ -22,6 +23,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     @Inject(PAYMENT_PORT) private readonly provider: PaymentProviderPort,
     private readonly mockAdapter: MockQpayAdapter,
+    private readonly bonumAdapter: BonumAdapter,
     private readonly receipts: ReceiptsService,
     private readonly config: ConfigService,
   ) {}
@@ -90,6 +92,7 @@ export class PaymentsService {
             intentId: activeIntent.id,
             state: activeIntent.state,
             qrText: activeIntent.qrText,
+            paymentUrl: activeIntent.paymentUrl,
             expiresAt: activeIntent.expiresAt,
           }
         : null,
@@ -114,18 +117,42 @@ export class PaymentsService {
       throw apiError(HttpStatus.CONFLICT, 'NOT_PAYABLE', 'Энэ нэхэмжлэх төлөгдөх боломжгүй төлөвт байна.', 'Invoice is not payable.');
     }
 
-    // Reuse a live PENDING intent — refresh keeps one QR per invoice.
+    // Latest open intent for the active provider (may hold an expired link).
     const existing = await this.prisma.paymentIntent.findFirst({
       where: {
         invoiceId: invoice.id,
         provider: this.provider.code,
-        state: 'PENDING',
-        expiresAt: { gt: new Date() },
+        state: { in: ['PENDING', 'PROCESSING'] },
       },
       orderBy: { createdAt: 'desc' },
     });
     if (existing) {
-      return this.intentView(existing.id);
+      // Still live → reuse (one QR/link per invoice).
+      if (existing.state === 'PENDING' && existing.expiresAt && existing.expiresAt > new Date()) {
+        return this.intentView(existing.id);
+      }
+      // Provider links (Bonum) are short-lived: when the payer returns days
+      // later the old link is likely dead. Before regenerating, re-verify the
+      // stale invoice — the payer may have paid while callbacks were missed.
+      if (existing.providerInvoiceId) {
+        const confirmed = await this.confirmIntent(existing.id, 'link_regenerate').catch(() => null);
+        if (confirmed?.state === 'SUCCEEDED') {
+          throw apiError(HttpStatus.CONFLICT, 'NOT_PAYABLE', 'Энэ нэхэмжлэх аль хэдийн төлөгдсөн байна.', 'Invoice is already paid.');
+        }
+      }
+      // Definitely unpaid → retire the stale intent and cut a fresh link below.
+      const retired = await this.prisma.paymentIntent.updateMany({
+        where: { id: existing.id, state: { in: ['PENDING', 'PROCESSING'] } },
+        data: { state: 'EXPIRED' },
+      });
+      if (retired.count > 0) {
+        await this.prisma.paymentEvent.create({
+          data: { intentId: existing.id, type: 'intent.expired', payload: { reason: 'provider_link_expired' } },
+        });
+        if (existing.providerInvoiceId) {
+          await this.provider.cancelInvoice(existing.providerInvoiceId).catch(() => undefined);
+        }
+      }
     }
 
     // Create the intent row first so the provider callback URL can carry its id.
@@ -141,12 +168,15 @@ export class PaymentsService {
       },
     });
 
+    const publicUrl = (this.config.get<string>('PUBLIC_URL') ?? '').replace(/\/$/, '');
     let providerInvoice;
     try {
       providerInvoice = await this.provider.createInvoice({
         amount: invoice.balance,
         description: `${invoice.number} ${invoice.description}`.slice(0, 100),
         internalRef: intent.id,
+        // Hosted-checkout providers (Bonum) send the payer back to OUR page.
+        returnUrl: `${publicUrl}/pay/${token}`,
       });
     } catch (e: any) {
       await this.prisma.paymentIntent.update({
@@ -167,6 +197,7 @@ export class PaymentsService {
       data: {
         providerInvoiceId: providerInvoice.providerInvoiceId,
         qrText: providerInvoice.qrText,
+        paymentUrl: providerInvoice.paymentUrl ?? null,
         expiresAt: providerInvoice.expiresAt,
         state: 'PENDING',
         events: { create: { type: 'provider.invoice_created', payload: { providerInvoiceId: providerInvoice.providerInvoiceId } } },
@@ -182,6 +213,7 @@ export class PaymentsService {
       state: intent.state,
       amount: intent.amount,
       qrText: intent.qrText,
+      paymentUrl: intent.paymentUrl,
       expiresAt: intent.expiresAt,
     };
   }
@@ -334,6 +366,46 @@ export class PaymentsService {
         // Never fail the callback response — the poll backstop re-checks.
         this.logger.warn(`QPay callback processing for ${intentId}: ${e?.message}`);
       }
+    }
+    return 'SUCCESS';
+  }
+
+  /**
+   * Bonum webhook (registered with Bonum by emailing our WEBHOOK URL). The
+   * checksum (MERCHANT_CHECKSUM_KEY) result is recorded for audit, but the
+   * webhook stays a trigger only — payment truth comes from the invoice-check
+   * API inside confirmIntent, so a forged/malformed callback can never credit
+   * money on its own.
+   */
+  async handleBonumCallback(rawBody: Buffer | undefined, checksum: string | undefined, intentId: string | undefined, body: any) {
+    const raw = rawBody?.toString('utf8') ?? (body ? JSON.stringify(body) : '');
+    const verdict = this.bonumAdapter.verifyChecksum(raw, checksum);
+    if (!verdict.valid) {
+      this.logger.warn(`Bonum webhook checksum not verified (scheme=${verdict.scheme ?? 'none'})`);
+      await this.prisma.auditLog.create({
+        data: { action: 'webhook.checksum_unverified', targetType: 'webhook', meta: { provider: 'bonum' } },
+      });
+    }
+
+    // Locate the intent: our callback query hint first, then provider ids.
+    let intent = intentId ? await this.prisma.paymentIntent.findUnique({ where: { id: intentId } }) : null;
+    if (!intent && body && typeof body === 'object') {
+      const providerInvoiceId = body.invoiceId ?? body.invoice_id ?? body.id ?? body.orderId;
+      if (providerInvoiceId) {
+        intent = await this.prisma.paymentIntent.findUnique({
+          where: { provider_providerInvoiceId: { provider: 'bonum', providerInvoiceId: String(providerInvoiceId) } },
+        });
+      }
+    }
+    if (intent) {
+      try {
+        await this.confirmIntent(intent.id, 'bonum_callback');
+      } catch (e: any) {
+        // Never fail the callback response — the poll backstop re-checks.
+        this.logger.warn(`Bonum callback processing for ${intent.id}: ${e?.message}`);
+      }
+    } else {
+      this.logger.warn('Bonum webhook received for unknown invoice');
     }
     return 'SUCCESS';
   }
