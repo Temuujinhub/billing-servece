@@ -22,45 +22,90 @@ jobs:
     name: Deploy to DigitalOcean
     runs-on: ubuntu-latest
     env:
-      DEPLOY_HOST: ${{ vars.DEPLOY_HOST || '168.144.41.111' }}
+      # 202.37.235.16 — Монголын үндсэн production сервер (eBarimt POS API 3.0
+      # локал үйлчилгээ энд хамт ажиллана). billing.mastrsys.com DNS энд заадаг.
+      # Хуучин DigitalOcean droplet (168.144.41.111) ашиглагдахаа больсон.
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST || '202.37.235.16' }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER || 'root' }}
       DEPLOY_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure SSH key
+      - name: Configure SSH auth (key, password fallback)
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || secrets.DEPLOY_SSH_KEY1 }}
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
-          if [ -z "$DEPLOY_SSH_KEY" ]; then
-            echo "::error title=Missing SSH key secret::Add DEPLOY_SSH_KEY under Settings → Secrets and variables → Actions."
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          # Prefer key auth when the key actually opens THIS host; otherwise
+          # fall back to password auth (DEPLOY_PASSWORD secret) via sshpass.
+          if [ -n "$DEPLOY_SSH_KEY" ]; then
+            printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            if ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
+                "$DEPLOY_USER@$DEPLOY_HOST" true 2>/dev/null; then
+              echo "DEPLOY_AUTH=key" >> "$GITHUB_ENV"
+              echo "✅ Key auth works for $DEPLOY_HOST"
+              exit 0
+            fi
+            echo "Key auth failed for $DEPLOY_HOST — trying password auth."
+          fi
+          if [ -n "$SSHPASS" ]; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+            if sshpass -e ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=accept-new \
+                "$DEPLOY_USER@$DEPLOY_HOST" true; then
+              echo "DEPLOY_AUTH=password" >> "$GITHUB_ENV"
+              echo "✅ Password auth works for $DEPLOY_HOST"
+              exit 0
+            fi
+            echo "::error title=SSH auth failed::Neither DEPLOY_SSH_KEY nor DEPLOY_PASSWORD can open $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PORT."
             exit 1
           fi
-          mkdir -p ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "::error title=Missing SSH secrets::Add DEPLOY_SSH_KEY (authorized on the server) or DEPLOY_PASSWORD under Settings → Secrets and variables → Actions."
+          exit 1
 
       - name: Sync project to droplet
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
+          if [ "$DEPLOY_AUTH" = "password" ]; then
+            RSH="sshpass -e ssh -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
+          else
+            RSH="ssh -i $HOME/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
+          fi
           rsync -az --delete \
             --exclude '.git' --exclude 'node_modules' --exclude '.next' --exclude 'dist' \
             --exclude '.env' \
-            -e "ssh -i ~/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new" \
+            -e "$RSH" \
             ./ "$DEPLOY_USER@$DEPLOY_HOST:/opt/billingservice/"
 
       - name: Run remote deploy script
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+          if [ "$DEPLOY_AUTH" = "password" ]; then
+            SSH="sshpass -e ssh -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
+          else
+            SSH="ssh -i $HOME/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
+          fi
+          $SSH "$DEPLOY_USER@$DEPLOY_HOST" \
             "PUBLIC_URL=https://billing.mastrsys.com bash /opt/billingservice/deploy/remote-deploy.sh"
 
-      - name: Verify public endpoint
+      - name: Verify deployed droplet (not just DNS)
         run: |
+          # DNS may point at a DIFFERENT server than the deploy target — verify
+          # the droplet we actually deployed to, via --resolve.
+          DNS_IP=$(getent hosts billing.mastrsys.com | awk '{print $1}' | head -1)
+          if [ -n "$DNS_IP" ] && [ "$DNS_IP" != "$DEPLOY_HOST" ]; then
+            echo "::warning title=DNS mismatch::billing.mastrsys.com resolves to $DNS_IP but this workflow deployed to $DEPLOY_HOST — visitors are NOT seeing this deploy!"
+          fi
           for i in $(seq 1 20); do
-            if curl -fsS --max-time 10 https://billing.mastrsys.com/health/live > /dev/null 2>&1; then
-              echo "✅ https://billing.mastrsys.com is live"
+            if curl -fsSk --resolve "billing.mastrsys.com:443:$DEPLOY_HOST" --max-time 10 https://billing.mastrsys.com/health/live > /dev/null 2>&1; then
+              echo "✅ Droplet $DEPLOY_HOST serves https://billing.mastrsys.com/health/live"
               exit 0
             fi
             sleep 6
           done
-          echo "::warning::Public HTTPS endpoint not confirmed yet (cert may still be provisioning)."
+          echo "::error::Deployed droplet $DEPLOY_HOST did not serve /health/live."
+          exit 1
