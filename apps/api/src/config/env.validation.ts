@@ -47,6 +47,10 @@ export const envValidationSchema = Joi.object({
   EBARIMT_DISTRICT_CODE: Joi.string().default('3505'),
   EBARIMT_CLASSIFICATION_CODE: Joi.string().default('6499999'),
 
+  // Платформын админууд — таслалаар тусгаарласан имэйлүүд; нэвтрэх үед
+  // isPlatformAdmin эрх автоматаар олгогдоно (production-д seed ажиллахгүй тул).
+  PLATFORM_ADMIN_EMAILS: Joi.string().optional().allow(''),
+
   // --- Email provider (onboarding хүсэлт Bonum/LIME рүү илгээх) ---
   EMAIL_PROVIDER: Joi.string().valid('mock', 'smtp').default('mock'),
   SMTP_HOST: Joi.string().when('EMAIL_PROVIDER', { is: 'smtp', then: Joi.required(), otherwise: Joi.optional().allow('') }),
