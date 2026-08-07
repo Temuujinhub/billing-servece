@@ -111,7 +111,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           }`}
         >
           <nav className="flex h-full flex-col gap-1 overflow-y-auto p-3" aria-label="Самбарын цэс">
-            {!user.isAdmin && (
+            {/* Хамтрагчийн ажилтан зөвхөн өөрийн хүсэлтүүдийн хуудсыг харна */}
+            {user.partnerKind && (
+              <>
+                <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-[0.14em] text-teal-600">Хамтрагч</p>
+                <Link
+                  href="/partner/requests"
+                  onClick={() => setMenuOpen(false)}
+                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-semibold transition-all duration-300 ${
+                    pathname.startsWith('/partner')
+                      ? 'border border-white/80 bg-white/80 text-teal-700 shadow-[0_4px_16px_-6px_rgba(13,148,136,0.3)] backdrop-blur-md'
+                      : 'text-slate-600 hover:bg-white/60 hover:text-slate-900'
+                  }`}
+                  aria-current={pathname.startsWith('/partner') ? 'page' : undefined}
+                >
+                  <span aria-hidden="true">📮</span>
+                  Бүртгэлийн хүсэлтүүд
+                </Link>
+              </>
+            )}
+            {!user.isAdmin && !user.partnerKind && (
             <>
             <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Merchant</p>
             {NAV.map((item) => {

@@ -1,8 +1,10 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { IntegrationKind, Role } from '@prisma/client';
 import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { AuthUser, CurrentUser, Roles } from '../../common/decorators';
+import { apiError } from '../../common/filters/http-exception.filter';
+import { PartnerGuard } from '../../common/guards/partner.guard';
 import { PlatformAdminGuard } from '../../common/guards/platform-admin.guard';
 import { IntegrationsService } from './integrations.service';
 
@@ -83,5 +85,52 @@ export class AdminIntegrationsController {
       branchNo: dto.branchNo,
       districtCode: dto.districtCode,
     });
+  }
+}
+
+/**
+ * Хамтрагч байгууллагын (Bonum/LIME) ажилтнуудад зориулсан тусдаа хэсэг:
+ * зөвхөн ӨӨРТ нь хамаарах бүртгэлийн хүсэлтүүдийг харж, бүртгэл хийгдмэгц
+ * хариугаа (терминал/POS-ийн утгууд) бөглөж баталгаажуулна. Эрх нь
+ * PARTNER_BONUM_EMAILS / PARTNER_EBARIMT_EMAILS env-ээр олгогдоно.
+ */
+@ApiTags('partner')
+@ApiBearerAuth()
+@UseGuards(PartnerGuard)
+@Controller('partner/requests')
+export class PartnerRequestsController {
+  constructor(private readonly integrations: IntegrationsService) {}
+
+  /** Партнёр өөрийн талын хүсэлтүүдийг л харна; админ бүгдийг харна. */
+  private kindOf(user: AuthUser): IntegrationKind | undefined {
+    if (user.partnerKind) return user.partnerKind as IntegrationKind;
+    if (user.isAdmin) return undefined;
+    throw apiError(HttpStatus.FORBIDDEN, 'PARTNER_ONLY', 'Хамтрагчийн эрх алга.', 'No partner access.');
+  }
+
+  @Get()
+  list(@CurrentUser() user: AuthUser, @Query('status') status?: string) {
+    return this.integrations.listAll(status, this.kindOf(user));
+  }
+
+  @HttpCode(200)
+  @Post(':id/decision')
+  decide(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: DecideRequestDto) {
+    return this.integrations.decide(
+      user,
+      id,
+      dto.approved,
+      dto.note,
+      {
+        terminalId: dto.terminalId,
+        appSecret: dto.appSecret,
+        checksumKey: dto.checksumKey,
+        merchantTin: dto.merchantTin,
+        posNo: dto.posNo,
+        branchNo: dto.branchNo,
+        districtCode: dto.districtCode,
+      },
+      this.kindOf(user),
+    );
   }
 }

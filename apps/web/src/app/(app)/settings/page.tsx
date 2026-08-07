@@ -434,15 +434,16 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="label">Банк</label>
-            <input className="input" value={bankName} onChange={(e) => setBankName(e.target.value)} disabled={!isOwner} maxLength={100} placeholder="Хаан банк" />
+            <input className="input" value={bankName} onChange={(e) => setBankName(e.target.value)} disabled={!isOwner} maxLength={100} placeholder="Жишээ: Хаан банк" />
           </div>
           <div>
             <label className="label">Дансны дугаар</label>
-            <input className="input" value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} disabled={!isOwner} maxLength={30} />
+            <input className="input" value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} disabled={!isOwner} maxLength={30} placeholder="Жишээ: 5041234567" />
           </div>
           <div>
-            <label className="label">Дансны нэр</label>
-            <input className="input" value={bankAccountName} onChange={(e) => setBankAccountName(e.target.value)} disabled={!isOwner} maxLength={150} placeholder="Байгууллагын нэр дээрх данс" />
+            <label className="label">Данс эзэмшигчийн нэр</label>
+            <input className="input" value={bankAccountName} onChange={(e) => setBankAccountName(e.target.value)} disabled={!isOwner} maxLength={150} placeholder="Банкинд бүртгэлтэй яг нэрээр бичнэ" />
+            <p className="mt-1 text-[12px] text-slate-500">Данс байгууллагын нэр дээр байх шаардлагатай</p>
           </div>
         </div>
         {activationNote && (

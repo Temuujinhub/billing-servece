@@ -276,8 +276,11 @@ export class IntegrationsService {
 
   // ------------------------------------------------------------ admin side
 
-  async listAll(status?: string) {
-    const where: Prisma.IntegrationRequestWhereInput = status ? { status: status as any } : {};
+  async listAll(status?: string, kind?: IntegrationKind) {
+    const where: Prisma.IntegrationRequestWhereInput = {
+      ...(status ? { status: status as any } : {}),
+      ...(kind ? { kind } : {}),
+    };
     const items = await this.prisma.integrationRequest.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -316,9 +319,20 @@ export class IntegrationsService {
    *     модуль автоматаар идэвхжинэ (унтраатай үеийн төлбөрт баримт үүсдэггүй
    *     тул энэ алхам мартагдвал баримт алдагдана).
    */
-  async decide(admin: AuthUser, requestId: string, approved: boolean, note?: string, response?: DecisionResponseData) {
+  async decide(
+    admin: AuthUser,
+    requestId: string,
+    approved: boolean,
+    note?: string,
+    response?: DecisionResponseData,
+    /** Партнёрын ажилтан зөвхөн ӨӨРИЙН талын хүсэлтийг шийднэ. */
+    restrictKind?: IntegrationKind,
+  ) {
     const request = await this.prisma.integrationRequest.findUnique({ where: { id: requestId } });
     if (!request) throw apiError(HttpStatus.NOT_FOUND, 'REQUEST_NOT_FOUND', 'Хүсэлт олдсонгүй.', 'Request not found.');
+    if (restrictKind && request.kind !== restrictKind) {
+      throw apiError(HttpStatus.FORBIDDEN, 'WRONG_PARTNER', 'Энэ хүсэлт таны байгууллагад хамааралгүй.', 'Request belongs to another partner.');
+    }
     if (['APPROVED', 'REJECTED'].includes(request.status)) {
       throw apiError(HttpStatus.CONFLICT, 'REQUEST_CLOSED', 'Хүсэлт аль хэдийн шийдвэрлэгдсэн.', 'Request is already decided.');
     }

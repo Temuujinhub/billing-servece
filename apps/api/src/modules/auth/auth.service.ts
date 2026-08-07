@@ -90,6 +90,7 @@ export class AuthService {
       tenantId: tenant.id,
       role: membership.role,
       isAdmin: this.isAdminUser(email, user.platformAdmin),
+      partnerKind: this.partnerKindFor(email),
     });
   }
 
@@ -117,6 +118,7 @@ export class AuthService {
       tenantId: membership.tenantId,
       role: membership.role,
       isAdmin: this.isAdminUser(user.email, user.platformAdmin),
+      partnerKind: this.partnerKindFor(user.email),
     });
   }
 
@@ -143,6 +145,7 @@ export class AuthService {
       tenantId: membership.tenantId,
       role: membership.role,
       isAdmin: this.isAdminUser(stored.user.email, stored.user.platformAdmin),
+      partnerKind: this.partnerKindFor(stored.user.email),
     });
   }
 
@@ -153,6 +156,19 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
     return { ok: true };
+  }
+
+  /** Партнёрын ажилтны эрх — env allowlist (PARTNER_BONUM_EMAILS / PARTNER_EBARIMT_EMAILS). */
+  private partnerKindFor(email: string): 'BONUM' | 'EBARIMT' | null {
+    const inList = (key: string) =>
+      (this.config.get<string>(key) ?? '')
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean)
+        .includes(email.toLowerCase());
+    if (inList('PARTNER_BONUM_EMAILS')) return 'BONUM';
+    if (inList('PARTNER_EBARIMT_EMAILS')) return 'EBARIMT';
+    return null;
   }
 
   /** platformAdmin column OR the ADMIN_EMAILS env allowlist. */
@@ -177,6 +193,7 @@ export class AuthService {
         tenantId: claims.tenantId,
         role: claims.role,
         isAdmin: claims.isAdmin,
+        partnerKind: claims.partnerKind ?? null,
       },
       { secret: this.config.getOrThrow('JWT_ACCESS_SECRET'), expiresIn: accessTtl },
     );
@@ -201,6 +218,7 @@ export class AuthService {
         role: claims.role,
         tenantId: claims.tenantId,
         isAdmin: claims.isAdmin,
+        partnerKind: claims.partnerKind ?? null,
       },
     };
   }
