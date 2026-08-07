@@ -134,4 +134,48 @@ export class MessagingService {
     }
     return { submitted, failed };
   }
+
+  /**
+   * Poll SUBMITTED jobs for their delivery outcome (CallPro message-detail).
+   * SMS providers confirm delivery asynchronously, so a job would otherwise sit
+   * at SUBMITTED forever. Safe to call repeatedly — never throws, and only
+   * touches jobs the provider gave us a reference for.
+   */
+  async refreshDeliveryStatus(tenantId: string, take = 100): Promise<{ delivered: number; undelivered: number; pending: number }> {
+    const sms = await this.resolver.getSmsPort(tenantId);
+    if (!sms.getStatus) return { delivered: 0, undelivered: 0, pending: 0 };
+
+    const jobs = await this.prisma.messageJob.findMany({
+      where: { tenantId, status: 'SUBMITTED', providerRef: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(take, 200),
+    });
+    let delivered = 0;
+    let undelivered = 0;
+    let pending = 0;
+    for (const job of jobs) {
+      try {
+        const status = await sms.getStatus(tenantId, job.providerRef!);
+        if (status.state === 'DELIVERED') {
+          await this.prisma.messageJob.updateMany({
+            where: { id: job.id, status: 'SUBMITTED' },
+            data: { status: 'DELIVERED', error: null },
+          });
+          delivered += 1;
+        } else if (status.state === 'UNDELIVERED') {
+          await this.prisma.messageJob.updateMany({
+            where: { id: job.id, status: 'SUBMITTED' },
+            data: { status: 'FAILED', error: 'Оператор мессежийг хүргэж чадсангүй (UNDELIVERED).' },
+          });
+          undelivered += 1;
+        } else {
+          pending += 1;
+        }
+      } catch (e: any) {
+        pending += 1;
+        this.logger.warn(`SMS status poll failed for job ${job.id}: ${e?.message}`);
+      }
+    }
+    return { delivered, undelivered, pending };
+  }
 }
