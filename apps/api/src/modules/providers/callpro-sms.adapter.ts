@@ -4,9 +4,16 @@ import { SmsPort, SmsSendResult } from './sms.port';
 
 /**
  * CallPro Text API adapter (api-text.callpro.mn).
- * Auth: x-api-key header. POST /send-sms {from, to, text} → {status, message_id}.
+ *
+ * Auth: x-api-key header. Verified live against the gateway:
+ *   POST {baseUrl}/send  {from, to, text} → 200 {status:"queued", message_id}
+ * NOTE: the gateway strips the `/v1/sms` prefix before routing, so a wrong
+ * action name surfaces as `{"message":"Not Found - /<action>"}` — that error
+ * means the ACTION is wrong, not the base URL. API docs: {baseUrl}/docs.
+ *
  * Credentials come from the tenant's saved integration settings (env fallback).
  */
+const SEND_PATH = '/send';
 @Injectable()
 export class CallProSmsAdapter implements SmsPort {
   readonly code = 'callpro';
@@ -22,7 +29,7 @@ export class CallProSmsAdapter implements SmsPort {
     // CallPro accepts 8-digit local numbers; strip the +976 prefix we normalize to.
     const to = args.to.replace(/^\+?976/, '');
 
-    const res = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/send-sms`, {
+    const res = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}${SEND_PATH}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': cfg.apiKey },
       body: JSON.stringify({ from: cfg.from, to, text: args.text }),
