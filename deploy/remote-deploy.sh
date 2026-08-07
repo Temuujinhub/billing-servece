@@ -170,18 +170,19 @@ if [ "${PAYMENT_PROVIDER:-qpay_mock}" = "qpay" ] && [ -n "${QPAY_USERNAME:-}" ];
   fi
 fi
 if [ "${SMS_PROVIDER:-mock}" = "callpro" ] && [ -n "${CALLPRO_API_KEY:-}" ]; then
+  # /docs is the gateway's own API reference — 200 proves the base URL routes.
   SMS_CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 15 \
-    -H "x-api-key: ${CALLPRO_API_KEY}" \
-    "${CALLPRO_BASE_URL:-https://api-text.callpro.mn/v1/sms}/tenant-daily-message-count?operator=unitel" || echo "ERR")
+    "${CALLPRO_BASE_URL:-https://api-text.callpro.mn/v1/sms}/docs" || echo "ERR")
   if [ "$SMS_CODE" = "200" ]; then
     echo "✅ CallPro SMS API OK (HTTP $SMS_CODE)"
   else
-    echo "⚠ CallPro check returned HTTP $SMS_CODE — API key-г шалгана уу."
+    echo "⚠ CallPro check returned HTTP $SMS_CODE — CALLPRO_BASE_URL-ээ шалгана уу."
   fi
 fi
 # Open ebarimt registry (no auth) — used by the onboarding regNo→name/ТТД lookup.
+# The lookup starts with getTinInfo?regNo= (getInfo takes ?tin=, not ?regNo=).
 EBARIMT_CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 15 \
-  "https://api.ebarimt.mn/api/info/check/getInfo?regNo=2657457" || echo "ERR")
+  "https://api.ebarimt.mn/api/info/check/getTinInfo?regNo=2657457" || echo "ERR")
 if [ "$EBARIMT_CODE" = "200" ]; then
   echo "✅ ebarimt registry lookup OK (HTTP $EBARIMT_CODE)"
 else
