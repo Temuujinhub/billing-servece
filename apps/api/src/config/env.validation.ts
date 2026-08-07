@@ -55,6 +55,10 @@ export const envValidationSchema = Joi.object({
   EBARIMT_BRANCH_NO: Joi.string().default('001'),
   EBARIMT_DISTRICT_CODE: Joi.string().default('3505'),
   EBARIMT_CLASSIFICATION_CODE: Joi.string().default('6499999'),
+  // Сугалаа/QR-ийг хэдэн цаг хадгалах вэ. ТЕГ-ийн заавраар эдгээрийг баримтанд
+  // хэвлэхээс өөрөөр хадгалахыг хориглодог тул хугацаа дуусмагц NULL болгоно.
+  // 0 = огт хадгалахгүй (баримт үүсмэгц цэвэрлэнэ).
+  EBARIMT_QR_RETENTION_HOURS: Joi.number().min(0).default(72),
   // --- ТЕГ операторын сервис (оператороос мерчант бүртгүүлэх хүсэлт) ---
   // Түлхүүрийг Posapi@itc.gov.mn-ээс авна. Тохируулаагүй бол зөвхөн энэ товч
   // идэвхгүй болно — бусад онбординг хэвийн үргэлжилнэ.

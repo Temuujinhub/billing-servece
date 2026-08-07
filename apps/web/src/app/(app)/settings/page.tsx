@@ -107,10 +107,21 @@ export default function SettingsPage() {
   const [activationNote, setActivationNote] = useState<string | null>(null);
   // Онбордингийн анкет — хаяг, утас, дансны мэдээлэл
   const [address, setAddress] = useState('');
+  // Байршил: дүүрэг/сум сонгоход татварын баримтын байршлын код автоматаар
+  // тодорхойлогдоно — хэрэглэгч 4 оронтой кодыг мэдэх шаардлагагүй.
+  const [districtCode, setDistrictCode] = useState('');
+  const [districts, setDistricts] = useState<{ code: string; label: string }[]>([]);
   const [contactPhone, setContactPhone] = useState('');
   const [bankName, setBankName] = useState('');
   const [bankAccount, setBankAccount] = useState('');
   const [bankAccountName, setBankAccountName] = useState('');
+
+  useEffect(() => {
+    // Байршлын лавлах — татагдахгүй бол талбар нь энгийн текст хэвээр үлдэнэ.
+    api<{ items: { code: string; label: string }[] }>('/tenant/districts')
+      .then((d) => setDistricts(d.items ?? []))
+      .catch(() => setDistricts([]));
+  }, []);
 
   const loadRequests = useCallback(() => {
     api<{ items: IntegrationRequest[] }>('/integrations/requests')
@@ -139,6 +150,7 @@ export default function SettingsPage() {
           setSmsTemplate(r.tenant.smsTemplate ?? '');
           setSmsLatin(r.tenant.smsTransliterate === true);
           setAddress(r.tenant.address ?? '');
+          setDistrictCode(r.tenant.ebarimtDistrictCode ?? '');
           setContactPhone(r.tenant.contactPhone ?? '');
           setBankName(r.tenant.bankName ?? '');
           setBankAccount(r.tenant.bankAccount ?? '');
@@ -215,6 +227,7 @@ export default function SettingsPage() {
           smsTemplate,
           smsTransliterate: smsLatin,
           address: address.trim() || undefined,
+          ebarimtDistrictCode: districtCode || undefined,
           contactPhone: contactPhone.trim() || undefined,
           bankName: bankName.trim() || undefined,
           bankAccount: bankAccount.trim() || undefined,
@@ -429,6 +442,24 @@ export default function SettingsPage() {
           <div className="sm:col-span-2">
             <label className="label">Хаяг</label>
             <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} disabled={!isOwner} maxLength={300} placeholder="Байгууллагын албан ёсны хаяг" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">Байршил (аймаг/дүүрэг — сум/хороо)</label>
+            {districts.length > 0 ? (
+              <select className="input" value={districtCode} onChange={(e) => setDistrictCode(e.target.value)} disabled={!isOwner}>
+                <option value="">— сонгоно уу —</option>
+                {districts.map((d) => (
+                  <option key={d.code} value={d.code}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input className="input" value={districtCode} onChange={(e) => setDistrictCode(e.target.value)} disabled={!isOwner} maxLength={10} placeholder="Жишээ: 0101" />
+            )}
+            <p className="mt-1 text-[12px] text-slate-500">
+              Үйл ажиллагаа явуулж буй байршлаа сонгоно — татварын баримт энэ байршлаар бүртгэгдэнэ.
+            </p>
           </div>
           <div>
             <label className="label">Утас</label>

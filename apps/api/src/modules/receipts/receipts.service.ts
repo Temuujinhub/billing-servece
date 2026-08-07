@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { WebhooksService } from '../developers/webhooks.service';
 import { EBARIMT_PORT, EbarimtPort } from '../providers/ebarimt.port';
 import { PosApiEbarimtAdapter } from '../providers/posapi-ebarimt.adapter';
+import { ReceiptPurgeService } from './receipt-purge.service';
 
 /**
  * eBarimt receipts. The actual receipt is cut by the EBARIMT_PORT adapter
@@ -27,6 +28,7 @@ export class ReceiptsService {
     @Inject(EBARIMT_PORT) private readonly ebarimt: EbarimtPort,
     private readonly posapi: PosApiEbarimtAdapter,
     private readonly webhooks: WebhooksService,
+    private readonly purge: ReceiptPurgeService,
   ) {}
 
   /** Called inside the payment-confirm transaction. */
@@ -76,6 +78,7 @@ export class ReceiptsService {
         },
       },
     });
+    const keepQr = this.purge.retentionHours > 0;
     let processed = 0;
     for (const receipt of pending) {
       try {
@@ -104,8 +107,10 @@ export class ReceiptsService {
             data: {
               state: 'CREATED',
               receiptNo: result.receiptNo,
-              lottery: result.lottery,
-              qrData: result.qrData,
+              // Хадгалах хугацаа 0 бол сугалаа/QR-г огт бичихгүй (ТЕГ-ийн
+              // заавар: баримтанд хэвлэхээс өөрөөр хадгалахыг хориглоно).
+              lottery: keepQr ? result.lottery : null,
+              qrData: keepQr ? result.qrData : null,
               error: null,
             },
           });

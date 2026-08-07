@@ -205,7 +205,7 @@ export default function IntegrationsPage() {
   useEffect(() => {
     load();
     // Байршлын кодын лавлах — олдохгүй бол талбар нь энгийн текст хэвээр.
-    api<{ items: District[] }>('/integrations/EBARIMT/districts')
+    api<{ items: District[] }>('/tenant/districts')
       .then((d) => setDistricts(d.items ?? []))
       .catch(() => setDistricts([]));
   }, [load]);
