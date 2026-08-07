@@ -52,7 +52,15 @@ export class ReceiptsService {
   async processPending(tenantId: string) {
     const tenant = await this.prisma.tenant.findUniqueOrThrow({
       where: { id: tenantId },
-      select: { tin: true, ebarimtMerchantTin: true, ebarimtPosNo: true, ebarimtBranchNo: true, ebarimtDistrictCode: true },
+      select: {
+        tin: true,
+        ebarimtMerchantTin: true,
+        ebarimtPosNo: true,
+        ebarimtBranchNo: true,
+        ebarimtDistrictCode: true,
+        ebarimtVatPayer: true,
+        ebarimtVatFreeProj: true,
+      },
     });
     const pending = await this.prisma.ebarimtReceipt.findMany({
       where: { tenantId, state: { in: ['PENDING', 'FAILED'] }, retries: { lt: 5 } },
@@ -86,6 +94,8 @@ export class ReceiptsService {
             posNo: tenant.ebarimtPosNo,
             branchNo: tenant.ebarimtBranchNo,
             districtCode: tenant.ebarimtDistrictCode,
+            vatPayer: tenant.ebarimtVatPayer,
+            vatFreeProject: tenant.ebarimtVatFreeProj,
           },
         });
         await this.prisma.$transaction(async (tx) => {

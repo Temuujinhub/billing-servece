@@ -25,6 +25,14 @@ export interface EbarimtCreateArgs {
     posNo?: string | null;
     branchNo?: string | null;
     districtCode?: string | null;
+    /**
+     * ТЕГ-ийн бүртгэлээс (getInfo?tin=) ирсэн татварын төлөв. Эдгээрээс
+     * баримтын `taxType` шалтгаална — НӨАТ суутган төлөгч БИШ байгууллагад
+     * 10% НӨАТ бодох нь буруу баримт үүсгэнэ.
+     */
+    vatPayer?: boolean | null;
+    /** НӨАТ-аас чөлөөлөгдөх төсөл (taxType=VAT_FREE, taxProductCode=304). */
+    vatFreeProject?: boolean | null;
   };
 }
 

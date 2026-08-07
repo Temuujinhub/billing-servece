@@ -130,15 +130,25 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
       );
     }
 
-    // Integer-MNT gross → VAT-inclusive decomposition (standard 10% НӨАТ).
     const total = round2(args.amount);
-    const vat = round2(total - total / 1.1);
     const isB2B = args.receiptType === 'ORGANIZATION' && !!args.customerTin;
 
-    const item = {
+    // Татварын төрөл нь БОРЛУУЛАГЧИЙН бүртгэлээс шалтгаална (getInfo?tin=).
+    // НӨАТ суутган төлөгч биш байгууллагад 10% задалж бичих нь буруу баримт.
+    const taxType = args.merchant?.vatFreeProject
+      ? 'VAT_FREE'
+      : args.merchant?.vatPayer === false
+        ? 'NO_VAT'
+        : 'VAT_ABLE';
+    // Дүн нь НӨАТ шингэсэн; VAT_ABLE үед л 10%-ийг задалж харуулна.
+    const vat = taxType === 'VAT_ABLE' ? round2(total - total / 1.1) : 0;
+
+    const item: Record<string, unknown> = {
       name: args.description.slice(0, 128) || 'Үйлчилгээ',
       barCodeType: 'UNDEFINED',
       classificationCode: this.config.get<string>('EBARIMT_CLASSIFICATION_CODE') || '6499999',
+      // НӨАТ-аас чөлөөлөгдөх төслийн барааны код (заавар: VAT_FREE → "304").
+      ...(taxType === 'VAT_FREE' ? { taxProductCode: '304' } : {}),
       measureUnit: 'ш',
       qty: 1.0,
       unitPrice: total,
@@ -148,27 +158,33 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
     };
 
     const payload: any = {
+      branchNo: merchant.branchNo,
       totalAmount: total,
       totalVAT: vat,
       totalCityTax: 0,
       districtCode: merchant.districtCode,
       merchantTin: merchant.merchantTin,
       posNo: merchant.posNo,
-      branchNo: merchant.branchNo,
+      customerTin: isB2B ? args.customerTin : null,
       type: isB2B ? 'B2B_RECEIPT' : 'B2C_RECEIPT',
-      ...(isB2B ? { customerTin: args.customerTin } : {}),
+      inactiveId: null,
+      reportMonth: null,
+      // Заавал талбар: багц дотор баримтыг дугаарлана. Бид багц бүрд ганц
+      // баримт үүсгэдэг тул үргэлж "01".
+      billIdSuffix: '01',
       receipts: [
         {
-          taxType: 'VAT_ABLE',
+          taxType,
           merchantTin: merchant.merchantTin,
+          customerTin: isB2B ? args.customerTin : null,
           totalAmount: total,
           totalVAT: vat,
           totalCityTax: 0,
           items: [item],
         },
       ],
-      // Money already settled by the PSP before the receipt is cut.
-      payments: [{ code: 'PAYMENT_CARD', status: 'PAID', amount: total }],
+      // Мөнгө нь баримт хэвлэхээс өмнө PSP-ээр аль хэдийн төлөгдсөн.
+      payments: [{ code: paymentCode(args.paymentProvider), status: 'PAID', paidAmount: total, data: null }],
     };
 
     const res = await fetch(`${this.baseUrl}/rest/receipt`, {
@@ -184,8 +200,14 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
     } catch {
       /* non-JSON */
     }
-    if (!res.ok || (body?.status && !['SUCCESS', 'PAYED', 'REGISTERED'].includes(String(body.status).toUpperCase()))) {
-      throw new Error(`POS API receipt failed (${res.status} ${body?.status ?? ''}): ${String(body?.message ?? text).slice(0, 300)}`);
+    // Заавар: status ∈ {SUCCESS, ERROR, PAYMENT}. PAYMENT нь "төлбөрийн мэдээлэл
+    // дутуу" гэсэн үг тул бид үүнийг амжилт гэж үзэхгүй.
+    const status = String(body?.status ?? '').toUpperCase();
+    if (!res.ok || (status && status !== 'SUCCESS')) {
+      const hint = status === 'PAYMENT' ? ' (төлбөрийн мэдээлэл дутуу)' : '';
+      throw new Error(
+        `POS API receipt failed (${res.status} ${status})${hint}: ${String(body?.message ?? body?.msg ?? text).slice(0, 300)}`,
+      );
     }
     if (!body?.id) {
       throw new Error(`POS API receipt returned no id (ДДТД): ${text.slice(0, 300)}`);
@@ -204,6 +226,14 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * Төлбөрийн хэлбэрийн код (заавар: CASH | PAYMENT_CARD | BANK_TRANSFER |
+ * BANK_TRANSFER_QPAY). Bonum бол картын гарц, QPay нь өөрийн кодтой.
+ */
+function paymentCode(provider: string): string {
+  return provider.startsWith('qpay') ? 'BANK_TRANSFER_QPAY' : 'PAYMENT_CARD';
 }
 
 /** /rest/info дээр бүртгэгдсэн нэг POS. */
