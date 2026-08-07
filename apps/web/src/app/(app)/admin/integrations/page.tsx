@@ -62,6 +62,20 @@ interface TestResult {
 
 type Code = 'BONUM' | 'EBARIMT' | 'QPAY' | 'CALLPRO';
 
+interface PosRegistration {
+  merchantTin: string | null;
+  merchantName: string | null;
+  branchNo: string | null;
+  posNo: string;
+}
+
+interface SyncResult {
+  ok: boolean;
+  message_mn: string;
+  applied: { posNo: string; branchNo: string } | null;
+  options: PosRegistration[];
+}
+
 const SOURCE_MN: Record<Source, string> = {
   db: 'UI-аас хадгалсан',
   env: 'Серверийн .env-ээс',
@@ -155,6 +169,8 @@ export default function IntegrationsPage() {
 
   const [bForm, setBForm] = useState({ terminalId: '', appSecret: '', checksumKey: '' });
   const [eForm, setEForm] = useState({ merchantTin: '', posNo: '', branchNo: '', districtCode: '' });
+  const [sync, setSync] = useState<SyncResult | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [qForm, setQForm] = useState({ username: '', password: '', invoiceCode: '' });
   const [cForm, setCForm] = useState({ apiKey: '', from: '' });
 
@@ -191,6 +207,24 @@ export default function IntegrationsPage() {
       setError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
     } finally {
       setBusy(null);
+    }
+  }
+
+  /** ebarimt.mn дээр баталгаажсаны дараа POS дугаарыг татаж авна. */
+  async function syncEbarimt() {
+    setSyncing(true);
+    setSync(null);
+    try {
+      const r = await api<SyncResult>('/integrations/EBARIMT/sync', { method: 'POST' });
+      setSync(r);
+      if (r.applied) {
+        setEForm((f) => ({ ...f, posNo: r.applied!.posNo, branchNo: r.applied!.branchNo }));
+        load();
+      }
+    } catch (e) {
+      setSync({ ok: false, message_mn: e instanceof ApiError ? e.message : 'Татаж чадсангүй', applied: null, options: [] });
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -359,6 +393,47 @@ export default function IntegrationsPage() {
           </div>
         </div>
 
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 px-4 py-3">
+          <button onClick={syncEbarimt} disabled={syncing} className="btn-secondary">
+            {syncing ? <Spinner className="h-4 w-4" /> : '⬇️ POS дугаар татах'}
+          </button>
+          <p className="flex-1 text-[12px] leading-snug text-slate-500">
+            ebarimt.mn дээрээ операторын хүсэлтийг баталгаажуулсны дараа энэ товчийг дарна — салбар болон POS дугаар
+            автоматаар бөглөгдөнө.
+          </p>
+        </div>
+
+        {sync && (
+          <div className={`mt-3 rounded-lg px-4 py-2.5 text-sm ${sync.ok ? 'bg-teal-50 text-teal-800' : 'bg-amber-50 text-amber-800'}`}>
+            <p className="font-medium">
+              {sync.ok ? '✅' : '⚠️'} {sync.message_mn}
+            </p>
+            {sync.options.length > 1 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {sync.options.map((o) => (
+                  <button
+                    key={o.posNo}
+                    onClick={() => setEForm((f) => ({ ...f, posNo: o.posNo, branchNo: o.branchNo || f.branchNo || '001' }))}
+                    className={`rounded-full px-3 py-1 text-[12px] font-bold ring-1 ring-inset transition ${
+                      eForm.posNo === o.posNo
+                        ? 'bg-teal-500 text-white ring-teal-500'
+                        : 'bg-white text-slate-700 ring-slate-300 hover:ring-teal-400'
+                    }`}
+                  >
+                    {o.posNo}
+                    {o.branchNo && <span className="ml-1 font-normal opacity-70">· салбар {o.branchNo}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            {sync.options.length > 1 && (
+              <p className="mt-2 text-[12px] opacity-80">
+                Баримт бүрд зөвхөн НЭГ POS дугаар дамжина. Сонгосны дараа «Хадгалах» дарна уу.
+              </p>
+            )}
+          </div>
+        )}
+
         <TestNote result={tests.EBARIMT ?? null} />
         <CardActions
           enabled={data.ebarimt.enabled}
@@ -381,8 +456,9 @@ export default function IntegrationsPage() {
         />
         <p className="mt-3 text-[12px] leading-snug text-slate-500">
           ТТД нь байгууллагын регистрийн дугаараар автоматаар бөглөгддөг. POS дугаарыг тухайн байгууллага ТЕГ-т өөрийн
-          нэр дээр бүртгүүлэхэд олгоно — өөр байгууллагын POS дугаарыг ашиглаж болохгүй. Унтраахад төлбөр төлөгдөхөд
-          баримт хэвлэгдэхгүй.
+          нэр дээр бүртгүүлэхэд олгоно — өөр байгууллагын POS дугаарыг ашиглаж болохгүй тул зөвхөн энэ ТТД-д
+          харьяалагдах дугаарууд санал болгогдоно. Салбарын дугаар ихэвчлэн 001 (төв салбар). Унтраахад төлбөр
+          төлөгдөхөд баримт хэвлэгдэхгүй.
         </p>
       </div>
 

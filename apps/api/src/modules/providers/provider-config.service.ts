@@ -6,7 +6,7 @@ import { apiError } from '../../common/filters/http-exception.filter';
 import { decryptSecret, encryptSecret } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BonumAdapter } from './bonum.adapter';
-import { PosApiEbarimtAdapter } from './posapi-ebarimt.adapter';
+import { PosApiEbarimtAdapter, PosRegistration } from './posapi-ebarimt.adapter';
 
 export interface QpayEffectiveConfig {
   enabled: boolean;
@@ -489,6 +489,78 @@ export class ProviderConfigService {
       },
     });
     return this.list(user.tenantId);
+  }
+
+  /**
+   * Онбордингийн сүүлийн алхам: хэрэглэгч ebarimt.mn дээр операторын хүсэлтээ
+   * баталгаажуулсны дараа энэ дуудлага /rest/info-оос тухайн байгууллагын
+   * branchNo / posNo-г татаж авч хадгална. Хоосон талбарыг л бөглөх тул
+   * гараар өөр POS сонгосон бол дарж бичихгүй.
+   */
+  async syncEbarimt(user: AuthUser): Promise<{
+    ok: boolean;
+    message_mn: string;
+    applied: { posNo: string; branchNo: string } | null;
+    options: PosRegistration[];
+  }> {
+    const cfg = await this.getEbarimt(user.tenantId);
+    if (!cfg.baseUrl) {
+      return { ok: false, message_mn: 'Баримтын үйлчилгээний хаяг (VAT_BASE_URL) серверт тохируулаагүй байна.', applied: null, options: [] };
+    }
+    if (!cfg.merchantTin) {
+      return { ok: false, message_mn: 'Эхлээд байгууллагын регистрийг хадгална уу — ТТД түүгээр автоматаар бөглөгдөнө.', applied: null, options: [] };
+    }
+
+    let options: PosRegistration[];
+    try {
+      ({ options } = await this.posapi.discoverRegistration(cfg.merchantTin));
+    } catch (e: any) {
+      return { ok: false, message_mn: `Баримтын үйлчилгээ хариу өгсөнгүй: ${String(e?.message ?? e).slice(0, 160)}`, applied: null, options: [] };
+    }
+    if (options.length === 0) {
+      return {
+        ok: false,
+        message_mn:
+          `ТТД ${cfg.merchantTin}-д харьяалагдах POS олдсонгүй. ebarimt.mn дээрээ операторын хүсэлтийг ` +
+          'баталгаажуулсны дараа дахин татна уу.',
+        applied: null,
+        options: [],
+      };
+    }
+
+    // Хэрэглэгч аль хэдийн POS сонгосон бол хүндэтгэнэ; үгүй бол эхнийхийг авна.
+    const already = options.find((o) => o.posNo === cfg.posNo);
+    const chosen = already ?? options[0];
+    const branchNo = chosen.branchNo || cfg.branchNo || '001';
+    const applied = already && cfg.posNo ? null : { posNo: chosen.posNo, branchNo };
+    if (applied) {
+      await this.prisma.tenant.update({
+        where: { id: user.tenantId },
+        data: { ebarimtPosNo: applied.posNo, ebarimtBranchNo: applied.branchNo },
+      });
+      this.cache.delete(`EBARIMT:${user.tenantId}`);
+      await this.prisma.auditLog.create({
+        data: {
+          tenantId: user.tenantId,
+          actorId: user.userId,
+          actorEmail: user.email,
+          action: 'integration.ebarimt.synced',
+          targetType: 'tenant',
+          targetId: user.tenantId,
+          meta: { merchantTin: cfg.merchantTin, ...applied, found: options.length },
+        },
+      });
+    }
+
+    const extra = options.length > 1 ? ` Нийт ${options.length} POS олдлоо — доорхоос сонгож солиж болно.` : '';
+    return {
+      ok: true,
+      message_mn: applied
+        ? `POS дугаар ${applied.posNo} (салбар ${applied.branchNo}) хадгалагдлаа.${extra}`
+        : `Одоогийн POS дугаар ${cfg.posNo} бүртгэлтэй байна.${extra}`,
+      applied,
+      options,
+    };
   }
 
   /** Live connectivity test — returns status only, never credentials. */

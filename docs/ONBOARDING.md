@@ -31,12 +31,14 @@ Bonum болон LIME талд шинэ мерчант нэмэх **автома
     ⚠ Энэ алхамгүйгээр LIME бүртгэж чадахгүй — заавал ЭХЭЛЖ хийнэ.
  4. Тохиргоо → «eBarimt (LIME)» хүсэлт илгээх
        → бид ONBOARDING_LIME_EMAIL руу компанийн мэдээллийг илгээнэ
- 5. LIME instance дээр merchant нэмэгдэж, merchantTin/posNo хариу ирнэ
+ 5. LIME instance дээр merchant нэмэгдэж, компани e-invoice.ebarimt.mn дээрээ
+    операторын хүсэлтийг баталгаажуулна
        → merchantTin (=ТТД) нь регистрээр АВТОМАТААР бөглөгдсөн байна
          (api.ebarimt.mn/api/info/check/getTinInfo?regNo=)
-       → үлдсэн posNo/branchNo/districtCode-ыг Интеграци → «eBarimt (POS API 3.0)»
-         картад оруулна (эсвэл партнёр /partner/requests-ээс хариугаа бөглөхөд
-         автоматаар бичигдэнэ)
+       → Интеграци → «eBarimt (POS API 3.0)» → «⬇️ POS дугаар татах» дарахад
+         /rest/info-оос branchNo/posNo автоматаар татагдана. Байгууллагад олон
+         POS байвал сонголт болж гарна — баримт бүрд ЗӨВХӨН НЭГ posNo дамжина.
+       → эсвэл партнёр /partner/requests-ээс хариугаа бөглөхөд автоматаар бичигдэнэ
        → админ /admin/requests дээр APPROVED болгоно
           ✓ EBARIMT модуль автоматаар идэвхжинэ
        → GET /api/v1/receipts/provider-info-оор /rest/info дээр TIN харагдаж

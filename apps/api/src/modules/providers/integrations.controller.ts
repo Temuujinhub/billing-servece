@@ -89,4 +89,16 @@ export class IntegrationsController {
   test(@CurrentUser() user: AuthUser, @Param('code') code: string) {
     return this.configs.test(user.tenantId, parseCode(code));
   }
+
+  /**
+   * eBarimt: /rest/info-оос тухайн байгууллагын POS дугаарыг татаж авна.
+   * Хэрэглэгч ebarimt.mn дээрээ операторын хүсэлтээ баталгаажуулсны дараа энэ
+   * товчийг дарахад branchNo/posNo автоматаар бөглөгдөнө.
+   */
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('EBARIMT/sync')
+  syncEbarimt(@CurrentUser() user: AuthUser) {
+    return this.configs.syncEbarimt(user);
+  }
 }
