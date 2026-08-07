@@ -3,7 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { decryptString, encryptString, maskSecret } from '../../common/crypto';
 import { AuthUser } from '../../common/decorators';
 import { apiError } from '../../common/filters/http-exception.filter';
+import { decryptSecret, encryptSecret } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BonumAdapter } from './bonum.adapter';
+import { PosApiEbarimtAdapter } from './posapi-ebarimt.adapter';
 
 export interface QpayEffectiveConfig {
   enabled: boolean;
@@ -22,9 +25,73 @@ export interface CallproEffectiveConfig {
   source: 'db' | 'env' | 'none';
 }
 
+/**
+ * Bonum төлбөрийн гарц. Нууцууд нь ProviderConfig JSON-д БИШ, Tenant хүснэгтийн
+ * bonum* багануудад хадгалагдана (BonumAdapter шууд тэндээс уншдаг) — энд
+ * зөвхөн асаах/унтраах төлөв ProviderConfig мөрөнд хадгалагдана.
+ */
+export interface BonumEffectiveConfig {
+  enabled: boolean;
+  baseUrl: string;
+  terminalId: string;
+  appSecret: string;
+  checksumKey: string;
+  source: 'db' | 'env' | 'none';
+}
+
+/**
+ * eBarimt POS API 3.0 (локал instance). Компани бүр ТЕГ-т ӨӨРИЙН merchantTin +
+ * тухайн POS-д олгогдсон posNo-той бүртгэлтэй байх ёстой — эдгээр нь Tenant
+ * хүснэгтэд, идэвхжилт нь TenantModule('EBARIMT')-д хадгалагдана.
+ */
+export interface EbarimtEffectiveConfig {
+  enabled: boolean;
+  baseUrl: string;
+  merchantTin: string;
+  posNo: string;
+  branchNo: string;
+  districtCode: string;
+  source: 'db' | 'env' | 'none';
+}
+
 const CACHE_TTL_MS = 30_000;
-const CODES = ['QPAY', 'CALLPRO'] as const;
+const CODES = ['QPAY', 'CALLPRO', 'BONUM', 'EBARIMT'] as const;
 export type ProviderCode = (typeof CODES)[number];
+
+/** Бүх интеграцийн хадгалах талбарууд (код бүр өөрийнхөө хэсгийг л уншина). */
+export interface SaveProviderDto {
+  enabled?: boolean;
+  baseUrl?: string;
+  // QPay
+  username?: string;
+  password?: string;
+  invoiceCode?: string;
+  // CallPro
+  apiKey?: string;
+  from?: string;
+  // Bonum
+  terminalId?: string;
+  appSecret?: string;
+  checksumKey?: string;
+  // eBarimt POS API
+  merchantTin?: string;
+  posNo?: string;
+  branchNo?: string;
+  districtCode?: string;
+}
+
+/**
+ * Шифрлэгдсэн утга тайлагдахгүй байх ганц шалтгаан нь ENCRYPTION_KEY солигдсон
+ * явдал. Тэр үед админы хуудас 500 өгөх нь биш, "тохируулаагүй" гэж харагдаад
+ * дахин оруулах боломж үлдэх нь зөв.
+ */
+function safeDecrypt(fn: () => string): string {
+  try {
+    return fn();
+  } catch {
+    return '';
+  }
+}
 
 /**
  * Tenant-level provider settings, editable from the dashboard (OWNER only).
@@ -40,6 +107,8 @@ export class ProviderConfigService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly bonum: BonumAdapter,
+    private readonly posapi: PosApiEbarimtAdapter,
   ) {}
 
   private cacheGet<T>(key: string): T | undefined {
@@ -122,12 +191,114 @@ export class ProviderConfigService {
     return result;
   }
 
+  /**
+   * Bonum: credential нь Tenant багануудад, идэвхжилт нь ProviderConfig мөрөнд.
+   * Мөр байхгүй үед credential байгаа эсэхээр шийднэ — өмнө нь энэ логикоор
+   * ажиллаж байсан tenant-ууд UI нээхэд гэнэт унтарч болохгүй.
+   */
+  async getBonum(tenantId: string): Promise<BonumEffectiveConfig> {
+    const cacheKey = `BONUM:${tenantId}`;
+    const cached = this.cacheGet<BonumEffectiveConfig>(cacheKey);
+    if (cached) return cached;
+
+    const [tenant, row] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { bonumTerminalId: true, bonumAppSecretEnc: true, bonumChecksumKeyEnc: true },
+      }),
+      this.prisma.providerConfig.findUnique({ where: { tenantId_code: { tenantId, code: 'BONUM' } } }),
+    ]);
+    const baseUrl = this.config.get<string>('BONUM_BASE_URL') ?? 'https://apis.bonum.mn';
+
+    let result: BonumEffectiveConfig;
+    if (tenant?.bonumTerminalId && tenant.bonumAppSecretEnc) {
+      const key = this.config.getOrThrow<string>('ENCRYPTION_KEY');
+      result = {
+        enabled: row ? row.enabled : true,
+        baseUrl,
+        terminalId: tenant.bonumTerminalId,
+        appSecret: safeDecrypt(() => decryptSecret(key, tenant.bonumAppSecretEnc!)),
+        checksumKey: tenant.bonumChecksumKeyEnc ? safeDecrypt(() => decryptSecret(key, tenant.bonumChecksumKeyEnc!)) : '',
+        source: 'db',
+      };
+    } else if (this.config.get('BONUM_TERMINAL_ID') && this.config.get('BONUM_APP_SECRET')) {
+      result = {
+        enabled: row ? row.enabled : this.config.get('PAYMENT_PROVIDER') === 'bonum',
+        baseUrl,
+        terminalId: this.config.get<string>('BONUM_TERMINAL_ID') ?? '',
+        appSecret: this.config.get<string>('BONUM_APP_SECRET') ?? '',
+        checksumKey: this.config.get<string>('BONUM_CHECKSUM_KEY') ?? '',
+        source: 'env',
+      };
+    } else {
+      result = { enabled: false, baseUrl, terminalId: '', appSecret: '', checksumKey: '', source: 'none' };
+    }
+    this.cacheSet(cacheKey, result);
+    return result;
+  }
+
+  /** eBarimt POS API 3.0 — tenant-ийн ТЕГ бүртгэл + локал instance-ийн хаяг. */
+  async getEbarimt(tenantId: string): Promise<EbarimtEffectiveConfig> {
+    const cacheKey = `EBARIMT:${tenantId}`;
+    const cached = this.cacheGet<EbarimtEffectiveConfig>(cacheKey);
+    if (cached) return cached;
+
+    const [tenant, module] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { tin: true, ebarimtMerchantTin: true, ebarimtPosNo: true, ebarimtBranchNo: true, ebarimtDistrictCode: true },
+      }),
+      this.prisma.tenantModule.findUnique({ where: { tenantId_code: { tenantId, code: 'EBARIMT' } } }),
+    ]);
+    const merchantTin = tenant?.ebarimtMerchantTin || tenant?.tin || '';
+    const posNo = tenant?.ebarimtPosNo || '';
+    const result: EbarimtEffectiveConfig = {
+      enabled: module?.enabled ?? false,
+      baseUrl: this.config.get<string>('VAT_BASE_URL') ?? '',
+      merchantTin,
+      posNo: posNo || this.config.get<string>('EBARIMT_POS_NO') || '',
+      branchNo: tenant?.ebarimtBranchNo || this.config.get<string>('EBARIMT_BRANCH_NO') || '001',
+      districtCode: tenant?.ebarimtDistrictCode || this.config.get<string>('EBARIMT_DISTRICT_CODE') || '3505',
+      source: tenant?.ebarimtMerchantTin || posNo ? 'db' : merchantTin ? 'env' : 'none',
+    };
+    this.cacheSet(cacheKey, result);
+    return result;
+  }
+
   // ------------------------------------------------------------- admin API
 
   /** Masked view for the dashboard — secrets never leave the server. */
   async list(tenantId: string) {
-    const [qpay, callpro] = await Promise.all([this.getQpay(tenantId), this.getCallpro(tenantId)]);
+    const [qpay, callpro, bonum, ebarimt] = await Promise.all([
+      this.getQpay(tenantId),
+      this.getCallpro(tenantId),
+      this.getBonum(tenantId),
+      this.getEbarimt(tenantId),
+    ]);
     return {
+      bonum: {
+        code: 'BONUM',
+        enabled: bonum.enabled,
+        source: bonum.source,
+        baseUrl: bonum.baseUrl,
+        terminalId: bonum.terminalId,
+        appSecretMask: maskSecret(bonum.appSecret),
+        checksumKeyMask: maskSecret(bonum.checksumKey),
+        configured: Boolean(bonum.terminalId && bonum.appSecret),
+        /** Webhook гарын үсэг шалгах түлхүүр — үүнгүй бол төлбөр баталгаажихгүй. */
+        hasChecksumKey: Boolean(bonum.checksumKey),
+      },
+      ebarimt: {
+        code: 'EBARIMT',
+        enabled: ebarimt.enabled,
+        source: ebarimt.source,
+        baseUrl: ebarimt.baseUrl,
+        merchantTin: ebarimt.merchantTin,
+        posNo: ebarimt.posNo,
+        branchNo: ebarimt.branchNo,
+        districtCode: ebarimt.districtCode,
+        configured: Boolean(ebarimt.baseUrl && ebarimt.merchantTin && ebarimt.posNo),
+      },
       qpay: {
         code: 'QPAY',
         enabled: qpay.enabled,
@@ -150,19 +321,10 @@ export class ProviderConfigService {
     };
   }
 
-  async save(
-    user: AuthUser,
-    code: ProviderCode,
-    dto: {
-      enabled?: boolean;
-      baseUrl?: string;
-      username?: string;
-      password?: string;
-      invoiceCode?: string;
-      apiKey?: string;
-      from?: string;
-    },
-  ) {
+  async save(user: AuthUser, code: ProviderCode, dto: SaveProviderDto) {
+    if (code === 'BONUM') return this.saveBonum(user, dto);
+    if (code === 'EBARIMT') return this.saveEbarimt(user, dto);
+
     const existing = await this.prisma.providerConfig.findUnique({
       where: { tenantId_code: { tenantId: user.tenantId, code } },
     });
@@ -216,9 +378,151 @@ export class ProviderConfigService {
     return this.list(user.tenantId);
   }
 
+  /**
+   * Bonum: терминал/нууц түлхүүрүүд Tenant багануудад AES-256-GCM-ээр
+   * шифрлэгдэж хадгалагдана (BonumAdapter яг тэндээс уншдаг), идэвхжилт нь
+   * ProviderConfig мөрөнд. Хоосон нууц талбар = хуучныг нь хэвээр үлдээ.
+   */
+  private async saveBonum(user: AuthUser, dto: SaveProviderDto) {
+    const encKey = this.config.getOrThrow<string>('ENCRYPTION_KEY');
+    const data: Record<string, string> = {};
+    if (dto.terminalId?.trim()) data.bonumTerminalId = dto.terminalId.trim();
+    if (dto.appSecret?.trim()) data.bonumAppSecretEnc = encryptSecret(encKey, dto.appSecret.trim());
+    if (dto.checksumKey?.trim()) data.bonumChecksumKeyEnc = encryptSecret(encKey, dto.checksumKey.trim());
+    if (Object.keys(data).length > 0) {
+      await this.prisma.tenant.update({ where: { id: user.tenantId }, data });
+      this.bonum.invalidateCreds(user.tenantId);
+    }
+    this.cache.delete(`BONUM:${user.tenantId}`);
+
+    // Асаахаас өмнө credential бүрэн эсэхийг шалгана — дутуу байвал төлбөрийн
+    // линк үүсэхгүй бөгөөд төлөгчид алдаа харагдана.
+    const effective = await this.getBonum(user.tenantId);
+    if (dto.enabled && !(effective.terminalId && effective.appSecret)) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INCOMPLETE_CONFIG',
+        'Терминалын дугаар болон нууц түлхүүр (App Secret) хоёулаа шаардлагатай.',
+        'terminalId and appSecret are required to enable the payment gateway.',
+      );
+    }
+
+    const existing = await this.prisma.providerConfig.findUnique({
+      where: { tenantId_code: { tenantId: user.tenantId, code: 'BONUM' } },
+    });
+    const enabled = dto.enabled ?? existing?.enabled ?? false;
+    await this.prisma.providerConfig.upsert({
+      where: { tenantId_code: { tenantId: user.tenantId, code: 'BONUM' } },
+      // Нууцууд Tenant багананд байгаа тул энэ JSON-д хэзээ ч секрет бичихгүй.
+      create: { tenantId: user.tenantId, code: 'BONUM', enabled, config: { storage: 'tenant' } },
+      update: { enabled },
+    });
+    this.cache.delete(`BONUM:${user.tenantId}`);
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: user.tenantId,
+        actorId: user.userId,
+        actorEmail: user.email,
+        action: 'integration.bonum.saved',
+        targetType: 'provider_config',
+        targetId: 'BONUM',
+        meta: { enabled, credentialsChanged: Object.keys(data) }, // утга нь хэзээ ч логлогдохгүй
+      },
+    });
+    return this.list(user.tenantId);
+  }
+
+  /**
+   * eBarimt POS API 3.0: компанийн ТЕГ бүртгэл (merchantTin + тухайн POS-д
+   * олгогдсон posNo) Tenant хүснэгтэд, идэвхжилт нь TenantModule-д. baseUrl нь
+   * локал instance-ийн хаяг тул зөвхөн серверийн VAT_BASE_URL-аас уншина.
+   */
+  private async saveEbarimt(user: AuthUser, dto: SaveProviderDto) {
+    const data: Record<string, string> = {};
+    if (dto.merchantTin?.trim()) data.ebarimtMerchantTin = dto.merchantTin.trim();
+    if (dto.posNo?.trim()) data.ebarimtPosNo = dto.posNo.trim();
+    if (dto.branchNo?.trim()) data.ebarimtBranchNo = dto.branchNo.trim();
+    if (dto.districtCode?.trim()) data.ebarimtDistrictCode = dto.districtCode.trim();
+    if (Object.keys(data).length > 0) {
+      await this.prisma.tenant.update({ where: { id: user.tenantId }, data });
+    }
+    this.cache.delete(`EBARIMT:${user.tenantId}`);
+
+    const effective = await this.getEbarimt(user.tenantId);
+    if (dto.enabled && !effective.baseUrl) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INCOMPLETE_CONFIG',
+        'Баримтын үйлчилгээний хаяг (VAT_BASE_URL) серверт тохируулаагүй байна.',
+        'VAT_BASE_URL is not configured on the server.',
+      );
+    }
+    if (dto.enabled && !(effective.merchantTin && effective.posNo)) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INCOMPLETE_CONFIG',
+        'ТТД (merchantTin) болон POS дугаар хоёулаа шаардлагатай — эдгээрийг ТЕГ-ийн бүртгэлээр олгоно.',
+        'merchantTin and posNo are required to enable eBarimt.',
+      );
+    }
+
+    const enabled = dto.enabled ?? (await this.prisma.tenantModule.findUnique({
+      where: { tenantId_code: { tenantId: user.tenantId, code: 'EBARIMT' } },
+    }))?.enabled ?? false;
+    await this.prisma.tenantModule.upsert({
+      where: { tenantId_code: { tenantId: user.tenantId, code: 'EBARIMT' } },
+      create: { tenantId: user.tenantId, code: 'EBARIMT', enabled },
+      update: { enabled },
+    });
+    this.cache.delete(`EBARIMT:${user.tenantId}`);
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: user.tenantId,
+        actorId: user.userId,
+        actorEmail: user.email,
+        action: 'integration.ebarimt.saved',
+        targetType: 'tenant_module',
+        targetId: 'EBARIMT',
+        meta: { enabled, changed: Object.keys(data) },
+      },
+    });
+    return this.list(user.tenantId);
+  }
+
   /** Live connectivity test — returns status only, never credentials. */
   async test(tenantId: string, code: ProviderCode): Promise<{ ok: boolean; httpStatus: number | null; message_mn: string }> {
     try {
+      if (code === 'BONUM') {
+        const res = await this.bonum.testConnection(tenantId);
+        return { ...res, httpStatus: null };
+      }
+      if (code === 'EBARIMT') {
+        const cfg = await this.getEbarimt(tenantId);
+        if (!cfg.baseUrl) {
+          return { ok: false, httpStatus: null, message_mn: 'Баримтын үйлчилгээний хаяг (VAT_BASE_URL) серверт тохируулаагүй байна.' };
+        }
+        const { tins, registered } = await this.posapi.checkRegistration(cfg.merchantTin || null);
+        if (!cfg.merchantTin) {
+          return { ok: true, httpStatus: 200, message_mn: `Баримтын үйлчилгээ ажиллаж байна (${tins.length} бүртгэлтэй ТТД). ТТД-гээ оруулна уу.` };
+        }
+        if (registered === false) {
+          return {
+            ok: false,
+            httpStatus: 200,
+            message_mn: `ТТД ${cfg.merchantTin} энэ баримтын серверт бүртгэгдээгүй байна — тухайн байгууллагыг ТЕГ-т өөрийн POS-оор нь эхэлж бүртгүүлнэ үү.`,
+          };
+        }
+        return {
+          ok: true,
+          httpStatus: 200,
+          message_mn:
+            registered === null
+              ? `Баримтын үйлчилгээ хариу өглөө. Бүртгэлийн жагсаалт ил гарахгүй байгаа тул ТТД ${cfg.merchantTin}-г туршилтын баримтаар шалгана уу.`
+              : `Баримтын үйлчилгээ бэлэн — ТТД ${cfg.merchantTin} бүртгэгдсэн байна.`,
+        };
+      }
       if (code === 'QPAY') {
         const cfg = await this.getQpay(tenantId);
         if (!cfg.username || !cfg.password) {

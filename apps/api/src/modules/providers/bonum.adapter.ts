@@ -144,6 +144,37 @@ export class BonumAdapter implements PaymentProviderPort {
   /** Tenant credential өөрчлөгдөхөд кэшийг хүчингүй болгоно (PATCH /tenant). */
   invalidateCreds(tenantId: string) {
     this.credsCache.delete(tenantId);
+    // Терминал солигдвол хуучин терминалын токен ашиглагдах ёсгүй.
+    this.tokens.clear();
+  }
+
+  /**
+   * Админы «Холболт шалгах» — токен авч чадаж байгаа эсэх. Токен нь rate
+   * limit-тэй (§2) тул хүчинтэй токен кэшлэгдсэн байвал шинийг НЭХЭХГҮЙ.
+   */
+  async testConnection(tenantId: string): Promise<{ ok: boolean; message_mn: string }> {
+    let creds: BonumCreds;
+    try {
+      creds = await this.resolveCreds(tenantId);
+    } catch {
+      return { ok: false, message_mn: 'Терминалын дугаар / нууц түлхүүр тохируулаагүй байна.' };
+    }
+    try {
+      await this.getAccessToken(creds);
+      return {
+        ok: true,
+        message_mn: `Төлбөрийн гарц холбогдлоо — терминал ${creds.terminalId} дээр токен амжилттай авлаа.`,
+      };
+    } catch (e: any) {
+      const msg = String(e?.message ?? e);
+      if (msg.includes('(401)') || msg.includes('(403)')) {
+        return { ok: false, message_mn: 'Нууц түлхүүр (App Secret) эсвэл терминалын дугаар буруу байна.' };
+      }
+      if (msg.includes('429') || msg.includes('rate limited')) {
+        return { ok: false, message_mn: 'Токен авах хүсэлт хэт олон удаа явлаа — хэсэг хүлээгээд дахин оролдоно уу.' };
+      }
+      return { ok: false, message_mn: `Төлбөрийн гарц холбогдсонгүй: ${msg.slice(0, 160)}` };
+    }
   }
 
   // ------------------------------------------------------------------ auth

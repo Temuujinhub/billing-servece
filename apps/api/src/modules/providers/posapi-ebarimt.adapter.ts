@@ -55,23 +55,27 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
     return res.json();
   }
 
+  /**
+   * Админы «Холболт шалгах»: /rest/info-г ШИНЭЭР татаад тухайн компанийн
+   * merchantTin ТЕГ-т бүртгэгдсэн эсэхийг хэлнэ. Кэшийг мөн шинэчилнэ, тиймээс
+   * шинэ компани бүртгүүлсний дараа энэ товч дарахад л хүчинтэй болно.
+   */
+  async checkRegistration(merchantTin?: string | null): Promise<{ tins: string[]; registered: boolean | null }> {
+    const tins = collectTins(await this.info());
+    this.registeredTins = tins;
+    const list = [...tins];
+    if (!merchantTin) return { tins: list, registered: null };
+    // Хоосон бүртгэл нь "мэдэхгүй" — instance нь TIN-үүдээ ил гаргадаггүй байж болно.
+    return { tins: list, registered: tins.size === 0 ? null : tins.has(merchantTin) };
+  }
+
   /** Lazily collect registered TINs; null = info unavailable (don't block). */
   private async getRegisteredTins(): Promise<Set<string> | null> {
     if (this.registeredTins) return this.registeredTins;
     if (!this.infoFlight) {
       this.infoFlight = this.info()
         .then((body) => {
-          const tins = new Set<string>();
-          const walk = (node: any) => {
-            if (!node || typeof node !== 'object') return;
-            if (typeof node.tin === 'string') tins.add(node.tin);
-            if (typeof node.merchantTin === 'string') tins.add(node.merchantTin);
-            for (const v of Object.values(node)) {
-              if (Array.isArray(v)) v.forEach(walk);
-              else if (v && typeof v === 'object') walk(v);
-            }
-          };
-          walk(body);
+          const tins = collectTins(body);
           this.registeredTins = tins;
           this.logger.log(`POS API instance ready — ${tins.size} registered TIN(s)`);
           return tins;
@@ -175,4 +179,20 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/** /rest/info хариунаас бүх `tin` / `merchantTin` талбарыг цуглуулна. */
+function collectTins(body: any): Set<string> {
+  const tins = new Set<string>();
+  const walk = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+    if (typeof node.tin === 'string') tins.add(node.tin);
+    if (typeof node.merchantTin === 'string') tins.add(node.merchantTin);
+    for (const v of Object.values(node)) {
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === 'object') walk(v);
+    }
+  };
+  walk(body);
+  return tins;
 }

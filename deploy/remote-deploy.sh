@@ -181,12 +181,15 @@ if [ "${SMS_PROVIDER:-mock}" = "callpro" ] && [ -n "${CALLPRO_API_KEY:-}" ]; the
 fi
 # Open ebarimt registry (no auth) — used by the onboarding regNo→name/ТТД lookup.
 # The lookup starts with getTinInfo?regNo= (getInfo takes ?tin=, not ?regNo=).
-EBARIMT_CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 15 \
-  "https://api.ebarimt.mn/api/info/check/getTinInfo?regNo=2657457" || echo "ERR")
-if [ "$EBARIMT_CODE" = "200" ]; then
-  echo "✅ ebarimt registry lookup OK (HTTP $EBARIMT_CODE)"
+# HTTP 200 хангалттай биш — ТТД нь `data` талбараар ирж байж merchantTin
+# автоматаар бөглөгдөнө, тиймээс хариуны бүтцийг нь мөн шалгана.
+EBARIMT_BODY=$(curl -s -m 15 -H 'Accept: application/json' \
+  "https://api.ebarimt.mn/api/info/check/getTinInfo?regNo=2657457" || echo "")
+if echo "$EBARIMT_BODY" | grep -qE '"data"[[:space:]]*:[[:space:]]*"?[0-9]'; then
+  echo "✅ ebarimt registry lookup OK (ТТД буцаалаа)"
 else
-  echo "⚠ ebarimt registry check returned HTTP $EBARIMT_CODE — onboarding lookup ажиллахгүй байж магадгүй."
+  echo "⚠ ebarimt registry хариу хүлээгдсэн бүтэцтэй биш: ${EBARIMT_BODY:0:160}"
+  echo "   → регистрээр ТТД (merchantTin) автоматаар бөглөх боломжгүй байж магадгүй."
 fi
 
 log "Deploy complete → ${PUBLIC_URL}"

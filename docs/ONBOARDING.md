@@ -32,7 +32,11 @@ Bonum болон LIME талд шинэ мерчант нэмэх **автома
  4. Тохиргоо → «eBarimt (LIME)» хүсэлт илгээх
        → бид ONBOARDING_LIME_EMAIL руу компанийн мэдээллийг илгээнэ
  5. LIME instance дээр merchant нэмэгдэж, merchantTin/posNo хариу ирнэ
-       → компани (OWNER) Тохиргоонд merchantTin/posNo/branchNo/districtCode-оо оруулна
+       → merchantTin (=ТТД) нь регистрээр АВТОМАТААР бөглөгдсөн байна
+         (api.ebarimt.mn/api/info/check/getTinInfo?regNo=)
+       → үлдсэн posNo/branchNo/districtCode-ыг Интеграци → «eBarimt (POS API 3.0)»
+         картад оруулна (эсвэл партнёр /partner/requests-ээс хариугаа бөглөхөд
+         автоматаар бичигдэнэ)
        → админ /admin/requests дээр APPROVED болгоно
           ✓ EBARIMT модуль автоматаар идэвхжинэ
        → GET /api/v1/receipts/provider-info-оор /rest/info дээр TIN харагдаж
@@ -42,8 +46,9 @@ Bonum болон LIME талд шинэ мерчант нэмэх **автома
  6. Тохиргоо → «Bonum Gateway» хүсэлт илгээх
        → бид ONBOARDING_BONUM_EMAIL руу анкет + WEBHOOK URL-ийг илгээнэ
  7. Bonum гэрээ баталгаажиж Terminal ID / Secret Key / Checksum Key имэйлээр ирнэ
-       → компани (OWNER) Тохиргоо → «Bonum холболт» хэсэгт оруулна
+       → админ Интеграци → «Bonum төлбөрийн гарц» картад оруулна
          (нууцууд AES-256-GCM шифрлэгдэж хадгалагдана, дахин харагдахгүй)
+       → «🔌 Холболт шалгах» дарж токен авагдаж буйг баталгаажуулна
        → админ хүсэлтийг APPROVED болгоно
 
  8. ТУРШИЛТ: 1₮-ийн нэхэмжлэх үүсгэж SMS линк → төлөлт → eBarimt гарч буйг шалгах
