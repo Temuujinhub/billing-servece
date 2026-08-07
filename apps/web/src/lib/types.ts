@@ -212,7 +212,30 @@ export interface IntegrationRequest {
   emailedAt: string | null;
   decidedAt: string | null;
   createdAt: string;
-  tenant?: { id: string; name: string; regNo: string | null; contactEmail: string | null; contactPhone: string | null };
+}
+
+/**
+ * `/admin/integration-requests` (болон `/partner/requests`) нь байгууллагын
+ * одоогийн утгуудыг хамт буцаана — хариуны маягтыг тэдгээрээр урьдчилан
+ * бөглөж, аль хэдийн мэдэгдэж буй зүйлийг дахин бичүүлэхгүй. Шифрлэгдсэн
+ * нууц утга хэзээ ч ирэхгүй, зөвхөн байгаа эсэх нь тугаар ирнэ.
+ */
+export interface AdminIntegrationRequest extends IntegrationRequest {
+  tenant: {
+    id: string;
+    name: string;
+    regNo: string | null;
+    contactEmail: string | null;
+    contactPhone: string | null;
+    tin: string | null;
+    ebarimtMerchantTin: string | null;
+    ebarimtPosNo: string | null;
+    ebarimtBranchNo: string | null;
+    ebarimtDistrictCode: string | null;
+    bonumTerminalId: string | null;
+    hasBonumAppSecret: boolean;
+    hasBonumChecksumKey: boolean;
+  };
 }
 
 export interface TenantInfo {

@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import { ErrorNote, PageLoader, Spinner } from '@/components/ui';
 import { api, ApiError, getSessionUser } from '@/lib/api';
 import { shortDate } from '@/lib/format';
-import type { IntegrationRequest } from '@/lib/types';
+import type { AdminIntegrationRequest } from '@/lib/types';
 
 /**
  * Платформын админ: бүх байгууллагын Bonum/eBarimt бүртгэлийн хүсэлтүүд.
@@ -45,8 +45,26 @@ const EMPTY_RESPONSE: ResponseForm = {
   districtCode: '',
 };
 
+/**
+ * Баталгаажуулахад ЯГ юу дутууг хэлнэ. Аль хэдийн хадгалагдсан нууц утгыг
+ * дахин шаардахгүй (хоосон орхивол хуучин утга хэвээр үлдэнэ) — эс бөгөөс
+ * товч түгжигдээд шалтгаан нь харагдахгүй байдалд ордог.
+ */
+function missingFor(r: AdminIntegrationRequest, resp: ResponseForm): string[] {
+  const missing: string[] = [];
+  if (r.kind === 'BONUM') {
+    if (!resp.terminalId.trim()) missing.push('Terminal ID');
+    if (!resp.appSecret.trim() && !r.tenant.hasBonumAppSecret) missing.push('Secret Key');
+    if (!resp.checksumKey.trim() && !r.tenant.hasBonumChecksumKey) missing.push('Checksum Key');
+  } else {
+    if (!resp.merchantTin.trim()) missing.push('Merchant TIN');
+    if (!resp.posNo.trim()) missing.push('POS дугаар');
+  }
+  return missing;
+}
+
 export default function AdminRequestsPage() {
-  const [items, setItems] = useState<IntegrationRequest[] | null>(null);
+  const [items, setItems] = useState<AdminIntegrationRequest[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -58,7 +76,7 @@ export default function AdminRequestsPage() {
     setResp((v) => ({ ...v, [key]: e.target.value }));
 
   const load = useCallback(() => {
-    api<{ items: IntegrationRequest[] }>('/admin/integration-requests')
+    api<{ items: AdminIntegrationRequest[] }>('/admin/integration-requests')
       .then((r) => setItems(r.items))
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Ачаалж чадсангүй'));
   }, []);
@@ -149,7 +167,17 @@ export default function AdminRequestsPage() {
                             className="rounded-lg bg-teal-600 px-3 py-1.5 text-[12.5px] font-semibold text-white hover:bg-teal-700"
                             disabled={busyId === r.id}
                             onClick={() => {
-                              setResp(EMPTY_RESPONSE);
+                              // Системд мэдэгдэж буй утгуудаар урьдчилан бөглөнө —
+                              // ТТД, байршил нь бүртгэлээс автоматаар ирсэн байдаг
+                              // тул зөвхөн партнёрын өгсөн шинэ утгыг бичнэ.
+                              setResp({
+                                ...EMPTY_RESPONSE,
+                                terminalId: r.tenant.bonumTerminalId ?? '',
+                                merchantTin: r.tenant.ebarimtMerchantTin ?? r.tenant.tin ?? '',
+                                posNo: r.tenant.ebarimtPosNo ?? '',
+                                branchNo: r.tenant.ebarimtBranchNo ?? '001',
+                                districtCode: r.tenant.ebarimtDistrictCode ?? '',
+                              });
                               setApproveId(approveId === r.id ? null : r.id);
                               setExpanded(r.id);
                             }}
@@ -232,23 +260,23 @@ export default function AdminRequestsPage() {
                                   </div>
                                   <div>
                                     <label className="label">Дүүргийн код</label>
-                                    <input className="input" value={resp.districtCode} onChange={setR('districtCode')} maxLength={10} placeholder="3505" />
+                                    <input className="input" value={resp.districtCode} onChange={setR('districtCode')} maxLength={10} placeholder="Тохиргооноос автоматаар" />
                                   </div>
                                 </>
                               )}
                             </div>
+                            {missingFor(r, resp).length > 0 && (
+                              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+                                Баталгаажуулахын тулд дараах утга дутуу байна: <b>{missingFor(r, resp).join(', ')}</b>
+                              </p>
+                            )}
                             <div className="mt-3 flex justify-end gap-2">
                               <button className="btn-secondary px-3 py-1.5 text-[12.5px]" onClick={() => setApproveId(null)}>
                                 Болих
                               </button>
                               <button
                                 className="rounded-lg bg-teal-600 px-4 py-1.5 text-[12.5px] font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
-                                disabled={
-                                  busyId === r.id ||
-                                  (r.kind === 'BONUM'
-                                    ? !resp.terminalId.trim() || !resp.appSecret.trim() || !resp.checksumKey.trim()
-                                    : !resp.merchantTin.trim() || !resp.posNo.trim())
-                                }
+                                disabled={busyId === r.id || missingFor(r, resp).length > 0}
                                 onClick={async () => {
                                   await act(r.id, '/decision', {
                                     approved: true,

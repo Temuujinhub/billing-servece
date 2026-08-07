@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import { ErrorNote, PageLoader, Spinner } from '@/components/ui';
 import { api, ApiError, getSessionUser } from '@/lib/api';
 import { shortDate } from '@/lib/format';
-import type { IntegrationRequest } from '@/lib/types';
+import type { AdminIntegrationRequest } from '@/lib/types';
 
 /**
  * Хамтрагч байгууллагын (Bonum / LIME) ажилтнуудад зориулсан хуудас.
@@ -56,7 +56,7 @@ export default function PartnerRequestsPage() {
   const me = getSessionUser();
   const kind = me?.partnerKind ?? null;
   const allowed = Boolean(kind || me?.isAdmin);
-  const [items, setItems] = useState<IntegrationRequest[] | null>(null);
+  const [items, setItems] = useState<AdminIntegrationRequest[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export default function PartnerRequestsPage() {
     setResp((v) => ({ ...v, [key]: e.target.value }));
 
   const load = useCallback(() => {
-    api<{ items: IntegrationRequest[] }>('/partner/requests')
+    api<{ items: AdminIntegrationRequest[] }>('/partner/requests')
       .then((r) => setItems(r.items))
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Ачаалж чадсангүй'));
   }, []);
@@ -102,7 +102,21 @@ export default function PartnerRequestsPage() {
   if (error && !items) return <ErrorNote message={error} />;
   if (!items) return <PageLoader />;
 
-  const isBonum = (r: IntegrationRequest) => r.kind === 'BONUM';
+  const isBonum = (r: AdminIntegrationRequest) => r.kind === 'BONUM';
+
+  /** Баталгаажуулахад дутуу байгаа утгууд — товч яагаад түгжээтэйг ил хэлнэ. */
+  const missingFor = (r: AdminIntegrationRequest): string[] => {
+    const missing: string[] = [];
+    if (isBonum(r)) {
+      if (!resp.terminalId.trim()) missing.push('Terminal ID');
+      if (!resp.appSecret.trim() && !r.tenant.hasBonumAppSecret) missing.push('Secret Key');
+      if (!resp.checksumKey.trim() && !r.tenant.hasBonumChecksumKey) missing.push('Checksum Key');
+    } else {
+      if (!resp.merchantTin.trim()) missing.push('Merchant TIN');
+      if (!resp.posNo.trim()) missing.push('POS дугаар');
+    }
+    return missing;
+  };
 
   return (
     <div className="max-w-5xl space-y-6">
@@ -140,7 +154,25 @@ export default function PartnerRequestsPage() {
               const open = !['APPROVED', 'REJECTED'].includes(r.status);
               return (
                 <Fragment key={r.id}>
-                  <tr className="cursor-pointer hover:bg-navy-50/40" onClick={() => setOpenId(openId === r.id ? null : r.id)}>
+                  <tr
+                    className="cursor-pointer hover:bg-navy-50/40"
+                    onClick={() => {
+                      // Мэдэгдэж буй утгуудыг урьдчилан бөглөнө — ТТД, байршил
+                      // нь бүртгэлээс автоматаар ирсэн байдаг тул зөвхөн
+                      // өөрсдийн олгосон шинэ утгыг бичихэд хангалттай.
+                      if (openId !== r.id) {
+                        setResp({
+                          ...EMPTY_RESPONSE,
+                          terminalId: r.tenant.bonumTerminalId ?? '',
+                          merchantTin: r.tenant.ebarimtMerchantTin ?? r.tenant.tin ?? '',
+                          posNo: r.tenant.ebarimtPosNo ?? '',
+                          branchNo: r.tenant.ebarimtBranchNo ?? '001',
+                          districtCode: r.tenant.ebarimtDistrictCode ?? '',
+                        });
+                      }
+                      setOpenId(openId === r.id ? null : r.id);
+                    }}
+                  >
                     <td className="td">
                       <p className="font-medium">{r.tenant?.name ?? r.payload.name}</p>
                       <p className="text-[12px] text-muted">Регистр: {r.payload.regNo ?? r.tenant?.regNo ?? '—'}</p>
@@ -205,11 +237,16 @@ export default function PartnerRequestsPage() {
                                   </div>
                                   <div>
                                     <label className="label">Дүүргийн код</label>
-                                    <input className="input" value={resp.districtCode} onChange={setR('districtCode')} maxLength={10} placeholder="3505" />
+                                    <input className="input" value={resp.districtCode} onChange={setR('districtCode')} maxLength={10} placeholder="Байгууллагаас ирсэн байршил" />
                                   </div>
                                 </>
                               )}
                             </div>
+                            {missingFor(r).length > 0 && (
+                              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+                                Баталгаажуулахын тулд дараах утга дутуу байна: <b>{missingFor(r).join(', ')}</b>
+                              </p>
+                            )}
                             <div className="mt-3 flex justify-end gap-2">
                               <button
                                 className="rounded-lg bg-red-50 px-3 py-1.5 text-[12.5px] font-semibold text-red-600 hover:bg-red-100"
@@ -223,12 +260,7 @@ export default function PartnerRequestsPage() {
                               </button>
                               <button
                                 className="rounded-lg bg-teal-600 px-4 py-1.5 text-[12.5px] font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
-                                disabled={
-                                  busyId === r.id ||
-                                  (isBonum(r)
-                                    ? !resp.terminalId.trim() || !resp.appSecret.trim() || !resp.checksumKey.trim()
-                                    : !resp.merchantTin.trim() || !resp.posNo.trim())
-                                }
+                                disabled={busyId === r.id || missingFor(r).length > 0}
                                 onClick={() =>
                                   decide(r.id, {
                                     approved: true,

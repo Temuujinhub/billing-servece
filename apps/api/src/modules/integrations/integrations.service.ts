@@ -285,9 +285,43 @@ export class IntegrationsService {
       where,
       orderBy: { createdAt: 'desc' },
       take: 200,
-      include: { tenant: { select: { id: true, name: true, regNo: true, contactEmail: true, contactPhone: true } } },
+      include: {
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            regNo: true,
+            contactEmail: true,
+            contactPhone: true,
+            // Системд аль хэдийн мэдэгдэж буй утгууд — хариуны маягтыг эдгээрээр
+            // урьдчилан бөглөнө. ТТД, байршил нь бүртгэлээс автоматаар ирсэн
+            // байдаг тул админ дахин бичих шаардлагагүй.
+            tin: true,
+            ebarimtMerchantTin: true,
+            ebarimtPosNo: true,
+            ebarimtBranchNo: true,
+            ebarimtDistrictCode: true,
+            bonumTerminalId: true,
+            bonumAppSecretEnc: true,
+            bonumChecksumKeyEnc: true,
+          },
+        },
+      },
     });
-    return { items };
+    // Шифрлэгдсэн утга хэзээ ч клиент рүү гарахгүй — зөвхөн байгаа эсэх тугтай.
+    return {
+      items: items.map(({ tenant, ...rest }) => {
+        const { bonumAppSecretEnc, bonumChecksumKeyEnc, ...safeTenant } = tenant;
+        return {
+          ...rest,
+          tenant: {
+            ...safeTenant,
+            hasBonumAppSecret: !!bonumAppSecretEnc,
+            hasBonumChecksumKey: !!bonumChecksumKeyEnc,
+          },
+        };
+      }),
+    };
   }
 
   async resendEmail(admin: AuthUser, requestId: string) {
