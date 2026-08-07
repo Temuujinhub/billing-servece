@@ -65,6 +65,11 @@ model Tenant {
   ebarimtPosNo        String?
   ebarimtBranchNo     String?
   ebarimtDistrictCode String?
+  // ТЕГ-ийн бүртгэлээс (getInfo?tin=) татсан татварын төлөв. Баримтын taxType
+  // үүнээс шалтгаална — НӨАТ суутган төлөгч биш байгууллагад 10% бодохгүй.
+  ebarimtVatPayer      Boolean?
+  ebarimtVatFreeProj   Boolean?
+  ebarimtCityPayer     Boolean?
   // --- Bonum merchant credentials (per tenant; secrets AES-256-GCM encrypted) ---
   bonumTerminalId     String?
   bonumAppSecretEnc   String?

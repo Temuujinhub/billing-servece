@@ -132,6 +132,10 @@ export class TenantsController {
     let tin = dto.tin?.trim();
     let merchantTin = dto.ebarimtMerchantTin?.trim();
     let tinAutofilled = false;
+    // Татварын төлөв (НӨАТ суутган төлөгч эсэх г.м) — баримтын taxType үүнээс
+    // шалтгаална. Доорх лавлагаа явсан үед хамт бөглөгдөнө; сүүлд НӨАТ-ын
+    // бүртгэл өөрчлөгдвөл Интеграци → «POS дугаар татах» дээр шинэчлэгдэнэ.
+    const taxStatus: Record<string, boolean> = {};
     if (!tin || !merchantTin) {
       const current = await this.prisma.tenant.findUnique({
         where: { id: user.tenantId },
@@ -147,6 +151,9 @@ export class TenantsController {
           if (needMerchantTin) merchantTin = info.tin;
           tinAutofilled = true;
         }
+        if (info.vatPayer !== null) taxStatus.ebarimtVatPayer = info.vatPayer;
+        if (info.vatFreeProject !== null) taxStatus.ebarimtVatFreeProj = info.vatFreeProject;
+        if (info.cityPayer !== null) taxStatus.ebarimtCityPayer = info.cityPayer;
       }
     }
 
@@ -176,6 +183,7 @@ export class TenantsController {
         ebarimtBranchNo: dto.ebarimtBranchNo?.trim(),
         ebarimtDistrictCode: dto.ebarimtDistrictCode?.trim(),
         bonumTerminalId: dto.bonumTerminalId?.trim(),
+        ...taxStatus,
         ...secretUpdates,
       },
     });

@@ -6,6 +6,8 @@ import { apiError } from '../../common/filters/http-exception.filter';
 import { decryptSecret, encryptSecret } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BonumAdapter } from './bonum.adapter';
+import { EbarimtOperatorService } from './ebarimt-operator.service';
+import { EbarimtRegistryService } from './ebarimt-registry.service';
 import { PosApiEbarimtAdapter, PosRegistration } from './posapi-ebarimt.adapter';
 
 export interface QpayEffectiveConfig {
@@ -52,6 +54,10 @@ export interface EbarimtEffectiveConfig {
   branchNo: string;
   districtCode: string;
   source: 'db' | 'env' | 'none';
+  /** ТЕГ-ийн бүртгэлээс татсан татварын төлөв (null = хараахан лавлаагүй). */
+  vatPayer: boolean | null;
+  vatFreeProject: boolean | null;
+  cityPayer: boolean | null;
 }
 
 const CACHE_TTL_MS = 30_000;
@@ -109,6 +115,8 @@ export class ProviderConfigService {
     private readonly config: ConfigService,
     private readonly bonum: BonumAdapter,
     private readonly posapi: PosApiEbarimtAdapter,
+    private readonly registry: EbarimtRegistryService,
+    private readonly operator: EbarimtOperatorService,
   ) {}
 
   private cacheGet<T>(key: string): T | undefined {
@@ -246,7 +254,16 @@ export class ProviderConfigService {
     const [tenant, module] = await Promise.all([
       this.prisma.tenant.findUnique({
         where: { id: tenantId },
-        select: { tin: true, ebarimtMerchantTin: true, ebarimtPosNo: true, ebarimtBranchNo: true, ebarimtDistrictCode: true },
+        select: {
+          tin: true,
+          ebarimtMerchantTin: true,
+          ebarimtPosNo: true,
+          ebarimtBranchNo: true,
+          ebarimtDistrictCode: true,
+          ebarimtVatPayer: true,
+          ebarimtVatFreeProj: true,
+          ebarimtCityPayer: true,
+        },
       }),
       this.prisma.tenantModule.findUnique({ where: { tenantId_code: { tenantId, code: 'EBARIMT' } } }),
     ]);
@@ -260,6 +277,9 @@ export class ProviderConfigService {
       branchNo: tenant?.ebarimtBranchNo || this.config.get<string>('EBARIMT_BRANCH_NO') || '001',
       districtCode: tenant?.ebarimtDistrictCode || this.config.get<string>('EBARIMT_DISTRICT_CODE') || '3505',
       source: tenant?.ebarimtMerchantTin || posNo ? 'db' : merchantTin ? 'env' : 'none',
+      vatPayer: tenant?.ebarimtVatPayer ?? null,
+      vatFreeProject: tenant?.ebarimtVatFreeProj ?? null,
+      cityPayer: tenant?.ebarimtCityPayer ?? null,
     };
     this.cacheSet(cacheKey, result);
     return result;
@@ -298,6 +318,9 @@ export class ProviderConfigService {
         branchNo: ebarimt.branchNo,
         districtCode: ebarimt.districtCode,
         configured: Boolean(ebarimt.baseUrl && ebarimt.merchantTin && ebarimt.posNo),
+        vatPayer: ebarimt.vatPayer,
+        vatFreeProject: ebarimt.vatFreeProject,
+        cityPayer: ebarimt.cityPayer,
       },
       qpay: {
         code: 'QPAY',
@@ -552,6 +575,10 @@ export class ProviderConfigService {
       });
     }
 
+    // Татварын төлөв (НӨАТ суутган төлөгч эсэх) энэ үед дахин лавлагдана —
+    // байгууллага НӨАТ-ын бүртгэлээ өөрчилсөн бол баримт нь дагаж зөв болно.
+    await this.refreshTaxStatus(user.tenantId);
+
     const extra = options.length > 1 ? ` Нийт ${options.length} POS олдлоо — доорхоос сонгож солиж болно.` : '';
     return {
       ok: true,
@@ -561,6 +588,62 @@ export class ProviderConfigService {
       applied,
       options,
     };
+  }
+
+  /**
+   * Онбордингийн 4-р алхам: ТЕГ рүү «оператороос мерчант бүртгэх» хүсэлт
+   * илгээнэ. Үүний дараа байгууллага ebarimt.mn дээрээ баталгаажуулж, тэгээд
+   * «POS дугаар татах» дарахад бүртгэл нь /rest/info дээр гарч ирнэ.
+   */
+  async requestEbarimtMerchant(user: AuthUser): Promise<{ ok: boolean; message_mn: string; details: string[] }> {
+    if (!this.operator.enabled) {
+      return {
+        ok: false,
+        message_mn: 'Операторын API түлхүүр серверт тохируулаагүй байна (EBARIMT_OPR_API_KEY).',
+        details: [],
+      };
+    }
+    const cfg = await this.getEbarimt(user.tenantId);
+    if (!cfg.merchantTin) {
+      return { ok: false, message_mn: 'Эхлээд байгууллагын регистрийг хадгална уу — ТТД түүгээр автоматаар бөглөгдөнө.', details: [] };
+    }
+    // posNo нь ОПЕРАТОРЫН POS — энэ дээр л мерчант бүртгэгдэнэ.
+    const posNo = cfg.posNo || this.config.get<string>('EBARIMT_OPR_POS_NO') || '';
+    if (!posNo) {
+      return { ok: false, message_mn: 'Операторын POS дугаар тохируулаагүй байна (EBARIMT_OPR_POS_NO).', details: [] };
+    }
+
+    const res = await this.operator.registerMerchants(posNo, [cfg.merchantTin]);
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: user.tenantId,
+        actorId: user.userId,
+        actorEmail: user.email,
+        action: 'integration.ebarimt.merchant_requested',
+        targetType: 'tenant',
+        targetId: user.tenantId,
+        meta: { merchantTin: cfg.merchantTin, posNo, ok: res.ok, status: res.status, details: res.details },
+      },
+    });
+    return { ok: res.ok, message_mn: res.message_mn, details: res.details };
+  }
+
+  /**
+   * ТЕГ-ийн бүртгэлээс НӨАТ/НХАТ-ын төлвийг дахин татна. Хариу өгөхгүй бол
+   * хуучин утга хэвээр — онбординг ч, баримт ч үүнээс болж зогсохгүй.
+   */
+  private async refreshTaxStatus(tenantId: string): Promise<void> {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { regNo: true } });
+    if (!tenant?.regNo || !EbarimtRegistryService.isValidRegNo(tenant.regNo)) return;
+    const info = await this.registry.lookup(tenant.regNo);
+    const data: Record<string, boolean> = {};
+    if (info.vatPayer !== null) data.ebarimtVatPayer = info.vatPayer;
+    if (info.vatFreeProject !== null) data.ebarimtVatFreeProj = info.vatFreeProject;
+    if (info.cityPayer !== null) data.ebarimtCityPayer = info.cityPayer;
+    if (Object.keys(data).length > 0) {
+      await this.prisma.tenant.update({ where: { id: tenantId }, data });
+      this.cache.delete(`EBARIMT:${tenantId}`);
+    }
   }
 
   /** Live connectivity test — returns status only, never credentials. */

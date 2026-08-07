@@ -55,6 +55,17 @@ export const envValidationSchema = Joi.object({
   EBARIMT_BRANCH_NO: Joi.string().default('001'),
   EBARIMT_DISTRICT_CODE: Joi.string().default('3505'),
   EBARIMT_CLASSIFICATION_CODE: Joi.string().default('6499999'),
+  // --- ТЕГ операторын сервис (оператороос мерчант бүртгүүлэх хүсэлт) ---
+  // Түлхүүрийг Posapi@itc.gov.mn-ээс авна. Тохируулаагүй бол зөвхөн энэ товч
+  // идэвхгүй болно — бусад онбординг хэвийн үргэлжилнэ.
+  EBARIMT_OPR_BASE_URL: Joi.string().uri().default('https://api.ebarimt.mn'),
+  EBARIMT_OPR_API_KEY: Joi.string().optional().allow(''),
+  EBARIMT_OPR_POS_NO: Joi.string().optional().allow(''),
+  // Bearer токен: тогтмолоор эсвэл нэгдсэн нэвтрэлтээр (client_credentials).
+  EBARIMT_OPR_TOKEN: Joi.string().optional().allow(''),
+  EBARIMT_OIDC_TOKEN_URL: Joi.string().uri().optional().allow(''),
+  EBARIMT_OIDC_CLIENT_ID: Joi.string().optional().allow(''),
+  EBARIMT_OIDC_CLIENT_SECRET: Joi.string().optional().allow(''),
 
   // --- Email provider (onboarding хүсэлт Bonum/LIME рүү илгээх) ---
   EMAIL_PROVIDER: Joi.string().valid('mock', 'smtp').default('mock'),

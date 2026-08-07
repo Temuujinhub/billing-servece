@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BonumAdapter } from './bonum.adapter';
 import { CallProSmsAdapter } from './callpro-sms.adapter';
+import { EbarimtOperatorService } from './ebarimt-operator.service';
 import { EbarimtRegistryService } from './ebarimt-registry.service';
 import { EBARIMT_PORT } from './ebarimt.port';
 import { EMAIL_PORT } from './email.port';
@@ -33,6 +34,7 @@ import { SmtpEmailAdapter } from './smtp-email.adapter';
     ProviderConfigService,
     ProviderResolver,
     EbarimtRegistryService,
+    EbarimtOperatorService,
     MockQpayAdapter,
     QpayAdapter,
     BonumAdapter,
@@ -68,6 +70,7 @@ import { SmtpEmailAdapter } from './smtp-email.adapter';
     ProviderConfigService,
     ProviderResolver,
     EbarimtRegistryService,
+    EbarimtOperatorService,
     MockQpayAdapter,
     QpayAdapter,
     BonumAdapter,

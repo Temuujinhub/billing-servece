@@ -26,6 +26,14 @@ interface EbarimtView {
   branchNo: string;
   districtCode: string;
   configured: boolean;
+  vatPayer: boolean | null;
+  vatFreeProject: boolean | null;
+  cityPayer: boolean | null;
+}
+
+interface District {
+  code: string;
+  label: string;
 }
 
 interface QpayView {
@@ -171,6 +179,9 @@ export default function IntegrationsPage() {
   const [eForm, setEForm] = useState({ merchantTin: '', posNo: '', branchNo: '', districtCode: '' });
   const [sync, setSync] = useState<SyncResult | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [merchantReq, setMerchantReq] = useState<{ ok: boolean; message_mn: string; details: string[] } | null>(null);
+  const [requesting, setRequesting] = useState(false);
   const [qForm, setQForm] = useState({ username: '', password: '', invoiceCode: '' });
   const [cForm, setCForm] = useState({ apiKey: '', from: '' });
 
@@ -193,7 +204,24 @@ export default function IntegrationsPage() {
 
   useEffect(() => {
     load();
+    // Байршлын кодын лавлах — олдохгүй бол талбар нь энгийн текст хэвээр.
+    api<{ items: District[] }>('/integrations/EBARIMT/districts')
+      .then((d) => setDistricts(d.items ?? []))
+      .catch(() => setDistricts([]));
   }, [load]);
+
+  /** 4-р алхам: ТЕГ рүү мерчант бүртгүүлэх хүсэлт илгээнэ. */
+  async function requestMerchant() {
+    setRequesting(true);
+    setMerchantReq(null);
+    try {
+      setMerchantReq(await api('/integrations/EBARIMT/merchant-request', { method: 'POST' }));
+    } catch (e) {
+      setMerchantReq({ ok: false, message_mn: e instanceof ApiError ? e.message : 'Илгээж чадсангүй', details: [] });
+    } finally {
+      setRequesting(false);
+    }
+  }
 
   /** Хадгалсны дараа нууц талбарууд цэвэрлэгдэж, шалгалтын үр дүн хүчингүй болно. */
   async function save(code: Code, body: Record<string, unknown>, clearSecrets: () => void) {
@@ -383,24 +411,76 @@ export default function IntegrationsPage() {
             <input className="input" value={eForm.branchNo} onChange={(e) => setEForm((f) => ({ ...f, branchNo: e.target.value }))} placeholder="001" />
           </div>
           <div>
-            <label className="label">Дүүргийн код</label>
-            <input
-              className="input"
-              value={eForm.districtCode}
-              onChange={(e) => setEForm((f) => ({ ...f, districtCode: e.target.value }))}
-              placeholder="3505"
-            />
+            <label className="label">Байршил (дүүрэг/сум)</label>
+            {districts.length > 0 ? (
+              <select
+                className="input"
+                value={eForm.districtCode}
+                onChange={(e) => setEForm((f) => ({ ...f, districtCode: e.target.value }))}
+              >
+                <option value="">— сонгоно уу —</option>
+                {districts.map((d) => (
+                  <option key={d.code} value={d.code}>
+                    {d.code} · {d.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className="input"
+                value={eForm.districtCode}
+                onChange={(e) => setEForm((f) => ({ ...f, districtCode: e.target.value }))}
+                placeholder="0101"
+              />
+            )}
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 px-4 py-3">
-          <button onClick={syncEbarimt} disabled={syncing} className="btn-secondary">
-            {syncing ? <Spinner className="h-4 w-4" /> : '⬇️ POS дугаар татах'}
-          </button>
-          <p className="flex-1 text-[12px] leading-snug text-slate-500">
-            ebarimt.mn дээрээ операторын хүсэлтийг баталгаажуулсны дараа энэ товчийг дарна — салбар болон POS дугаар
-            автоматаар бөглөгдөнө.
+        {(data.ebarimt.vatPayer !== null || data.ebarimt.cityPayer !== null) && (
+          <p className="mt-3 text-[12px] text-slate-500">
+            ТЕГ-ийн бүртгэлээр:{' '}
+            <span className="font-bold text-slate-700">
+              {data.ebarimt.vatFreeProject
+                ? 'НӨАТ-аас чөлөөлөгдөх төсөл'
+                : data.ebarimt.vatPayer === false
+                  ? 'НӨАТ суутган төлөгч БИШ'
+                  : 'НӨАТ суутган төлөгч'}
+            </span>
+            {data.ebarimt.cityPayer === true && ' · НХАТ суутган төлөгч'} — баримтын татварын төрөл үүнээс шалтгаална.
           </p>
+        )}
+
+        <div className="mt-4 space-y-3 rounded-xl bg-slate-50 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={requestMerchant} disabled={requesting} className="btn-secondary">
+              {requesting ? <Spinner className="h-4 w-4" /> : '📨 ТЕГ-т бүртгүүлэх хүсэлт'}
+            </button>
+            <p className="flex-1 text-[12px] leading-snug text-slate-500">
+              1) Хүсэлт илгээнэ → 2) байгууллага ebarimt.mn дээрээ баталгаажуулна → 3) доорх товчоор POS дугаараа татна.
+            </p>
+          </div>
+          {merchantReq && (
+            <div className={`rounded-lg px-3 py-2 text-[12.5px] ${merchantReq.ok ? 'bg-teal-50 text-teal-800' : 'bg-amber-50 text-amber-800'}`}>
+              <p className="font-medium">
+                {merchantReq.ok ? '✅' : '⚠️'} {merchantReq.message_mn}
+              </p>
+              {merchantReq.details.length > 0 && (
+                <ul className="mt-1 list-disc pl-5">
+                  {merchantReq.details.map((d) => (
+                    <li key={d}>{d}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={syncEbarimt} disabled={syncing} className="btn-secondary">
+              {syncing ? <Spinner className="h-4 w-4" /> : '⬇️ POS дугаар татах'}
+            </button>
+            <p className="flex-1 text-[12px] leading-snug text-slate-500">
+              Баталгаажсаны дараа дарна — салбар, POS дугаар болон НӨАТ-ын төлөв автоматаар шинэчлэгдэнэ.
+            </p>
+          </div>
         </div>
 
         {sync && (
