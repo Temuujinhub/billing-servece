@@ -4,7 +4,6 @@ import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 import { AdminOnly, AuthUser, CurrentUser } from '../../common/decorators';
 import { apiError } from '../../common/filters/http-exception.filter';
-import { EbarimtRegistryService } from './ebarimt-registry.service';
 import { ProviderCode, ProviderConfigService } from './provider-config.service';
 
 class SaveIntegrationDto {
@@ -72,10 +71,7 @@ function parseCode(code: string): ProviderCode {
 @AdminOnly()
 @Controller('integrations')
 export class IntegrationsController {
-  constructor(
-    private readonly configs: ProviderConfigService,
-    private readonly registry: EbarimtRegistryService,
-  ) {}
+  constructor(private readonly configs: ProviderConfigService) {}
 
   @Get()
   list(@CurrentUser() user: AuthUser) {
@@ -104,15 +100,6 @@ export class IntegrationsController {
   @Post('EBARIMT/sync')
   syncEbarimt(@CurrentUser() user: AuthUser) {
     return this.configs.syncEbarimt(user);
-  }
-
-  /**
-   * districtCode-ийн лавлах (ТЕГ getBranchInfo): аймаг/дүүрэг + сум/хороо.
-   * Хэрэглэгч 4 оронтой кодыг цээжлэхийн оронд цэснээс сонгоно.
-   */
-  @Get('EBARIMT/districts')
-  async districts() {
-    return { items: await this.registry.districts() };
   }
 
   /**

@@ -1,16 +1,22 @@
 name: Deploy billingservice.mn
 
-# Deploys the stack to the DigitalOcean droplet and (temporarily) pauses the
-# hotel PMS stack that currently occupies ports 80/443.
+# Deploys the stack to the Mongolia-hosted production server.
 #   • Manually  : Actions tab → "Deploy billingservice.mn" → "Run workflow"
-#   • Automatic : on every push to main
+#   • Automatic : on every push to a PRODUCTION branch (below)
+#
+# PRODUCTION BRANCH: production ажиллаж буй салбар нь `main` БИШ —
+# `claude/billingservice-mn-setup-7glfgs`. Энэ жагсаалтад байхгүй салбар руу
+# merge хийхэд deploy огт ажиллахгүй бөгөөд CI ногоон байсан ч өөрчлөлт
+# серверт очихгүй (яг ийм зүйл PR #11–#13 дээр болсон).
 #
 # Required secret: DEPLOY_SSH_KEY — private SSH key whose public key is in the
-# droplet's ~/.ssh/authorized_keys (same key the HOTEL_PMS repo uses).
+# server's ~/.ssh/authorized_keys.
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - claude/billingservice-mn-setup-7glfgs
   workflow_dispatch:
     inputs:
       host:
@@ -198,6 +204,32 @@ jobs:
           rm -f dump.sql.gz
           echo "✅ Database migrated."
 
+      # HTTP 200 нь ХУУЧИН контейнер ажиллаж байхад ч ирнэ — тиймээс шинэ код
+      # үнэхээр гарсан эсэхийг тусад нь батална: api контейнер энэ deploy-ийн
+      # үеэр дахин эхэлсэн байх ёстой.
+      - name: Verify deployed revision
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$GITHUB_SHA" <<'EOSSH'
+          set -e
+          REV="$1"
+          cd /opt/billingservice
+          C="docker compose -f docker-compose.prod.yml"
+          printf '%s\n' "$REV" > DEPLOYED_REVISION
+          CID=$($C ps -q api)
+          if [ -z "$CID" ]; then
+            echo "::error title=API container missing::docker compose ps -q api returned nothing"; exit 1
+          fi
+          STARTED=$(docker inspect -f '{{.State.StartedAt}}' "$CID")
+          AGE=$(( $(date -u +%s) - $(date -u -d "$STARTED" +%s) ))
+          echo "deployed revision : $REV"
+          echo "api started       : $STARTED (${AGE}s ago)"
+          # 15 минутаас хуучин бол энэ deploy контейнерийг сольсонгүй гэсэн үг.
+          if [ "$AGE" -gt 900 ]; then
+            echo "::error title=Stale container::api ${AGE}s өмнө эхэлсэн — энэ deploy шинэ дүрсийг гаргаагүй байна."
+            exit 1
+          fi
+          EOSSH
+
       - name: Verify public endpoint
         run: |
           for i in $(seq 1 20); do
@@ -207,4 +239,5 @@ jobs:
             fi
             sleep 6
           done
-          echo "::warning::Public HTTPS endpoint not confirmed yet (cert may still be provisioning)."
+          echo "::error title=Endpoint not live::https://billing.mastrsys.com/health/live 2 минутын дотор хариу өгсөнгүй."
+          exit 1

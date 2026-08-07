@@ -234,6 +234,16 @@ export class TenantsController {
     return { regNo: info.regNo, found: info.found, name: info.name, tin: info.tin, merchantTin: info.tin };
   }
 
+  /**
+   * Байршлын лавлах (аймаг/дүүрэг + сум/хороо). Байгууллага хаягаа оруулахдаа
+   * дүүргээ сонгоход л хангалттай — 4 оронтой байршлын кодыг үүнээс шууд авна,
+   * хэрэглэгч кодыг мэдэх шаардлагагүй.
+   */
+  @Get('districts')
+  async districts() {
+    return { items: await this.registry.districts() };
+  }
+
   /** Onboarding step: eBarimt үүсгүүлэх хүсэлт — saves regNo/ТТД, enables the module. */
   @Roles(Role.OWNER)
   @HttpCode(200)
