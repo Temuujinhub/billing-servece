@@ -23,6 +23,10 @@ export const envValidationSchema = Joi.object({
   // One-time admin account provisioning (never stored in the repo).
   ADMIN_BOOTSTRAP_EMAIL: Joi.string().email().allow('').default(''),
   ADMIN_BOOTSTRAP_PASSWORD: Joi.string().allow('').default(''),
+  // Партнёрын ажилтнуудын имэйл (таслалаар) — нэвтрэхэд нь зөвхөн өөрт
+  // хамаарах бүртгэлийн хүсэлтүүдийг харах/шийдэх эрх нээгдэнэ.
+  PARTNER_BONUM_EMAILS: Joi.string().allow('').default(''),
+  PARTNER_EBARIMT_EMAILS: Joi.string().allow('').default(''),
 
   // --- Payment provider selection (real credentials only via droplet .env) ---
   PAYMENT_PROVIDER: Joi.string().valid('qpay_mock', 'qpay', 'bonum').default('qpay_mock'),

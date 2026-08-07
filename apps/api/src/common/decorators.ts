@@ -10,6 +10,9 @@ export interface AuthUser {
   role: Role;
   /** Platform-operator flag — unlocks the /admin area. */
   isAdmin: boolean;
+  /** Партнёрын ажилтан (Bonum → 'BONUM', LIME → 'EBARIMT') — зөвхөн өөрт
+   *  хамаарах бүртгэлийн хүсэлтүүдийг харж, хариу бөглөх эрхтэй. */
+  partnerKind?: 'BONUM' | 'EBARIMT' | null;
 }
 
 export const IS_PUBLIC_KEY = 'isPublic';

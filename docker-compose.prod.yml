@@ -55,6 +55,8 @@ services:
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      PARTNER_BONUM_EMAILS: ${PARTNER_BONUM_EMAILS:-}
+      PARTNER_EBARIMT_EMAILS: ${PARTNER_EBARIMT_EMAILS:-}
       # Provider selection — real credentials live only in the droplet's .env
       PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-qpay_mock}
       QPAY_BASE_URL: ${QPAY_BASE_URL:-https://merchant.qpay.mn}

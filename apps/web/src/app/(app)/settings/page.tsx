@@ -75,11 +75,19 @@ const KYB_MN: Record<string, string> = {
   NEEDS_INFO: 'Мэдээлэл дутуу',
 };
 
+// Merchant-д харагдах төлвүүд — гадаад партнёрын нэр ХЭЗЭЭ Ч дурдагдахгүй:
+// хэрэглэгчийн хувьд энэ бол манай нэгдсэн үйлчилгээний идэвхжүүлэлт.
 const REQUEST_STATUS_MN: Record<string, { label: string; cls: string }> = {
-  SUBMITTED: { label: 'Илгээгдээгүй (имэйл алдаа)', cls: 'bg-amber-50 text-amber-700' },
-  EMAIL_SENT: { label: 'Хүсэлт илгээгдсэн — хүлээгдэж буй', cls: 'bg-navy-50 text-navy-700' },
-  APPROVED: { label: 'Баталгаажсан', cls: 'bg-teal-50 text-teal-700' },
-  REJECTED: { label: 'Татгалзсан', cls: 'bg-red-50 text-red-600' },
+  SUBMITTED: { label: 'Хүлээгдэж байна', cls: 'bg-amber-50 text-amber-700' },
+  EMAIL_SENT: { label: 'Идэвхжүүлэлт хийгдэж байна', cls: 'bg-navy-50 text-navy-700' },
+  APPROVED: { label: 'Идэвхтэй ✓', cls: 'bg-teal-50 text-teal-700' },
+  REJECTED: { label: 'Мэдээлэл засах шаардлагатай', cls: 'bg-red-50 text-red-600' },
+};
+
+/** Merchant-facing үйлчилгээний нэрс (партнёрын нэргүй). */
+const SERVICE_MN: Record<string, { title: string; desc: string }> = {
+  BONUM: { title: 'Төлбөр хүлээн авах', desc: 'Төлбөрийн линк, QR-ээр орлого хүлээн авч дансандаа шууд авна' },
+  EBARIMT: { title: 'eBarimt баримт', desc: 'Төлбөр бүрд НӨАТ-ын баримт автоматаар үүснэ' },
 };
 
 export default function SettingsPage() {
@@ -96,21 +104,13 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [requests, setRequests] = useState<IntegrationRequest[]>([]);
-  const [requestBusy, setRequestBusy] = useState<IntegrationKind | null>(null);
-  const [requestError, setRequestError] = useState<string | null>(null);
-  const [bonumSecret, setBonumSecret] = useState('');
-  const [bonumChecksum, setBonumChecksum] = useState('');
-  // Bonum анкет + eBarimt ТЕГ бүртгэлийн талбарууд
+  const [activationNote, setActivationNote] = useState<string | null>(null);
+  // Онбордингийн анкет — хаяг, утас, дансны мэдээлэл
   const [address, setAddress] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [bankName, setBankName] = useState('');
   const [bankAccount, setBankAccount] = useState('');
   const [bankAccountName, setBankAccountName] = useState('');
-  const [ebMerchantTin, setEbMerchantTin] = useState('');
-  const [ebPosNo, setEbPosNo] = useState('');
-  const [ebBranchNo, setEbBranchNo] = useState('');
-  const [ebDistrictCode, setEbDistrictCode] = useState('');
-  const [bonumTerminalId, setBonumTerminalId] = useState('');
 
   const loadRequests = useCallback(() => {
     api<{ items: IntegrationRequest[] }>('/integrations/requests')
@@ -143,29 +143,11 @@ export default function SettingsPage() {
           setBankName(r.tenant.bankName ?? '');
           setBankAccount(r.tenant.bankAccount ?? '');
           setBankAccountName(r.tenant.bankAccountName ?? '');
-          setEbMerchantTin(r.tenant.ebarimtMerchantTin ?? '');
-          setEbPosNo(r.tenant.ebarimtPosNo ?? '');
-          setEbBranchNo(r.tenant.ebarimtBranchNo ?? '');
-          setEbDistrictCode(r.tenant.ebarimtDistrictCode ?? '');
-          setBonumTerminalId(r.tenant.bonumTerminalId ?? '');
         }
       })
       .catch((e) => setError(e.message));
     loadRequests();
   }, [loadRequests]);
-
-  async function submitRequest(kind: IntegrationKind) {
-    setRequestBusy(kind);
-    setRequestError(null);
-    try {
-      await api('/integrations/requests', { method: 'POST', body: JSON.stringify({ kind }) });
-      loadRequests();
-    } catch (e) {
-      setRequestError(e instanceof ApiError ? e.message : 'Хүсэлт илгээж чадсангүй');
-    } finally {
-      setRequestBusy(null);
-    }
-  }
 
   useEffect(() => {
     load(true);
@@ -221,8 +203,9 @@ export default function SettingsPage() {
     setBusy(true);
     setError(null);
     setSaved(false);
+    setActivationNote(null);
     try {
-      await api('/tenant', {
+      const res = await api<{ autoSubmitted?: string[] }>('/tenant', {
         method: 'PATCH',
         body: JSON.stringify({
           name: name.trim(),
@@ -236,18 +219,12 @@ export default function SettingsPage() {
           bankName: bankName.trim() || undefined,
           bankAccount: bankAccount.trim() || undefined,
           bankAccountName: bankAccountName.trim() || undefined,
-          ebarimtMerchantTin: ebMerchantTin.trim() || undefined,
-          ebarimtPosNo: ebPosNo.trim() || undefined,
-          ebarimtBranchNo: ebBranchNo.trim() || undefined,
-          ebarimtDistrictCode: ebDistrictCode.trim() || undefined,
-          bonumTerminalId: bonumTerminalId.trim() || undefined,
-          bonumAppSecret: bonumSecret.trim() || undefined,
-          bonumChecksumKey: bonumChecksum.trim() || undefined,
         }),
       });
       setSaved(true);
-      setBonumSecret('');
-      setBonumChecksum('');
+      if (res.autoSubmitted && res.autoSubmitted.length > 0) {
+        setActivationNote('✓ Мэдээлэл бүрэн боллоо — үйлчилгээний идэвхжүүлэлт автоматаар эхэллээ.');
+      }
       load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
@@ -437,11 +414,14 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* Bonum Gateway анкет + eBarimt ТЕГ бүртгэл + интеграцийн хүсэлт */}
+      {/* Онбордингийн анкет — бүрэн болмогц идэвхжүүлэлт автоматаар эхэлнэ */}
       <div className="card space-y-5 p-6">
         <div>
           <h2 className="font-bold text-slate-900">Байгууллагын дэлгэрэнгүй ба данс</h2>
-          <p className="mt-1 text-[13px] text-slate-500">Bonum Gateway-д мерчант бүртгүүлэхэд (анкет) хаяг, утас, дансны мэдээлэл заавал шаардлагатай.</p>
+          <p className="mt-1 text-[13px] text-slate-500">
+            Төлбөр хүлээн авах болон eBarimt үйлчилгээг идэвхжүүлэхэд байгууллагын хаяг, утас, дансны
+            мэдээлэл шаардлагатай. Бүх мэдээллээ үнэн зөв бөглөж хадгалахад идэвхжүүлэлт автоматаар эхэлнэ.
+          </p>
         </div>
         <div className="grid gap-5 sm:grid-cols-2">
           <div className="sm:col-span-2">
@@ -454,67 +434,21 @@ export default function SettingsPage() {
           </div>
           <div>
             <label className="label">Банк</label>
-            <input className="input" value={bankName} onChange={(e) => setBankName(e.target.value)} disabled={!isOwner} maxLength={100} placeholder="Хаан банк" />
+            <input className="input" value={bankName} onChange={(e) => setBankName(e.target.value)} disabled={!isOwner} maxLength={100} placeholder="Жишээ: Хаан банк" />
           </div>
           <div>
             <label className="label">Дансны дугаар</label>
-            <input className="input" value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} disabled={!isOwner} maxLength={30} />
+            <input className="input" value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} disabled={!isOwner} maxLength={30} placeholder="Жишээ: 5041234567" />
           </div>
           <div>
-            <label className="label">Дансны нэр</label>
-            <input className="input" value={bankAccountName} onChange={(e) => setBankAccountName(e.target.value)} disabled={!isOwner} maxLength={150} placeholder="Байгууллагын нэр дээрх данс" />
+            <label className="label">Данс эзэмшигчийн нэр</label>
+            <input className="input" value={bankAccountName} onChange={(e) => setBankAccountName(e.target.value)} disabled={!isOwner} maxLength={150} placeholder="Банкинд бүртгэлтэй яг нэрээр бичнэ" />
+            <p className="mt-1 text-[12px] text-slate-500">Данс байгууллагын нэр дээр байх шаардлагатай</p>
           </div>
         </div>
-      </div>
-
-      <div className="card space-y-5 p-6">
-        <div>
-          <h2 className="font-bold text-slate-900">eBarimt бүртгэл (ТЕГ POS API)</h2>
-          <p className="mt-1 text-[13px] text-slate-500">
-            Компани ТЕГ-т өөрийн POS-оор бүртгүүлсэн байх ёстой — өөрийн merchantTin болон тухайн POS-д олгогдсон posNo. Өөр байгууллагын posNo-г ашиглаж болохгүй.
-          </p>
-        </div>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <div>
-            <label className="label">Merchant TIN</label>
-            <input className="input" value={ebMerchantTin} onChange={(e) => setEbMerchantTin(e.target.value)} disabled={!isOwner} maxLength={20} placeholder="ТЕГ-ийн ТТД (TIN)" />
-          </div>
-          <div>
-            <label className="label">POS дугаар (posNo)</label>
-            <input className="input" value={ebPosNo} onChange={(e) => setEbPosNo(e.target.value)} disabled={!isOwner} maxLength={20} />
-          </div>
-          <div>
-            <label className="label">Салбарын дугаар (branchNo)</label>
-            <input className="input" value={ebBranchNo} onChange={(e) => setEbBranchNo(e.target.value)} disabled={!isOwner} maxLength={10} placeholder="001" />
-          </div>
-          <div>
-            <label className="label">Дүүргийн код (districtCode)</label>
-            <input className="input" value={ebDistrictCode} onChange={(e) => setEbDistrictCode(e.target.value)} disabled={!isOwner} maxLength={10} placeholder="3505" />
-          </div>
-        </div>
-      </div>
-
-      <div className="card space-y-5 p-6">
-        <div>
-          <h2 className="font-bold text-slate-900">Bonum холболт (Terminal)</h2>
-          <p className="mt-1 text-[13px] text-slate-500">
-            Bonum-ийн гэрээ баталгаажсаны дараа имэйлээр ирсэн Terminal ID, Secret Key, Checksum Key-г энд оруулна. Нууц түлхүүрүүд шифрлэгдэж хадгалагдах бөгөөд дахин харагдахгүй.
-          </p>
-        </div>
-        <div className="grid gap-5 sm:grid-cols-3">
-          <div>
-            <label className="label">Terminal ID</label>
-            <input className="input" value={bonumTerminalId} onChange={(e) => setBonumTerminalId(e.target.value)} disabled={!isOwner} maxLength={30} />
-          </div>
-          <div>
-            <label className="label">Secret Key {info.tenant.hasBonumAppSecret && <span className="text-emerald-600">✓</span>}</label>
-            <input className="input" type="password" value={bonumSecret} onChange={(e) => setBonumSecret(e.target.value)} disabled={!isOwner} autoComplete="new-password" placeholder={info.tenant.hasBonumAppSecret ? '•••••• (солих бол шинээр)' : ''} />
-          </div>
-          <div>
-            <label className="label">Checksum Key {info.tenant.hasBonumChecksumKey && <span className="text-emerald-600">✓</span>}</label>
-            <input className="input" type="password" value={bonumChecksum} onChange={(e) => setBonumChecksum(e.target.value)} disabled={!isOwner} autoComplete="new-password" placeholder={info.tenant.hasBonumChecksumKey ? '•••••• (солих бол шинээр)' : ''} />
-          </div>
-        </div>
+        {activationNote && (
+          <p className="rounded-lg bg-emerald-50 px-4 py-2.5 text-[13px] font-medium text-emerald-700">{activationNote}</p>
+        )}
         {isOwner && (
           <div className="flex justify-end">
             <button className="btn-primary min-w-[130px]" onClick={save} disabled={busy}>
@@ -524,42 +458,44 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* Бүртгүүлэх хүсэлтүүд — Bonum/LIME талд автомат бүртгэл байхгүй тул
-          хүсэлтийг имэйлээр илгээж, хариу ирмэгц админ баталгаажуулна */}
+      {/* Үйлчилгээний идэвхжүүлэлтийн төлөв — зөвхөн мэдээлэл, товчгүй.
+          Идэвхжүүлэлт мэдээлэл бүрэн болмогц автоматаар эхэлдэг. */}
       <div className="card space-y-4 p-6">
         <div>
-          <h2 className="font-bold text-slate-900">Интеграцийн бүртгэлийн хүсэлт</h2>
+          <h2 className="font-bold text-slate-900">Үйлчилгээний идэвхжүүлэлт</h2>
           <p className="mt-1 text-[13px] text-slate-500">
-            Дээрх мэдээллээ <b>үнэн зөв, гүйцэд</b> хадгалсны дараа хүсэлтээ илгээнэ. Бид таны мэдээллийг Bonum / eBarimt (LIME) талд имэйлээр дамжуулж, бүртгэл хийгдмэгц энд төлөв нь шинэчлэгдэнэ.
+            Байгууллагын мэдээллээ бүрэн бөглөж хадгалахад идэвхжүүлэлт автоматаар эхэлнэ.
+            Манай баг таны бүртгэлийг боловсруулж дуусмагц төлөв нь энд шинэчлэгдэнэ.
           </p>
         </div>
         {(['BONUM', 'EBARIMT'] as IntegrationKind[]).map((kind) => {
           const latest = requests.find((r) => r.kind === kind);
           const st = latest ? REQUEST_STATUS_MN[latest.status] : null;
-          const canSubmit = isOwner && (!latest || latest.status === 'REJECTED');
+          const svc = SERVICE_MN[kind];
           return (
             <div key={kind} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3">
               <div>
-                <p className="font-semibold text-slate-900">{kind === 'BONUM' ? 'Bonum Gateway — төлбөр хүлээн авах' : 'eBarimt (ТЕГ POS API, LIME)'}</p>
-                {latest ? (
-                  <p className="mt-1 text-[12.5px] text-slate-500">
-                    <span className={`rounded-full px-2 py-0.5 text-[12px] font-semibold ${st!.cls}`}>{st!.label}</span>
-                    <span className="ml-2">{shortDate(latest.createdAt)}</span>
-                    {latest.note && <span className="ml-2">— {latest.note}</span>}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-[12.5px] text-slate-500">Хүсэлт илгээгээгүй байна</p>
+                <p className="font-semibold text-slate-900">{svc.title}</p>
+                <p className="mt-0.5 text-[12.5px] text-slate-500">{svc.desc}</p>
+                {latest?.status === 'REJECTED' && latest.note && (
+                  <p className="mt-1 text-[12.5px] font-medium text-red-600">{latest.note}</p>
                 )}
               </div>
-              {canSubmit && (
-                <button className="btn-secondary" onClick={() => submitRequest(kind)} disabled={requestBusy !== null}>
-                  {requestBusy === kind ? <Spinner className="h-4 w-4" /> : latest ? 'Дахин илгээх' : 'Хүсэлт илгээх'}
-                </button>
-              )}
+              <div className="text-right">
+                {latest ? (
+                  <>
+                    <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${st!.cls}`}>{st!.label}</span>
+                    <p className="mt-1 text-[11.5px] text-slate-400">{shortDate(latest.createdAt)}</p>
+                  </>
+                ) : (
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[12px] font-semibold text-slate-500">
+                    Мэдээлэл дутуу
+                  </span>
+                )}
+              </div>
             </div>
           );
         })}
-        {requestError && <ErrorNote message={requestError} />}
       </div>
 
       {/* Team management (M-23) */}

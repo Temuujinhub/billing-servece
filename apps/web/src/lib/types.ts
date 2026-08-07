@@ -9,6 +9,8 @@ export interface SessionUser {
   role: Role;
   tenantId: string;
   isAdmin?: boolean;
+  /** Партнёрын ажилтан: BONUM | EBARIMT (энгийн хэрэглэгчид null). */
+  partnerKind?: 'BONUM' | 'EBARIMT' | null;
 }
 
 export interface AuthResponse {

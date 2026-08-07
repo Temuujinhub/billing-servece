@@ -7,6 +7,7 @@ import { AuthUser, CurrentUser, Roles } from '../../common/decorators';
 import { apiError } from '../../common/filters/http-exception.filter';
 import { encryptSecret } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+import { IntegrationsService } from '../integrations/integrations.service';
 import { BonumAdapter } from '../providers/bonum.adapter';
 
 class UpdateTenantDto {
@@ -107,6 +108,7 @@ export class TenantsController {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly bonum: BonumAdapter,
+    private readonly integrations: IntegrationsService,
   ) {}
 
   @Get()
@@ -180,7 +182,10 @@ export class TenantsController {
         meta: { bonumCredentialsChanged: Object.keys(secretUpdates).length > 0 || !!dto.bonumTerminalId },
       },
     });
-    return publicTenant(tenant);
+    // Товчгүй онбординг: мэдээлэл бүрэн болмогц идэвхжүүлэлтийн хүсэлт өөрөө
+    // үүсч партнёрууд руу илгээгдэнэ (давхардал/өөрчлөлтгүй үед алгасна).
+    const auto = await this.integrations.autoSubmit(user);
+    return { ...publicTenant(tenant), autoSubmitted: auto.submitted };
   }
 
   /**
