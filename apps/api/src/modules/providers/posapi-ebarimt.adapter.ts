@@ -56,53 +56,71 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
   }
 
   /**
-   * Админы «Холболт шалгах»: /rest/info-г ШИНЭЭР татаад тухайн компанийн
-   * merchantTin ТЕГ-т бүртгэгдсэн эсэхийг хэлнэ. Кэшийг мөн шинэчилнэ, тиймээс
-   * шинэ компани бүртгүүлсний дараа энэ товч дарахад л хүчинтэй болно.
+   * /rest/info-г бүтэцлэн уншина. Заавраар нэг instance = НЭГ `posNo`
+   * (операторын POS), доор нь тэрхүү POS дээр бүртгэгдсэн мерчантуудын
+   * жагсаалт:
+   *
+   *   { operatorName, operatorTIN, posId, posNo,
+   *     merchants: [ { name, tin, customers: [...] } ] }
+   *
+   * Өөрөөр хэлбэл posNo нь мерчант бүрд ӨӨР БИШ — операторын нэг POS дээр
+   * олон мерчант бүртгэгдэж, баримт нь `merchantTin`-ээр ялгагдана.
    */
-  async checkRegistration(merchantTin?: string | null): Promise<{ tins: string[]; registered: boolean | null }> {
-    const tins = collectTins(await this.info());
-    this.registeredTins = tins;
-    const list = [...tins];
-    if (!merchantTin) return { tins: list, registered: null };
-    // Хоосон бүртгэл нь "мэдэхгүй" — instance нь TIN-үүдээ ил гаргадаггүй байж болно.
-    return { tins: list, registered: tins.size === 0 ? null : tins.has(merchantTin) };
+  async instanceInfo(): Promise<PosApiInstanceInfo> {
+    const body = await this.info();
+    const merchants: { name: string | null; tin: string }[] = [];
+    for (const m of Array.isArray(body?.merchants) ? body.merchants : []) {
+      const tin = str(m?.tin) ?? str(m?.merchantTin);
+      if (tin) merchants.push({ name: str(m?.name), tin });
+    }
+    // Кэшийг зэрэг шинэчилнэ (баримт үүсгэхийн өмнөх хамгаалалт үүнийг уншдаг).
+    this.registeredTins = new Set(merchants.map((m) => m.tin));
+    return {
+      operatorName: str(body?.operatorName),
+      operatorTin: str(body?.operatorTIN) ?? str(body?.operatorTin),
+      posNo: str(body?.posNo),
+      merchants,
+    };
   }
 
   /**
-   * Онбордингийн сүүлийн алхам: хэрэглэгч ebarimt.mn дээрээ операторын хүсэлтийг
-   * баталгаажуулсны дараа тухайн байгууллагын POS-ууд /rest/info дээр гарч ирдэг.
-   * Үүнийг татаад `branchNo` / `posNo`-г автоматаар олгоно — хэрэглэгчээс
-   * 8 оронтой дугаар гараар бичүүлэх шаардлагагүй.
-   *
-   * Байгууллагад хэд хэдэн POS бүртгэлтэй байж болно (жишээ нь 10025383,
-   * 10045952). Баримт бүрд ЗӨВХӨН НЭГ posNo дамжуулна — бид эхнийхийг сонгож,
-   * үлдсэнийг нь сонголт болгож UI руу буцаана.
+   * Админы «Холболт шалгах»: /rest/info-г ШИНЭЭР татаад тухайн компанийн
+   * merchantTin энэ POS дээр бүртгэгдсэн эсэхийг хэлнэ.
+   */
+  async checkRegistration(merchantTin?: string | null): Promise<{ tins: string[]; registered: boolean | null }> {
+    const info = await this.instanceInfo();
+    const tins = info.merchants.map((m) => m.tin);
+    if (!merchantTin) return { tins, registered: null };
+    // Хоосон жагсаалт нь "мэдэхгүй" — instance нь мерчантуудаа ил гаргаагүй байж болно.
+    return { tins, registered: tins.length === 0 ? null : tins.includes(merchantTin) };
+  }
+
+  /**
+   * Онбордингийн сүүлийн алхам: мерчант ebarimt.mn дээрээ операторын хүсэлтийг
+   * баталгаажуулмагц түүний ТТД энэ instance-ийн `merchants` жагсаалтад гарч
+   * ирдэг. Тэр үед л уг мерчант операторын `posNo` дээр баримт хэвлэх эрхтэй
+   * болно — тиймээс posNo-г хэрэглэгчээр бичүүлэхгүй, эндээс шууд олгоно.
    */
   async discoverRegistration(merchantTin?: string | null): Promise<{
-    options: PosRegistration[];
-    /** merchantTin өгсөн үед: тухайн ТТД-д харьяалагдах POS олдсон эсэх. */
+    posNo: string | null;
+    /** merchantTin энэ POS дээр бүртгэгдсэн эсэх. */
     matched: boolean;
+    merchants: { name: string | null; tin: string }[];
   }> {
-    const body = await this.info();
-    this.registeredTins = collectTins(body);
-    const all = collectPosRegistrations(body);
-    if (!merchantTin) return { options: all, matched: false };
-    const mine = all.filter((r) => r.merchantTin === merchantTin);
-    // Тухайн ТТД-гээр олдвол зөвхөн түүнийг — өөр байгууллагын POS дугаарыг
-    // санамсаргүй санал болгож болохгүй (ТЕГ-ийн журмаар хориотой).
-    return mine.length > 0 ? { options: mine, matched: true } : { options: [], matched: false };
+    const info = await this.instanceInfo();
+    const matched = Boolean(merchantTin && info.merchants.some((m) => m.tin === merchantTin));
+    return { posNo: info.posNo, matched, merchants: info.merchants };
   }
 
   /** Lazily collect registered TINs; null = info unavailable (don't block). */
   private async getRegisteredTins(): Promise<Set<string> | null> {
     if (this.registeredTins) return this.registeredTins;
     if (!this.infoFlight) {
-      this.infoFlight = this.info()
-        .then((body) => {
-          const tins = collectTins(body);
+      this.infoFlight = this.instanceInfo()
+        .then((info) => {
+          const tins = new Set(info.merchants.map((m) => m.tin));
           this.registeredTins = tins;
-          this.logger.log(`POS API instance ready — ${tins.size} registered TIN(s)`);
+          this.logger.log(`POS API ready — POS ${info.posNo ?? '?'}, ${tins.size} merchant(s)`);
           return tins;
         })
         .catch((e) => {
@@ -236,59 +254,16 @@ function paymentCode(provider: string): string {
   return provider.startsWith('qpay') ? 'BANK_TRANSFER_QPAY' : 'PAYMENT_CARD';
 }
 
-/** /rest/info дээр бүртгэгдсэн нэг POS. */
-export interface PosRegistration {
-  merchantTin: string | null;
-  merchantName: string | null;
-  branchNo: string | null;
-  posNo: string;
+/** /rest/info: нэг instance = операторын нэг POS + бүртгэлтэй мерчантууд. */
+export interface PosApiInstanceInfo {
+  operatorName: string | null;
+  operatorTin: string | null;
+  posNo: string | null;
+  merchants: { name: string | null; tin: string }[];
 }
 
 function str(v: unknown): string | null {
   if (typeof v === 'string' && v.trim()) return v.trim();
   if (typeof v === 'number' && Number.isFinite(v)) return String(v);
   return null;
-}
-
-/**
- * /rest/info-г мөчирлөн уншиж POS бүрийг олно. Хариуны яг бүтэц (merchants →
- * branches → poses уу, эсвэл хавтгай жагсаалт уу) instance-ийн хувилбараас
- * хамаардаг тул мод даган ойрын `tin` / `branchNo`-г өвлүүлэн авна.
- */
-function collectPosRegistrations(body: any): PosRegistration[] {
-  const out: PosRegistration[] = [];
-  const seen = new Set<string>();
-  const walk = (node: any, tin: string | null, branchNo: string | null, name: string | null) => {
-    if (!node || typeof node !== 'object') return;
-    const tinHere = str(node.merchantTin) ?? str(node.tin) ?? tin;
-    const branchHere = str(node.branchNo) ?? str(node.branchId) ?? branchNo;
-    const nameHere = str(node.merchantName) ?? str(node.name) ?? name;
-    const posNo = str(node.posNo) ?? str(node.posNumber);
-    if (posNo && !seen.has(posNo)) {
-      seen.add(posNo);
-      out.push({ merchantTin: tinHere, merchantName: nameHere, branchNo: branchHere, posNo });
-    }
-    for (const v of Object.values(node)) {
-      if (Array.isArray(v)) v.forEach((c) => walk(c, tinHere, branchHere, nameHere));
-      else if (v && typeof v === 'object') walk(v, tinHere, branchHere, nameHere);
-    }
-  };
-  walk(body, null, null, null);
-  return out;
-}
-
-/** /rest/info хариунаас бүх `tin` / `merchantTin` талбарыг цуглуулна. */
-function collectTins(body: any): Set<string> {
-  const tins = new Set<string>();
-  const walk = (node: any) => {
-    if (!node || typeof node !== 'object') return;
-    if (typeof node.tin === 'string') tins.add(node.tin);
-    if (typeof node.merchantTin === 'string') tins.add(node.merchantTin);
-    for (const v of Object.values(node)) {
-      if (Array.isArray(v)) v.forEach(walk);
-      else if (v && typeof v === 'object') walk(v);
-    }
-  };
-  walk(body);
-  return tins;
 }

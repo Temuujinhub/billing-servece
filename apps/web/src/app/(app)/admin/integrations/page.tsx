@@ -70,18 +70,12 @@ interface TestResult {
 
 type Code = 'BONUM' | 'EBARIMT' | 'QPAY' | 'CALLPRO';
 
-interface PosRegistration {
-  merchantTin: string | null;
-  merchantName: string | null;
-  branchNo: string | null;
-  posNo: string;
-}
-
 interface SyncResult {
   ok: boolean;
   message_mn: string;
   applied: { posNo: string; branchNo: string } | null;
-  options: PosRegistration[];
+  /** Энэ баримтын серверт бүртгэлтэй мерчантууд. */
+  merchants: { name: string | null; tin: string }[];
 }
 
 const SOURCE_MN: Record<Source, string> = {
@@ -247,10 +241,10 @@ export default function IntegrationsPage() {
       setSync(r);
       if (r.applied) {
         setEForm((f) => ({ ...f, posNo: r.applied!.posNo, branchNo: r.applied!.branchNo }));
-        load();
       }
+      load();
     } catch (e) {
-      setSync({ ok: false, message_mn: e instanceof ApiError ? e.message : 'Татаж чадсангүй', applied: null, options: [] });
+      setSync({ ok: false, message_mn: e instanceof ApiError ? e.message : 'Татаж чадсангүй', applied: null, merchants: [] });
     } finally {
       setSyncing(false);
     }
@@ -403,8 +397,8 @@ export default function IntegrationsPage() {
             />
           </div>
           <div>
-            <label className="label">POS дугаар</label>
-            <input className="input" value={eForm.posNo} onChange={(e) => setEForm((f) => ({ ...f, posNo: e.target.value }))} placeholder="10000001" />
+            <label className="label">POS дугаар (операторын)</label>
+            <input className="input" value={eForm.posNo} onChange={(e) => setEForm((f) => ({ ...f, posNo: e.target.value }))} placeholder="Татахад автоматаар" />
           </div>
           <div>
             <label className="label">Салбарын дугаар</label>
@@ -488,27 +482,9 @@ export default function IntegrationsPage() {
             <p className="font-medium">
               {sync.ok ? '✅' : '⚠️'} {sync.message_mn}
             </p>
-            {sync.options.length > 1 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {sync.options.map((o) => (
-                  <button
-                    key={o.posNo}
-                    onClick={() => setEForm((f) => ({ ...f, posNo: o.posNo, branchNo: o.branchNo || f.branchNo || '001' }))}
-                    className={`rounded-full px-3 py-1 text-[12px] font-bold ring-1 ring-inset transition ${
-                      eForm.posNo === o.posNo
-                        ? 'bg-teal-500 text-white ring-teal-500'
-                        : 'bg-white text-slate-700 ring-slate-300 hover:ring-teal-400'
-                    }`}
-                  >
-                    {o.posNo}
-                    {o.branchNo && <span className="ml-1 font-normal opacity-70">· салбар {o.branchNo}</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-            {sync.options.length > 1 && (
+            {sync.merchants.length > 0 && (
               <p className="mt-2 text-[12px] opacity-80">
-                Баримт бүрд зөвхөн НЭГ POS дугаар дамжина. Сонгосны дараа «Хадгалах» дарна уу.
+                Энэ POS дээр бүртгэлтэй: {sync.merchants.map((m) => m.name ?? m.tin).join(', ')}
               </p>
             )}
           </div>
@@ -535,10 +511,10 @@ export default function IntegrationsPage() {
           }
         />
         <p className="mt-3 text-[12px] leading-snug text-slate-500">
-          ТТД нь байгууллагын регистрийн дугаараар автоматаар бөглөгддөг. POS дугаарыг тухайн байгууллага ТЕГ-т өөрийн
-          нэр дээр бүртгүүлэхэд олгоно — өөр байгууллагын POS дугаарыг ашиглаж болохгүй тул зөвхөн энэ ТТД-д
-          харьяалагдах дугаарууд санал болгогдоно. Салбарын дугаар ихэвчлэн 001 (төв салбар). Унтраахад төлбөр
-          төлөгдөхөд баримт хэвлэгдэхгүй.
+          ТТД нь байгууллагын регистрийн дугаараар автоматаар бөглөгддөг. POS дугаар нь ОПЕРАТОРЫН нэг дугаар —
+          нэг POS дээр олон байгууллага бүртгэгдэж, баримт нь ТТД-гээр ялгагдана. Тиймээс гараар оруулах зүйл
+          үлдэхгүй: «ТЕГ-т бүртгүүлэх хүсэлт» → байгууллага ebarimt.mn дээрээ баталгаажуулна → «POS дугаар татах».
+          Салбарын дугаар ихэвчлэн 001 (төв салбар). Унтраахад төлбөр төлөгдөхөд баримт хэвлэгдэхгүй.
         </p>
       </div>
 

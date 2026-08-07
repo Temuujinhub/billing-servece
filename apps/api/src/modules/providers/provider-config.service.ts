@@ -8,7 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { BonumAdapter } from './bonum.adapter';
 import { EbarimtOperatorService } from './ebarimt-operator.service';
 import { EbarimtRegistryService } from './ebarimt-registry.service';
-import { PosApiEbarimtAdapter, PosRegistration } from './posapi-ebarimt.adapter';
+import { PosApiEbarimtAdapter } from './posapi-ebarimt.adapter';
 
 export interface QpayEffectiveConfig {
   enabled: boolean;
@@ -273,7 +273,14 @@ export class ProviderConfigService {
       enabled: module?.enabled ?? false,
       baseUrl: this.config.get<string>('VAT_BASE_URL') ?? '',
       merchantTin,
-      posNo: posNo || this.config.get<string>('EBARIMT_POS_NO') || '',
+      // posNo нь ОПЕРАТОРЫН POS: нэг POS дээр олон мерчант бүртгэгдэж, баримт
+      // нь merchantTin-ээр ялгагдана. Тиймээс мерчант өөрөө оруулах шаардлагагүй
+      // — операторын дугаар default болно.
+      posNo:
+        posNo ||
+        this.config.get<string>('EBARIMT_POS_NO') ||
+        this.config.get<string>('EBARIMT_OPR_POS_NO') ||
+        '',
       branchNo: tenant?.ebarimtBranchNo || this.config.get<string>('EBARIMT_BRANCH_NO') || '001',
       districtCode: tenant?.ebarimtDistrictCode || this.config.get<string>('EBARIMT_DISTRICT_CODE') || '3505',
       source: tenant?.ebarimtMerchantTin || posNo ? 'db' : merchantTin ? 'env' : 'none',
@@ -524,38 +531,62 @@ export class ProviderConfigService {
     ok: boolean;
     message_mn: string;
     applied: { posNo: string; branchNo: string } | null;
-    options: PosRegistration[];
+    /** Энэ instance дээр бүртгэлтэй мерчантууд (админд оношлоход хэрэгтэй). */
+    merchants: { name: string | null; tin: string }[];
   }> {
     const cfg = await this.getEbarimt(user.tenantId);
     if (!cfg.baseUrl) {
-      return { ok: false, message_mn: 'Баримтын үйлчилгээний хаяг (VAT_BASE_URL) серверт тохируулаагүй байна.', applied: null, options: [] };
-    }
-    if (!cfg.merchantTin) {
-      return { ok: false, message_mn: 'Эхлээд байгууллагын регистрийг хадгална уу — ТТД түүгээр автоматаар бөглөгдөнө.', applied: null, options: [] };
-    }
-
-    let options: PosRegistration[];
-    try {
-      ({ options } = await this.posapi.discoverRegistration(cfg.merchantTin));
-    } catch (e: any) {
-      return { ok: false, message_mn: `Баримтын үйлчилгээ хариу өгсөнгүй: ${String(e?.message ?? e).slice(0, 160)}`, applied: null, options: [] };
-    }
-    if (options.length === 0) {
       return {
         ok: false,
-        message_mn:
-          `ТТД ${cfg.merchantTin}-д харьяалагдах POS олдсонгүй. ebarimt.mn дээрээ операторын хүсэлтийг ` +
-          'баталгаажуулсны дараа дахин татна уу.',
+        message_mn: 'Баримтын үйлчилгээний хаяг (VAT_BASE_URL) серверт тохируулаагүй байна.',
         applied: null,
-        options: [],
+        merchants: [],
+      };
+    }
+    if (!cfg.merchantTin) {
+      return {
+        ok: false,
+        message_mn: 'Эхлээд байгууллагын регистрийг хадгална уу — ТТД түүгээр автоматаар бөглөгдөнө.',
+        applied: null,
+        merchants: [],
       };
     }
 
-    // Хэрэглэгч аль хэдийн POS сонгосон бол хүндэтгэнэ; үгүй бол эхнийхийг авна.
-    const already = options.find((o) => o.posNo === cfg.posNo);
-    const chosen = already ?? options[0];
-    const branchNo = chosen.branchNo || cfg.branchNo || '001';
-    const applied = already && cfg.posNo ? null : { posNo: chosen.posNo, branchNo };
+    let found: { posNo: string | null; matched: boolean; merchants: { name: string | null; tin: string }[] };
+    try {
+      found = await this.posapi.discoverRegistration(cfg.merchantTin);
+    } catch (e: any) {
+      return {
+        ok: false,
+        message_mn: `Баримтын үйлчилгээ хариу өгсөнгүй: ${String(e?.message ?? e).slice(0, 160)}`,
+        applied: null,
+        merchants: [],
+      };
+    }
+    if (!found.matched) {
+      return {
+        ok: false,
+        message_mn:
+          `ТТД ${cfg.merchantTin} энэ баримтын серверт бүртгэгдээгүй байна. «ТЕГ-т бүртгүүлэх хүсэлт» ` +
+          'илгээгээд, байгууллага ebarimt.mn дээрээ баталгаажуулсны дараа дахин татна уу.',
+        applied: null,
+        merchants: found.merchants,
+      };
+    }
+    if (!found.posNo) {
+      return {
+        ok: false,
+        message_mn: 'Баримтын сервер POS дугаараа буцаасангүй — /rest/info хариуг шалгана уу.',
+        applied: null,
+        merchants: found.merchants,
+      };
+    }
+
+    // posNo нь ОПЕРАТОРЫН POS: нэг POS дээр олон мерчант бүртгэгддэг ба баримт
+    // нь merchantTin-ээр ялгагдана. Тиймээс хэрэглэгчээр сонгуулах зүйл алга.
+    const branchNo = cfg.branchNo || '001';
+    const applied =
+      cfg.posNo === found.posNo && cfg.branchNo ? null : { posNo: found.posNo, branchNo };
     if (applied) {
       await this.prisma.tenant.update({
         where: { id: user.tenantId },
@@ -570,7 +601,7 @@ export class ProviderConfigService {
           action: 'integration.ebarimt.synced',
           targetType: 'tenant',
           targetId: user.tenantId,
-          meta: { merchantTin: cfg.merchantTin, ...applied, found: options.length },
+          meta: { merchantTin: cfg.merchantTin, ...applied, merchants: found.merchants.length },
         },
       });
     }
@@ -579,14 +610,13 @@ export class ProviderConfigService {
     // байгууллага НӨАТ-ын бүртгэлээ өөрчилсөн бол баримт нь дагаж зөв болно.
     await this.refreshTaxStatus(user.tenantId);
 
-    const extra = options.length > 1 ? ` Нийт ${options.length} POS олдлоо — доорхоос сонгож солиж болно.` : '';
     return {
       ok: true,
       message_mn: applied
-        ? `POS дугаар ${applied.posNo} (салбар ${applied.branchNo}) хадгалагдлаа.${extra}`
-        : `Одоогийн POS дугаар ${cfg.posNo} бүртгэлтэй байна.${extra}`,
+        ? `Бүртгэл баталгаажлаа — POS ${applied.posNo}, салбар ${applied.branchNo}. Баримт ТТД ${cfg.merchantTin}-аар хэвлэгдэнэ.`
+        : `Бүртгэл хэвийн — POS ${found.posNo}, ТТД ${cfg.merchantTin}.`,
       applied,
-      options,
+      merchants: found.merchants,
     };
   }
 
@@ -607,10 +637,18 @@ export class ProviderConfigService {
     if (!cfg.merchantTin) {
       return { ok: false, message_mn: 'Эхлээд байгууллагын регистрийг хадгална уу — ТТД түүгээр автоматаар бөглөгдөнө.', details: [] };
     }
-    // posNo нь ОПЕРАТОРЫН POS — энэ дээр л мерчант бүртгэгдэнэ.
-    const posNo = cfg.posNo || this.config.get<string>('EBARIMT_OPR_POS_NO') || '';
+    // Мерчант нь ОПЕРАТОРЫН POS дээр бүртгэгддэг. Мерчантын өөрийн хадгалсан
+    // утгыг энд ХЭРЭГЛЭХГҮЙ — өөр POS руу хүсэлт явбал бүртгэл буруу газар очно.
+    const posNo =
+      this.config.get<string>('EBARIMT_OPR_POS_NO') || (await this.operatorPosNo()) || '';
     if (!posNo) {
-      return { ok: false, message_mn: 'Операторын POS дугаар тохируулаагүй байна (EBARIMT_OPR_POS_NO).', details: [] };
+      return {
+        ok: false,
+        message_mn:
+          'Операторын POS дугаар тодорхойгүй байна — EBARIMT_OPR_POS_NO-г тохируулах, эсвэл ' +
+          'баримтын сервер (VAT_BASE_URL) ажиллаж байх шаардлагатай.',
+        details: [],
+      };
     }
 
     const res = await this.operator.registerMerchants(posNo, [cfg.merchantTin]);
@@ -626,6 +664,15 @@ export class ProviderConfigService {
       },
     });
     return { ok: res.ok, message_mn: res.message_mn, details: res.details };
+  }
+
+  /** Операторын POS дугаарыг локал instance-ээс уншина (env дутуу үед). */
+  private async operatorPosNo(): Promise<string | null> {
+    try {
+      return (await this.posapi.instanceInfo()).posNo;
+    } catch {
+      return null;
+    }
   }
 
   /**
