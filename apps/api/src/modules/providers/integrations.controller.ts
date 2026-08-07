@@ -42,11 +42,24 @@ class SaveIntegrationDto {
   @IsString()
   @MaxLength(20)
   from?: string;
+
+  // Bonum төлбөрийн гарц (нууцууд write-only, шифрлэгдэж хадгалагдана)
+  @IsOptional() @IsString() @MaxLength(30) terminalId?: string;
+  @IsOptional() @IsString() @MaxLength(300) appSecret?: string;
+  @IsOptional() @IsString() @MaxLength(300) checksumKey?: string;
+
+  // eBarimt POS API 3.0 — компанийн ТЕГ бүртгэл
+  @IsOptional() @IsString() @MaxLength(20) merchantTin?: string;
+  @IsOptional() @IsString() @MaxLength(20) posNo?: string;
+  @IsOptional() @IsString() @MaxLength(10) branchNo?: string;
+  @IsOptional() @IsString() @MaxLength(10) districtCode?: string;
 }
 
+const PROVIDER_CODES: ProviderCode[] = ['QPAY', 'CALLPRO', 'BONUM', 'EBARIMT'];
+
 function parseCode(code: string): ProviderCode {
-  const upper = code.toUpperCase();
-  if (upper !== 'QPAY' && upper !== 'CALLPRO') {
+  const upper = code.toUpperCase() as ProviderCode;
+  if (!PROVIDER_CODES.includes(upper)) {
     throw apiError(HttpStatus.NOT_FOUND, 'UNKNOWN_PROVIDER', 'Ийм интеграци алга.', `Unknown provider ${code}.`);
   }
   return upper;
@@ -75,5 +88,17 @@ export class IntegrationsController {
   @Post(':code/test')
   test(@CurrentUser() user: AuthUser, @Param('code') code: string) {
     return this.configs.test(user.tenantId, parseCode(code));
+  }
+
+  /**
+   * eBarimt: /rest/info-оос тухайн байгууллагын POS дугаарыг татаж авна.
+   * Хэрэглэгч ebarimt.mn дээрээ операторын хүсэлтээ баталгаажуулсны дараа энэ
+   * товчийг дарахад branchNo/posNo автоматаар бөглөгдөнө.
+   */
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('EBARIMT/sync')
+  syncEbarimt(@CurrentUser() user: AuthUser) {
+    return this.configs.syncEbarimt(user);
   }
 }

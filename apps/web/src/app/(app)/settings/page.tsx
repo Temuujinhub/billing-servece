@@ -244,7 +244,9 @@ export default function SettingsPage() {
       if (res.found) {
         if (res.tin) setTin(res.tin);
         if (res.name) setName(res.name);
-        setLookupNote(`✓ НӨАТ-ын бүртгэл: ${res.name ?? '—'}${res.tin ? ` · ТТД ${res.tin}` : ''}`);
+        setLookupNote(
+          `✓ НӨАТ-ын бүртгэл: ${res.name ?? '—'}${res.tin ? ` · ТТД ${res.tin} (татварын баримт энэ дугаараар хэвлэгдэнэ)` : ''}`,
+        );
       } else {
         setLookupNote('Энэ регистрээр НӨАТ-ын бүртгэлд олдсонгүй.');
       }

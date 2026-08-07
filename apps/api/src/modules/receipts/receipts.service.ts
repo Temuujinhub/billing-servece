@@ -52,7 +52,7 @@ export class ReceiptsService {
   async processPending(tenantId: string) {
     const tenant = await this.prisma.tenant.findUniqueOrThrow({
       where: { id: tenantId },
-      select: { ebarimtMerchantTin: true, ebarimtPosNo: true, ebarimtBranchNo: true, ebarimtDistrictCode: true },
+      select: { tin: true, ebarimtMerchantTin: true, ebarimtPosNo: true, ebarimtBranchNo: true, ebarimtDistrictCode: true },
     });
     const pending = await this.prisma.ebarimtReceipt.findMany({
       where: { tenantId, state: { in: ['PENDING', 'FAILED'] }, retries: { lt: 5 } },
@@ -81,7 +81,8 @@ export class ReceiptsService {
           paymentProvider: receipt.transaction.provider,
           providerPaymentId: receipt.transaction.providerPaymentId,
           merchant: {
-            merchantTin: tenant.ebarimtMerchantTin,
+            // merchantTin = ТТД. Тусад нь бөглөөгүй бол байгууллагын ТТД-г авна.
+            merchantTin: tenant.ebarimtMerchantTin || tenant.tin,
             posNo: tenant.ebarimtPosNo,
             branchNo: tenant.ebarimtBranchNo,
             districtCode: tenant.ebarimtDistrictCode,

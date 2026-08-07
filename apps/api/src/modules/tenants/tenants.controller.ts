@@ -9,6 +9,7 @@ import { encryptSecret } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { IntegrationsService } from '../integrations/integrations.service';
 import { BonumAdapter } from '../providers/bonum.adapter';
+import { EbarimtRegistryService } from '../providers/ebarimt-registry.service';
 
 class UpdateTenantDto {
   @IsOptional()
@@ -84,22 +85,6 @@ class EbarimtRequestDto {
   tin?: string;
 }
 
-const EBARIMT_INFO_BASE = 'https://api.ebarimt.mn/api/info/check';
-
-/** Best-effort JSON GET against the open ebarimt registry (8s cap, no auth). */
-async function ebarimtInfoGet(path: string): Promise<any | null> {
-  try {
-    const res = await fetch(`${EBARIMT_INFO_BASE}${path}`, {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
 @ApiTags('tenants')
 @ApiBearerAuth()
 @Controller('tenant')
@@ -109,6 +94,7 @@ export class TenantsController {
     private readonly config: ConfigService,
     private readonly bonum: BonumAdapter,
     private readonly integrations: IntegrationsService,
+    private readonly registry: EbarimtRegistryService,
   ) {}
 
   @Get()
@@ -140,6 +126,30 @@ export class TenantsController {
         'The template must contain the {{линк}} variable.',
       );
     }
+    // ТТД (= POS API-ийн merchantTin) автоматаар: регистр нь мэдэгдмэгц ТЕГ-ийн
+    // нээлттэй бүртгэлээс татаж бөглөнө. Зөвхөн ХООСОН талбарыг бөглөх тул
+    // партнёрын буцаасан эсвэл гараар оруулсан утгыг хэзээ ч дарж бичихгүй.
+    let tin = dto.tin?.trim();
+    let merchantTin = dto.ebarimtMerchantTin?.trim();
+    let tinAutofilled = false;
+    if (!tin || !merchantTin) {
+      const current = await this.prisma.tenant.findUnique({
+        where: { id: user.tenantId },
+        select: { regNo: true, tin: true, ebarimtMerchantTin: true },
+      });
+      const effectiveRegNo = dto.regNo?.trim() || current?.regNo || '';
+      const needTin = !tin && !current?.tin;
+      const needMerchantTin = !merchantTin && !current?.ebarimtMerchantTin;
+      if ((needTin || needMerchantTin) && EbarimtRegistryService.isValidRegNo(effectiveRegNo)) {
+        const info = await this.registry.lookup(effectiveRegNo);
+        if (info.tin) {
+          if (needTin) tin = info.tin;
+          if (needMerchantTin) merchantTin = info.tin;
+          tinAutofilled = true;
+        }
+      }
+    }
+
     // Credentials are write-only: empty string means "leave unchanged".
     const encKey = this.config.getOrThrow<string>('ENCRYPTION_KEY');
     const secretUpdates: Record<string, string> = {};
@@ -152,7 +162,7 @@ export class TenantsController {
         name: dto.name?.trim(),
         invoicePrefix: dto.invoicePrefix,
         regNo: dto.regNo?.trim(),
-        tin: dto.tin?.trim(),
+        tin,
         smsTemplate: dto.smsTemplate !== undefined ? dto.smsTemplate.trim() || null : undefined,
         smsTransliterate: dto.smsTransliterate,
         address: dto.address?.trim(),
@@ -161,7 +171,7 @@ export class TenantsController {
         bankAccount: dto.bankAccount?.trim(),
         bankAccountName: dto.bankAccountName?.trim(),
         representative: dto.representative?.trim(),
-        ebarimtMerchantTin: dto.ebarimtMerchantTin?.trim(),
+        ebarimtMerchantTin: merchantTin,
         ebarimtPosNo: dto.ebarimtPosNo?.trim(),
         ebarimtBranchNo: dto.ebarimtBranchNo?.trim(),
         ebarimtDistrictCode: dto.ebarimtDistrictCode?.trim(),
@@ -179,7 +189,10 @@ export class TenantsController {
         action: 'tenant.updated',
         targetType: 'tenant',
         targetId: user.tenantId,
-        meta: { bonumCredentialsChanged: Object.keys(secretUpdates).length > 0 || !!dto.bonumTerminalId },
+        meta: {
+          bonumCredentialsChanged: Object.keys(secretUpdates).length > 0 || !!dto.bonumTerminalId,
+          tinAutofilled,
+        },
       },
     });
     // Товчгүй онбординг: мэдээлэл бүрэн болмогц идэвхжүүлэлтийн хүсэлт өөрөө
@@ -189,39 +202,19 @@ export class TenantsController {
   }
 
   /**
-   * Живой lookup against the НӨАТ registry: регистрийн дугаар → байгууллагын
-   * нэр + ТТД (татвар төлөгчийн дугаар). Open endpoints, no credentials.
+   * Live lookup against the open НӨАТ registry: регистрийн дугаар →
+   * байгууллагын нэр + ТТД. ТТД нь POS API-ийн `merchantTin` мөн учраас
+   * үүнийг л eBarimt баримт хэвлэхэд ашиглана.
    */
   @Roles(Role.OWNER)
   @Get('ebarimt-info')
   async ebarimtInfo(@Query('regNo') regNoRaw?: string) {
     const regNo = (regNoRaw ?? '').trim();
-    // ААН: 7–10 оронтой тоо; иргэн: УБ00112233 хэлбэрийн 2 кирилл + 8 тоо.
-    if (!/^([0-9]{7,10}|[А-ЯЁӨҮ]{2}[0-9]{8})$/u.test(regNo)) {
+    if (!EbarimtRegistryService.isValidRegNo(regNo)) {
       throw apiError(HttpStatus.BAD_REQUEST, 'REGNO_INVALID', 'Регистрийн дугаар буруу байна.', 'Invalid registration number.');
     }
-    // ebarimt 3.0 flow: regNo → ТТД (getTinInfo), then ТТД → нэр (getInfo?tin=).
-    const tinInfo = await ebarimtInfoGet(`/getTinInfo?regNo=${encodeURIComponent(regNo)}`);
-    const tin = tinInfo?.data != null && String(tinInfo.data).trim() ? String(tinInfo.data).trim() : null;
-
-    let name: string | null = null;
-    const infoSources = tin
-      ? [`/getInfo?tin=${encodeURIComponent(tin)}`, `/getInfo?regNo=${encodeURIComponent(regNo)}`]
-      : [`/getInfo?regNo=${encodeURIComponent(regNo)}`];
-    for (const path of infoSources) {
-      const info = await ebarimtInfoGet(path);
-      const candidate =
-        (typeof info?.name === 'string' && info.name) ||
-        (typeof info?.data === 'string' && info.data) ||
-        (typeof info?.data?.name === 'string' && info.data.name) ||
-        '';
-      if (candidate.trim()) {
-        name = candidate.trim();
-        break;
-      }
-    }
-
-    if (tin === null && name === null) {
+    const info = await this.registry.lookup(regNo);
+    if (!info.found) {
       throw apiError(
         HttpStatus.BAD_GATEWAY,
         'EBARIMT_INFO_UNAVAILABLE',
@@ -229,7 +222,8 @@ export class TenantsController {
         'The ebarimt registry is temporarily unavailable.',
       );
     }
-    return { regNo, found: Boolean(tin || name), name, tin };
+    // merchantTin = ТТД: онбординг дээр гараар бичих зүйл үлдээхгүй.
+    return { regNo: info.regNo, found: info.found, name: info.name, tin: info.tin, merchantTin: info.tin };
   }
 
   /** Onboarding step: eBarimt үүсгүүлэх хүсэлт — saves regNo/ТТД, enables the module. */
@@ -238,9 +232,20 @@ export class TenantsController {
   @Post('ebarimt-request')
   async ebarimtRequest(@CurrentUser() user: AuthUser, @Body() dto: EbarimtRequestDto) {
     const regNo = dto.regNo.trim();
-    const tin = dto.tin?.trim() || null;
+    // ТТД өгөөгүй бол бүртгэлээс автоматаар — энэ дугаараар л баримт хэвлэгдэнэ.
+    const tin =
+      dto.tin?.trim() ||
+      (EbarimtRegistryService.isValidRegNo(regNo) ? (await this.registry.lookup(regNo)).tin : null);
+    // merchantTin-ийг зөвхөн хоосон үед бөглөнө — партнёрын өгсөн утга дархгүй.
+    const current = await this.prisma.tenant.findUnique({
+      where: { id: user.tenantId },
+      select: { ebarimtMerchantTin: true },
+    });
     const [tenant] = await this.prisma.$transaction([
-      this.prisma.tenant.update({ where: { id: user.tenantId }, data: { regNo, tin } }),
+      this.prisma.tenant.update({
+        where: { id: user.tenantId },
+        data: { regNo, tin, ...(tin && !current?.ebarimtMerchantTin ? { ebarimtMerchantTin: tin } : {}) },
+      }),
       this.prisma.tenantModule.upsert({
         where: { tenantId_code: { tenantId: user.tenantId, code: 'EBARIMT' } },
         create: { tenantId: user.tenantId, code: 'EBARIMT', enabled: true },
