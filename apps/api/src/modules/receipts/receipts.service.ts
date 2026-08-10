@@ -1,8 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { WebhooksService } from '../developers/webhooks.service';
 import { EBARIMT_PORT, EbarimtPort } from '../providers/ebarimt.port';
 import { PosApiEbarimtAdapter } from '../providers/posapi-ebarimt.adapter';
+import { ReceiptPurgeService } from './receipt-purge.service';
 
 /**
  * eBarimt receipts. The actual receipt is cut by the EBARIMT_PORT adapter
@@ -25,18 +27,25 @@ export class ReceiptsService {
     private readonly prisma: PrismaService,
     @Inject(EBARIMT_PORT) private readonly ebarimt: EbarimtPort,
     private readonly posapi: PosApiEbarimtAdapter,
+    private readonly webhooks: WebhooksService,
+    private readonly purge: ReceiptPurgeService,
   ) {}
 
   /** Called inside the payment-confirm transaction. */
-  async createForTransaction(tx: Prisma.TransactionClient, args: { tenantId: string; transactionId: string }) {
+  async createForTransaction(
+    tx: Prisma.TransactionClient,
+    args: { tenantId: string; transactionId: string; invoiceOptIn?: boolean },
+  ) {
     const module = await tx.tenantModule.findUnique({
       where: { tenantId_code: { tenantId: args.tenantId, code: 'EBARIMT' } },
     });
+    // Both the tenant module AND the per-invoice checkbox must allow it.
+    const wanted = Boolean(module?.enabled) && args.invoiceOptIn !== false;
     await tx.ebarimtReceipt.create({
       data: {
         tenantId: args.tenantId,
         transactionId: args.transactionId,
-        state: module?.enabled ? 'PENDING' : 'NOT_REQUIRED',
+        state: wanted ? 'PENDING' : 'NOT_REQUIRED',
       },
     });
   }
@@ -45,7 +54,15 @@ export class ReceiptsService {
   async processPending(tenantId: string) {
     const tenant = await this.prisma.tenant.findUniqueOrThrow({
       where: { id: tenantId },
-      select: { ebarimtMerchantTin: true, ebarimtPosNo: true, ebarimtBranchNo: true, ebarimtDistrictCode: true },
+      select: {
+        tin: true,
+        ebarimtMerchantTin: true,
+        ebarimtPosNo: true,
+        ebarimtBranchNo: true,
+        ebarimtDistrictCode: true,
+        ebarimtVatPayer: true,
+        ebarimtVatFreeProj: true,
+      },
     });
     const pending = await this.prisma.ebarimtReceipt.findMany({
       where: { tenantId, state: { in: ['PENDING', 'FAILED'] }, retries: { lt: 5 } },
@@ -61,6 +78,7 @@ export class ReceiptsService {
         },
       },
     });
+    const keepQr = this.purge.retentionHours > 0;
     let processed = 0;
     for (const receipt of pending) {
       try {
@@ -74,10 +92,13 @@ export class ReceiptsService {
           paymentProvider: receipt.transaction.provider,
           providerPaymentId: receipt.transaction.providerPaymentId,
           merchant: {
-            merchantTin: tenant.ebarimtMerchantTin,
+            // merchantTin = ТТД. Тусад нь бөглөөгүй бол байгууллагын ТТД-г авна.
+            merchantTin: tenant.ebarimtMerchantTin || tenant.tin,
             posNo: tenant.ebarimtPosNo,
             branchNo: tenant.ebarimtBranchNo,
             districtCode: tenant.ebarimtDistrictCode,
+            vatPayer: tenant.ebarimtVatPayer,
+            vatFreeProject: tenant.ebarimtVatFreeProj,
           },
         });
         await this.prisma.$transaction(async (tx) => {
@@ -86,8 +107,10 @@ export class ReceiptsService {
             data: {
               state: 'CREATED',
               receiptNo: result.receiptNo,
-              lottery: result.lottery,
-              qrData: result.qrData,
+              // Хадгалах хугацаа 0 бол сугалаа/QR-г огт бичихгүй (ТЕГ-ийн
+              // заавар: баримтанд хэвлэхээс өөрөөр хадгалахыг хориглоно).
+              lottery: keepQr ? result.lottery : null,
+              qrData: keepQr ? result.qrData : null,
               error: null,
             },
           });
@@ -102,6 +125,12 @@ export class ReceiptsService {
             });
             processed += 1;
           }
+        });
+        this.webhooks.emit(tenantId, 'receipt.created', {
+          receipt_id: receipt.id,
+          transaction_id: receipt.transactionId,
+          receipt_no: result.receiptNo,
+          lottery: result.lottery,
         });
       } catch (e: any) {
         await this.prisma.ebarimtReceipt.update({

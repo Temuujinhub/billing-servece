@@ -18,7 +18,9 @@ export class CustomersController {
     @Query('take') take?: number,
     @Query('skip') skip?: number,
   ) {
-    return this.customers.list(user.tenantId, search, take ?? 50, skip ?? 0);
+    // Number(...) || fallback: an absent numeric @Query arrives as NaN (not
+    // undefined), and NaN ?? x keeps the NaN — which Prisma rejects with a 500.
+    return this.customers.list(user.tenantId, search, Number(take) || 50, Number(skip) || 0);
   }
 
   @Get(':id')

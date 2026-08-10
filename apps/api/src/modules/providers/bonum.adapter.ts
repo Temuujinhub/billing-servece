@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes } from 'crypto';
 import { decryptSecret } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateProviderInvoiceResult, PaymentProviderPort, ProviderCallContext, ProviderPaymentStatus } from './payment-provider.port';
+import { CreateProviderInvoiceResult, PaymentProviderPort, ProviderPaymentStatus } from './payment-provider.port';
 
 /**
  * Bonum Gateway (psp.bonum.mn) ecommerce adapter — verified against the
@@ -144,6 +144,37 @@ export class BonumAdapter implements PaymentProviderPort {
   /** Tenant credential өөрчлөгдөхөд кэшийг хүчингүй болгоно (PATCH /tenant). */
   invalidateCreds(tenantId: string) {
     this.credsCache.delete(tenantId);
+    // Терминал солигдвол хуучин терминалын токен ашиглагдах ёсгүй.
+    this.tokens.clear();
+  }
+
+  /**
+   * Админы «Холболт шалгах» — токен авч чадаж байгаа эсэх. Токен нь rate
+   * limit-тэй (§2) тул хүчинтэй токен кэшлэгдсэн байвал шинийг НЭХЭХГҮЙ.
+   */
+  async testConnection(tenantId: string): Promise<{ ok: boolean; message_mn: string }> {
+    let creds: BonumCreds;
+    try {
+      creds = await this.resolveCreds(tenantId);
+    } catch {
+      return { ok: false, message_mn: 'Терминалын дугаар / нууц түлхүүр тохируулаагүй байна.' };
+    }
+    try {
+      await this.getAccessToken(creds);
+      return {
+        ok: true,
+        message_mn: `Төлбөрийн гарц холбогдлоо — терминал ${creds.terminalId} дээр токен амжилттай авлаа.`,
+      };
+    } catch (e: any) {
+      const msg = String(e?.message ?? e);
+      if (msg.includes('(401)') || msg.includes('(403)')) {
+        return { ok: false, message_mn: 'Нууц түлхүүр (App Secret) эсвэл терминалын дугаар буруу байна.' };
+      }
+      if (msg.includes('429') || msg.includes('rate limited')) {
+        return { ok: false, message_mn: 'Токен авах хүсэлт хэт олон удаа явлаа — хэсэг хүлээгээд дахин оролдоно уу.' };
+      }
+      return { ok: false, message_mn: `Төлбөрийн гарц холбогдсонгүй: ${msg.slice(0, 160)}` };
+    }
   }
 
   // ------------------------------------------------------------------ auth
@@ -303,8 +334,8 @@ export class BonumAdapter implements PaymentProviderPort {
    * backstop for missed webhooks (poll path); parse defensively since the
    * docs publish no response schema.
    */
-  async getPaymentStatus(providerInvoiceId: string, ctx?: ProviderCallContext): Promise<ProviderPaymentStatus> {
-    const creds = await this.resolveCreds(ctx?.tenantId);
+  async getPaymentStatus(providerInvoiceId: string, tenantId?: string): Promise<ProviderPaymentStatus> {
+    const creds = await this.resolveCreds(tenantId);
     const body: any = await this.request(creds, 'GET', `${PATH_INVOICES}/${encodeURIComponent(providerInvoiceId)}`);
 
     const inner = body?.body ?? body?.data ?? body;
@@ -326,8 +357,13 @@ export class BonumAdapter implements PaymentProviderPort {
   }
 
   /** §3-д cancel endpoint байхгүй — invoice нь өөрийн expiresIn-ээр дуусна. */
-  async cancelInvoice(providerInvoiceId: string, _ctx?: ProviderCallContext): Promise<void> {
+  async cancelInvoice(providerInvoiceId: string, _tenantId?: string): Promise<void> {
     this.logger.debug(`Bonum invoice ${providerInvoiceId} left to expire (no cancel API)`);
+  }
+
+  /** Bonum-д рефандын API байхгүй — буцаалтыг гараар (банкаар) хийнэ. */
+  async refundPayment(_providerPaymentId: string, _tenantId?: string, _note?: string): Promise<void> {
+    throw new Error('Bonum рефандын API байхгүй — буцаалтыг Bonum-ийн мерчант портал/банкаар гүйцэтгэнэ.');
   }
 
   // --------------------------------------------------------------- webhook

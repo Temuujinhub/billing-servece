@@ -17,9 +17,9 @@ export class QpayEbarimtAdapter implements EbarimtPort {
       throw new Error(`QPay eBarimt supports qpay payments only (got ${args.paymentProvider}); use EBARIMT_PROVIDER=posapi`);
     }
     const result = await this.qpay.createEbarimt(
+      args.tenantId,
       args.providerPaymentId,
       args.receiptType === 'ORGANIZATION' ? 'COMPANY' : 'CITIZEN',
-      args.customerTin ?? undefined,
     );
     return { receiptNo: result.receiptNo, lottery: result.lottery, qrData: result.qrData };
   }

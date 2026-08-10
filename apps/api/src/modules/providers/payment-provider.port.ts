@@ -1,6 +1,7 @@
 /**
  * Payment provider port (PRD §6.4). Every PSP (QPay, SocialPay, bank e-billing)
  * implements this interface; provider payloads never leak past the adapter.
+ * `tenantId` lets adapters resolve tenant-level credentials (UI-configurable).
  */
 export interface CreateProviderInvoiceResult {
   providerInvoiceId: string;
@@ -28,14 +29,16 @@ export interface ProviderCallContext {
 export interface PaymentProviderPort {
   readonly code: string;
   createInvoice(args: {
+    tenantId: string;
     amount: number;
     description: string;
     internalRef: string;
     /** Where hosted-checkout providers send the payer back (our pay page). */
     returnUrl?: string;
-    tenantId?: string;
   }): Promise<CreateProviderInvoiceResult>;
   /** Authoritative check — callbacks alone are never trusted (PAY-03). */
-  getPaymentStatus(providerInvoiceId: string, ctx?: ProviderCallContext): Promise<ProviderPaymentStatus>;
-  cancelInvoice(providerInvoiceId: string, ctx?: ProviderCallContext): Promise<void>;
+  getPaymentStatus(providerInvoiceId: string, tenantId: string): Promise<ProviderPaymentStatus>;
+  cancelInvoice(providerInvoiceId: string, tenantId: string): Promise<void>;
+  /** Return the money for a confirmed payment (PAY-06). */
+  refundPayment(providerPaymentId: string, tenantId: string, note?: string): Promise<void>;
 }

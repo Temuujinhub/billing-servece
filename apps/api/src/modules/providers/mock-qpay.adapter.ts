@@ -20,7 +20,7 @@ export class MockQpayAdapter implements PaymentProviderPort {
   private readonly paidInvoices = new Map<string, { providerPaymentId: string; gross: number; paidAt: Date }>();
   private readonly amounts = new Map<string, number>();
 
-  async createInvoice(args: { amount: number; description: string; internalRef: string }): Promise<CreateProviderInvoiceResult> {
+  async createInvoice(args: { tenantId: string; amount: number; description: string; internalRef: string }): Promise<CreateProviderInvoiceResult> {
     const providerInvoiceId = `MQP-${randomUUID()}`;
     this.amounts.set(providerInvoiceId, args.amount);
     const qrText = `0002010102121531279404962794049640014${randomBytes(12).toString('hex').toUpperCase()}5204482953034965405${args.amount}5802MN5913BILLINGSMOCK6304TEST`;
@@ -37,7 +37,7 @@ export class MockQpayAdapter implements PaymentProviderPort {
     };
   }
 
-  async getPaymentStatus(providerInvoiceId: string): Promise<ProviderPaymentStatus> {
+  async getPaymentStatus(providerInvoiceId: string, _tenantId: string): Promise<ProviderPaymentStatus> {
     const paid = this.paidInvoices.get(providerInvoiceId);
     if (!paid) return { paid: false };
     return {
@@ -49,9 +49,19 @@ export class MockQpayAdapter implements PaymentProviderPort {
     };
   }
 
-  async cancelInvoice(providerInvoiceId: string): Promise<void> {
+  async cancelInvoice(providerInvoiceId: string, _tenantId: string): Promise<void> {
     this.amounts.delete(providerInvoiceId);
     this.paidInvoices.delete(providerInvoiceId);
+  }
+
+  async refundPayment(providerPaymentId: string, _tenantId: string, _note?: string): Promise<void> {
+    // Mock provider: refunds always succeed instantly.
+    for (const [invoiceId, marker] of this.paidInvoices.entries()) {
+      if (marker.providerPaymentId === providerPaymentId) {
+        this.paidInvoices.delete(invoiceId);
+        break;
+      }
+    }
   }
 
   /** Sandbox hook: mark an invoice as paid, as if a payer scanned the QR. */

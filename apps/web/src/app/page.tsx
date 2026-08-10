@@ -45,14 +45,14 @@ export default function LandingPage() {
   return (
     <div className="bg-white">
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-line/70 bg-white/85 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-slate-200/60/70 bg-white/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-content items-center justify-between px-5">
           <Logo />
           <nav className="hidden items-center gap-7 text-sm font-medium text-navy-700 md:flex" aria-label="Үндсэн цэс">
-            <a href="#how" className="hover:text-teal-600">Хэрхэн ажилладаг</a>
-            <a href="#use-cases" className="hover:text-teal-600">Хэнд зориулагдсан</a>
-            <a href="#pricing" className="hover:text-teal-600">Үнэ</a>
-            <a href="/api/docs" className="hover:text-teal-600">API</a>
+            <a href="#how" className="hover:text-indigo-600">Хэрхэн ажилладаг</a>
+            <a href="#use-cases" className="hover:text-indigo-600">Хэнд зориулагдсан</a>
+            <a href="#pricing" className="hover:text-indigo-600">Үнэ</a>
+            <a href="/api/docs" className="hover:text-indigo-600">API</a>
           </nav>
           <div className="flex items-center gap-3">
             <Link href="/login" className="btn-secondary hidden sm:inline-flex">Нэвтрэх</Link>
@@ -97,8 +97,8 @@ export default function LandingPage() {
           <div className="relative hidden animate-fade-up lg:block" aria-hidden="true">
             <div className="card rotate-1 p-5 text-ink shadow-lift">
               <div className="mb-4 flex items-center justify-between">
-                <p className="text-sm font-bold text-navy-900">Энэ сарын цугласан</p>
-                <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[12px] font-bold text-teal-700">+18%</span>
+                <p className="text-sm font-bold text-slate-900">Энэ сарын цугласан</p>
+                <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[12px] font-bold text-indigo-700">+18%</span>
               </div>
               <p className="text-3xl font-extrabold tracking-tight text-navy-900">12,480,000₮</p>
               <div className="mt-4 flex items-end gap-1.5" style={{ height: 90 }}>
@@ -106,11 +106,11 @@ export default function LandingPage() {
                   <div key={i} className="flex-1 rounded-t-md bg-gradient-to-t from-teal-500/80 to-teal-300" style={{ height: `${h}%` }} />
                 ))}
               </div>
-              <div className="mt-5 space-y-2.5 border-t border-line pt-4 text-[13px]">
+              <div className="mt-5 space-y-2.5 border-t border-slate-200/60 pt-4 text-[13px]">
                 {[
-                  ['INV-10041 · Сараа Болд', 'Төлсөн', 'text-teal-600'],
+                  ['INV-10041 · Сараа Болд', 'Төлсөн', 'text-indigo-600'],
                   ['INV-10040 · Төмөр Баяр', 'Нээсэн', 'text-indigo-600'],
-                  ['INV-10039 · Наран Дорж', 'eBarimt үүссэн', 'text-teal-600'],
+                  ['INV-10039 · Наран Дорж', 'eBarimt үүссэн', 'text-indigo-600'],
                 ].map(([l, s, c]) => (
                   <div key={l as string} className="flex items-center justify-between">
                     <span className="text-navy-700">{l}</span>
@@ -126,7 +126,7 @@ export default function LandingPage() {
       {/* 3 steps */}
       <section id="how" className="mx-auto max-w-content px-5 py-20">
         <h2 className="text-center text-3xl font-extrabold tracking-tight text-navy-900">30 секундэд ойлгох 3 алхам</h2>
-        <p className="mx-auto mt-3 max-w-xl text-center text-[15.5px] text-muted">
+        <p className="mx-auto mt-3 max-w-xl text-center text-[15.5px] text-slate-500">
           Импортлох → илгээх → төлбөр, eBarimt-ээ хянах. Операторын ажил 5 алхмаас хэтрэхгүй.
         </p>
         <div className="mt-12 grid gap-6 md:grid-cols-3">
@@ -136,8 +136,8 @@ export default function LandingPage() {
                 <span className="text-3xl">{s.icon}</span>
                 <span className="text-[13px] font-black tracking-widest text-navy-200 group-hover:text-teal-400">{s.n}</span>
               </div>
-              <h3 className="text-lg font-bold text-navy-900">{s.title}</h3>
-              <p className="mt-2 text-[14.5px] leading-relaxed text-muted">{s.text}</p>
+              <h3 className="text-lg font-bold text-slate-900">{s.title}</h3>
+              <p className="mt-2 text-[14.5px] leading-relaxed text-slate-500">{s.text}</p>
             </div>
           ))}
         </div>
@@ -152,8 +152,8 @@ export default function LandingPage() {
               <div key={u.title} className="card flex gap-4 p-6">
                 <span className="text-2xl">{u.icon}</span>
                 <div>
-                  <h3 className="font-bold text-navy-900">{u.title}</h3>
-                  <p className="mt-1 text-[14px] leading-relaxed text-muted">{u.text}</p>
+                  <h3 className="font-bold text-slate-900">{u.title}</h3>
+                  <p className="mt-1 text-[14px] leading-relaxed text-slate-500">{u.text}</p>
                 </div>
               </div>
             ))}
@@ -164,13 +164,13 @@ export default function LandingPage() {
       {/* Features */}
       <section className="mx-auto max-w-content px-5 py-20">
         <h2 className="text-center text-3xl font-extrabold tracking-tight text-navy-900">
-          Найдвартай байдлыг <span className="text-teal-600">архитектурын түвшинд</span> шийдсэн
+          Найдвартай байдлыг <span className="text-indigo-600">архитектурын түвшинд</span> шийдсэн
         </h2>
         <div className="mt-12 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((f) => (
             <div key={f.title} className="border-l-2 border-teal-400 pl-4">
-              <h3 className="font-bold text-navy-900">{f.title}</h3>
-              <p className="mt-1.5 text-[14px] leading-relaxed text-muted">{f.text}</p>
+              <h3 className="font-bold text-slate-900">{f.title}</h3>
+              <p className="mt-1.5 text-[14px] leading-relaxed text-slate-500">{f.text}</p>
             </div>
           ))}
         </div>
@@ -180,7 +180,7 @@ export default function LandingPage() {
       <section id="pricing" className="bg-surface py-20">
         <div className="mx-auto max-w-content px-5">
           <h2 className="text-center text-3xl font-extrabold tracking-tight text-navy-900">Хэрэглээндээ тохирсон үнэ</h2>
-          <p className="mx-auto mt-3 max-w-lg text-center text-[15.5px] text-muted">
+          <p className="mx-auto mt-3 max-w-lg text-center text-[15.5px] text-slate-500">
             Суурь 20,000₮/сар + хэрэглэсэн хэмжээгээрээ. Модулиа өөрөө сонго.
           </p>
           <div className="mt-10">
@@ -201,13 +201,13 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-line bg-white">
-        <div className="mx-auto flex max-w-content flex-col items-center justify-between gap-4 px-5 py-8 text-[13.5px] text-muted sm:flex-row">
+      <footer className="border-t border-slate-200/60 bg-white">
+        <div className="mx-auto flex max-w-content flex-col items-center justify-between gap-4 px-5 py-8 text-[13.5px] text-slate-500 sm:flex-row">
           <Logo />
           <nav className="flex flex-wrap items-center gap-5" aria-label="Хөл цэс">
-            <a href="/api/docs" className="hover:text-teal-600">API баримтжуулалт</a>
-            <a href="/health/live" className="hover:text-teal-600">Статус</a>
-            <Link href="/login" className="hover:text-teal-600">Нэвтрэх</Link>
+            <a href="/api/docs" className="hover:text-indigo-600">API баримтжуулалт</a>
+            <a href="/health/live" className="hover:text-indigo-600">Статус</a>
+            <Link href="/login" className="hover:text-indigo-600">Нэвтрэх</Link>
           </nav>
           <p>© {new Date().getFullYear()} billingservice.mn</p>
         </div>

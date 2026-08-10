@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
@@ -24,20 +25,38 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;
 export class ImportsController {
   constructor(private readonly imports: ImportsService) {}
 
+  /** Wizard step 1: parse only — columns, samples, suggested mapping. */
+  @Roles(Role.OPERATOR)
+  @HttpCode(200)
+  @Post('inspect')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_BYTES, files: 1 } }))
+  inspect(@UploadedFile() file?: Express.Multer.File) {
+    if (!file) {
+      throw apiError(HttpStatus.BAD_REQUEST, 'FILE_REQUIRED', 'Файл сонгоно уу (дээд тал нь 5MB).', 'Attach a file (max 5MB).');
+    }
+    return this.imports.inspect(file);
+  }
+
+  /** Wizard step 2: re-upload with the confirmed column mapping (JSON). */
   @Roles(Role.OPERATOR)
   @Post()
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_BYTES, files: 1 } }))
-  upload(@CurrentUser() user: AuthUser, @UploadedFile() file?: Express.Multer.File) {
+  upload(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile() file?: Express.Multer.File,
+    @Body('mapping') mapping?: string,
+  ) {
     if (!file) {
       throw apiError(HttpStatus.BAD_REQUEST, 'FILE_REQUIRED', 'Файл сонгоно уу (дээд тал нь 5MB).', 'Attach a file (max 5MB).');
     }
-    return this.imports.upload(user, file);
+    return this.imports.upload(user, file, mapping);
   }
 
   @Get()
   list(@CurrentUser() user: AuthUser, @Query('take') take?: number, @Query('skip') skip?: number) {
-    return this.imports.listBatches(user.tenantId, take ?? 20, skip ?? 0);
+    return this.imports.listBatches(user.tenantId, Number(take) || 20, Number(skip) || 0);
   }
 
   @Get(':id')

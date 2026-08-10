@@ -11,6 +11,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const [form, setForm] = useState({
     organizationName: '',
+    regNo: '',
     name: '',
     email: '',
     phone: '',
@@ -26,37 +27,65 @@ export default function RegisterPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
-    setBusy(true);
     setError(null);
+
+    // Client-side pre-checks with the exact same rules as the API.
+    const problems: string[] = [];
+    if (!form.organizationName.trim()) problems.push('Байгууллагын нэрээ оруулна уу');
+    if (!form.name.trim()) problems.push('Нэрээ оруулна уу');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) problems.push('Имэйл хаяг буруу байна');
+    if (form.password.length < 8) problems.push('Нууц үг доод тал нь 8 тэмдэгт байна');
+    else if (!/[A-Za-zА-Яа-яЁёӨөҮү]/.test(form.password) || !/\d/.test(form.password))
+      problems.push('Нууц үг үсэг болон тоо хоёуланг агуулсан байх ёстой');
+    if (problems.length) {
+      setError(problems.join(' · '));
+      return;
+    }
+
+    setBusy(true);
     try {
       await registerAccount({
-        organizationName: form.organizationName,
-        name: form.name,
-        email: form.email,
-        phone: form.phone || undefined,
+        organizationName: form.organizationName.trim(),
+        regNo: form.regNo.trim() || undefined,
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim() || undefined,
         password: form.password,
       });
       router.replace('/dashboard');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Сүлжээний алдаа. Дахин оролдоно уу.');
+      if (err instanceof ApiError) {
+        // Surface per-field validation details when the server provides them.
+        const fe = Array.isArray(err.fieldErrors) ? err.fieldErrors.filter((x): x is string => typeof x === 'string') : [];
+        setError(fe.length ? fe.join(' · ') : err.message);
+      } else {
+        setError('Сүлжээний алдаа. Дахин оролдоно уу.');
+      }
       setBusy(false);
     }
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-surface">
+    <main className="flex min-h-screen flex-col">
       <div className="mx-auto flex w-full max-w-content items-center px-5 py-5">
         <Logo />
       </div>
       <div className="flex flex-1 items-center justify-center px-4 pb-16">
         <div className="card w-full max-w-md animate-fade-up p-8">
-          <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Байгууллагаа бүртгүүлэх</h1>
-          <p className="mt-1.5 text-sm text-muted">Хэдхэн минутад workspace-ээ үүсгээрэй.</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Байгууллагаа бүртгүүлэх</h1>
+          <p className="mt-1.5 text-sm text-slate-500">Хэдхэн минутад workspace-ээ үүсгээрэй.</p>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
-            <div>
-              <label className="label" htmlFor="org">Байгууллагын нэр</label>
-              <input id="org" required className="input" value={form.organizationName} onChange={(e) => set('organizationName', e.target.value)} placeholder="Жишээ: Ирээдүй Сургууль ХХК" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="label" htmlFor="org">Байгууллагын нэр</label>
+                <input id="org" required className="input" value={form.organizationName} onChange={(e) => set('organizationName', e.target.value)} placeholder="Жишээ: Ирээдүй Сургууль ХХК" />
+              </div>
+              <div>
+                <label className="label" htmlFor="regno">Регистрийн дугаар <span className="text-slate-500">(заавал биш)</span></label>
+                <input id="regno" className="input" value={form.regNo} onChange={(e) => set('regNo', e.target.value)} placeholder="1234567" maxLength={20} />
+                <p className="mt-1 text-[11.5px] text-slate-500">eBarimt үүсгэхэд ашиглагдана — дараа нь Тохиргооноос ч нэмж болно.</p>
+              </div>
             </div>
             <div>
               <label className="label" htmlFor="name">Таны нэр</label>
@@ -68,26 +97,27 @@ export default function RegisterPage() {
                 <input id="email" type="email" required autoComplete="email" className="input" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="name@company.mn" />
               </div>
               <div>
-                <label className="label" htmlFor="phone">Утас <span className="text-muted">(заавал биш)</span></label>
+                <label className="label" htmlFor="phone">Утас <span className="text-slate-500">(заавал биш)</span></label>
                 <input id="phone" className="input" value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="88112233" />
               </div>
             </div>
             <div>
               <label className="label" htmlFor="password">Нууц үг</label>
               <input id="password" type="password" required minLength={8} autoComplete="new-password" className="input" value={form.password} onChange={(e) => set('password', e.target.value)} placeholder="Доод тал нь 8 тэмдэгт, үсэг + тоо" />
+              <p className="mt-1 text-[12px] text-slate-500">Доод тал нь 8 тэмдэгт бөгөөд үсэг, тоо хоёуланг агуулна. Жишээ: Fleex2026</p>
             </div>
             {error && <ErrorNote message={error} />}
             <button type="submit" disabled={busy} className="btn-primary w-full py-3">
               {busy ? <Spinner className="h-5 w-5 text-white" /> : 'Бүртгүүлэх'}
             </button>
-            <p className="text-center text-[12px] leading-snug text-muted">
+            <p className="text-center text-[12px] leading-snug text-slate-500">
               Бүртгүүлснээр үйлчилгээний нөхцөл болон нууцлалын бодлогыг зөвшөөрч байна.
             </p>
           </form>
 
-          <p className="mt-4 text-center text-sm text-muted">
+          <p className="mt-4 text-center text-sm text-slate-500">
             Бүртгэлтэй юу?{' '}
-            <Link href="/login" className="font-semibold text-teal-600 hover:text-teal-700">
+            <Link href="/login" className="font-semibold text-indigo-600 hover:text-indigo-700">
               Нэвтрэх
             </Link>
           </p>

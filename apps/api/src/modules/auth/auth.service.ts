@@ -22,6 +22,16 @@ export class AuthService {
 
   /** Self-service onboarding: user + tenant + owner membership in ONE transaction. */
   async register(dto: RegisterDto) {
+    // Admin kill-switch (feature flag A-17): pause self-service signups.
+    const flags = await this.prisma.platformSetting.findUnique({ where: { key: 'features' } });
+    if (flags && (flags.value as any)?.registrationOpen === false) {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'REGISTRATION_CLOSED',
+        'Шинэ бүртгэл түр хаалттай байна. Удахгүй нээгдэнэ.',
+        'Self-service registration is temporarily closed.',
+      );
+    }
     const email = dto.email.trim().toLowerCase();
     const phone = dto.phone ? normalizeMnPhone(dto.phone) : null;
     if (dto.phone && !phone) {
@@ -73,24 +83,20 @@ export class AuthService {
       return { user, tenant, membership };
     });
 
-    return this.issueTokens({ userId: user.id, email, name: user.name, tenantId: tenant.id, role: membership.role, isPlatformAdmin: false });
-  }
-
-  /**
-   * Production DB-д seed ажилладаггүй тул платформын админыг env-ээр олгоно:
-   * PLATFORM_ADMIN_EMAILS (таслалаар тусгаарласан) жагсаалтад байгаа имэйл
-   * нэвтрэх мөчид нь автоматаар isPlatformAdmin=true болно.
-   */
-  private platformAdminEmails(): string[] {
-    return (this.config.get<string>('PLATFORM_ADMIN_EMAILS') ?? '')
-      .split(',')
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean);
+    return this.issueTokens({
+      userId: user.id,
+      email,
+      name: user.name,
+      tenantId: tenant.id,
+      role: membership.role,
+      isAdmin: this.isAdminUser(email, user.platformAdmin),
+      partnerKind: this.partnerKindFor(email),
+    });
   }
 
   async login(dto: LoginDto) {
     const email = dto.email.trim().toLowerCase();
-    let user = await this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { email },
       include: { memberships: { include: { tenant: true }, orderBy: { createdAt: 'asc' } } },
     });
@@ -99,15 +105,6 @@ export class AuthService {
     if (!user) throw invalid;
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
     if (!ok) throw invalid;
-
-    // Env-listed platform staff are promoted on login (audited).
-    if (!user.isPlatformAdmin && this.platformAdminEmails().includes(email)) {
-      await this.prisma.user.update({ where: { id: user.id }, data: { isPlatformAdmin: true } });
-      await this.prisma.auditLog.create({
-        data: { actorId: user.id, actorEmail: email, action: 'user.platform_admin_granted', targetType: 'user', targetId: user.id, meta: { source: 'PLATFORM_ADMIN_EMAILS' } },
-      });
-      user = { ...user, isPlatformAdmin: true };
-    }
 
     const membership = user.memberships[0];
     if (!membership || membership.tenant.status !== 'ACTIVE') {
@@ -120,7 +117,8 @@ export class AuthService {
       name: user.name,
       tenantId: membership.tenantId,
       role: membership.role,
-      isPlatformAdmin: user.isPlatformAdmin,
+      isAdmin: this.isAdminUser(user.email, user.platformAdmin),
+      partnerKind: this.partnerKindFor(user.email),
     });
   }
 
@@ -146,7 +144,8 @@ export class AuthService {
       name: stored.user.name,
       tenantId: membership.tenantId,
       role: membership.role,
-      isPlatformAdmin: stored.user.isPlatformAdmin,
+      isAdmin: this.isAdminUser(stored.user.email, stored.user.platformAdmin),
+      partnerKind: this.partnerKindFor(stored.user.email),
     });
   }
 
@@ -157,6 +156,31 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
     return { ok: true };
+  }
+
+  /** Партнёрын ажилтны эрх — env allowlist (PARTNER_BONUM_EMAILS / PARTNER_EBARIMT_EMAILS). */
+  private partnerKindFor(email: string): 'BONUM' | 'EBARIMT' | null {
+    const inList = (key: string) =>
+      (this.config.get<string>(key) ?? '')
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean)
+        .includes(email.toLowerCase());
+    if (inList('PARTNER_BONUM_EMAILS')) return 'BONUM';
+    if (inList('PARTNER_EBARIMT_EMAILS')) return 'EBARIMT';
+    return null;
+  }
+
+  /** platformAdmin column OR the ADMIN_EMAILS / PLATFORM_ADMIN_EMAILS env allowlists. */
+  private isAdminUser(email: string, platformAdmin: boolean): boolean {
+    if (platformAdmin) return true;
+    // PLATFORM_ADMIN_EMAILS — хуучин нэр; серверийн .env-үүд аль алиныг нь
+    // ашиглаж байсан тул хоёуланг нь хүлээн зөвшөөрнө.
+    const list = `${this.config.get<string>('ADMIN_EMAILS') ?? ''},${this.config.get<string>('PLATFORM_ADMIN_EMAILS') ?? ''}`
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    return list.includes(email.toLowerCase());
   }
 
   private async issueTokens(claims: AuthUser) {
@@ -170,7 +194,8 @@ export class AuthService {
         name: claims.name,
         tenantId: claims.tenantId,
         role: claims.role,
-        isPlatformAdmin: claims.isPlatformAdmin === true,
+        isAdmin: claims.isAdmin,
+        partnerKind: claims.partnerKind ?? null,
       },
       { secret: this.config.getOrThrow('JWT_ACCESS_SECRET'), expiresIn: accessTtl },
     );
@@ -194,7 +219,8 @@ export class AuthService {
         name: claims.name,
         role: claims.role,
         tenantId: claims.tenantId,
-        isPlatformAdmin: claims.isPlatformAdmin === true,
+        isAdmin: claims.isAdmin,
+        partnerKind: claims.partnerKind ?? null,
       },
     };
   }

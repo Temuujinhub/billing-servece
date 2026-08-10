@@ -2,22 +2,12 @@
 set -e
 
 echo "→ Applying database migrations..."
-# P3009 self-heal: when a previous attempt left a migration recorded as
-# FAILED, mark it rolled back and retry once — our migration SQL is
-# idempotent, so re-running over a partially-applied state is safe.
-if ! OUT=$(npx prisma migrate deploy 2>&1); then
-  printf '%s\n' "$OUT"
-  FAILED=$(printf '%s\n' "$OUT" | sed -n 's/^The `\(.*\)` migration started at .* failed$/\1/p' | head -1)
-  if [ -n "$FAILED" ]; then
-    echo "→ Migration '$FAILED' is recorded as failed — rolling the record back and retrying (idempotent SQL)."
-    npx prisma migrate resolve --rolled-back "$FAILED"
-    npx prisma migrate deploy
-  else
-    exit 1
-  fi
-else
-  printf '%s\n' "$OUT"
-fi
+# Self-heal a stuck P3009: a failed migration row always means the migration
+# rolled back (transactional DDL), and our migrations are idempotent — so a
+# leftover unfinished row can be purged and the migration safely retried.
+echo 'DELETE FROM "_prisma_migrations" WHERE "finished_at" IS NULL AND "rolled_back_at" IS NULL;' \
+  | npx prisma db execute --stdin --url "$DATABASE_URL" || true
+npx prisma migrate deploy
 
 if [ "$SEED_ON_START" = "true" ]; then
   echo "→ Seeding demo data (SEED_ON_START=true)..."

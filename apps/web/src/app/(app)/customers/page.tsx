@@ -59,8 +59,8 @@ export default function CustomersPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Харилцагч</h1>
-          <p className="mt-1 text-sm text-muted">{total.toLocaleString()} бүртгэл</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Харилцагч</h1>
+          <p className="mt-1 text-sm text-slate-500">{total.toLocaleString()} бүртгэл</p>
         </div>
         <button onClick={() => setAddOpen(true)} className="btn-primary">+ Харилцагч</button>
       </div>
@@ -76,16 +76,16 @@ export default function CustomersPage() {
         <button type="submit" className="btn-secondary shrink-0">Хайх</button>
       </form>
 
-      {error && <ErrorNote message={error} />}
+      {error && <ErrorNote message={error} onRetry={() => window.location.reload()} />}
       {!items ? (
-        <PageLoader />
+        error ? null : <PageLoader />
       ) : items.length === 0 ? (
         <EmptyState title="Харилцагч алга" hint="Excel импорт хийхэд харилцагчид автоматаар үүснэ." />
       ) : (
         <div className="card overflow-hidden">
           <div className="scroll-thin overflow-x-auto">
             <table className="w-full min-w-[640px]">
-              <thead className="bg-navy-50/60">
+              <thead className="bg-slate-50/50">
                 <tr>
                   <th className="th">Нэр</th>
                   <th className="th">Утас</th>
@@ -95,17 +95,17 @@ export default function CustomersPage() {
                   <th className="th">Бүртгэсэн</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line">
+              <tbody className="divide-y divide-slate-200/60">
                 {items.map((c) => (
-                  <tr key={c.id} className="transition hover:bg-navy-50/40">
+                  <tr key={c.id} className="transition hover:bg-white/60">
                     <td className="td">
-                      <Link href={`/customers/${c.id}`} className="font-semibold text-teal-700 hover:underline">{c.name}</Link>
+                      <Link href={`/customers/${c.id}`} className="font-semibold text-indigo-700 hover:underline">{c.name}</Link>
                     </td>
                     <td className="td font-mono text-[13px]">{c.phone ?? '—'}</td>
-                    <td className="td text-muted">{c.email ?? '—'}</td>
-                    <td className="td text-muted">{c.externalRef ?? '—'}</td>
+                    <td className="td text-slate-500">{c.email ?? '—'}</td>
+                    <td className="td text-slate-500">{c.externalRef ?? '—'}</td>
                     <td className="td text-right font-semibold">{c._count?.invoices ?? 0}</td>
-                    <td className="td text-muted">{shortDate(c.createdAt)}</td>
+                    <td className="td text-slate-500">{shortDate(c.createdAt)}</td>
                   </tr>
                 ))}
               </tbody>

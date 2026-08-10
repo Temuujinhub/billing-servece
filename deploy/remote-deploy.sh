@@ -25,6 +25,8 @@ HOTEL_PMS_DIR="/opt/cloud-pms"
 
 cd "$APP_DIR"
 
+log() { printf '\n\033[1;34m▶ %s\033[0m\n' "$*"; }
+
 # Deploy provenance: the workflow passes DEPLOY_SHA=$GITHUB_SHA; persist it so
 # manual re-runs keep the last known SHA. /health/live serves it back, and the
 # workflow FAILS the deploy when the live SHA doesn't match the pushed commit.
@@ -34,8 +36,6 @@ else
   DEPLOY_SHA=$(cat .deploy-sha 2>/dev/null || echo '')
 fi
 export DEPLOY_SHA
-
-log() { printf '\n\033[1;34m▶ %s\033[0m\n' "$*"; }
 
 # --- 1. Ensure some swap so building Next.js/Nest won't OOM on a small droplet
 if [ "$(awk '/SwapTotal/{print $2}' /proc/meminfo)" = "0" ]; then
@@ -107,27 +107,18 @@ SMS_PROVIDER=mock
 EOF
 fi
 
-# --- 4b. eBarimt (ТЕГ POS API 3.0, LIME instance) — nэмэгдээгүй хуучин .env-д
-#         нөхөж бичнэ (idempotent). posNo нь /rest/info-оос автоматаар танигдана.
-if ! grep -q '^EBARIMT_PROVIDER=' .env; then
-  log "Enabling eBarimt POS API 3.0 (LIME instance) in .env"
-  cat >> .env <<'EOF'
-
-# --- eBarimt — ТЕГ POS API 3.0, LIME-ийн instance ---------------------------
-EBARIMT_PROVIDER=posapi
-VAT_BASE_URL=https://vat.onlime.mn
-EBARIMT_MERCHANT_TIN=37900846788
-# EBARIMT_POS_NO=            # хоосон = /rest/info-оос автоматаар авна
-EBARIMT_BRANCH_NO=001
-EBARIMT_DISTRICT_CODE=2315
-EBARIMT_CLASSIFICATION_CODE=6499999
-EBARIMT_BILL_ID_SUFFIX=01
-EOF
-fi
-
 # --- 5. Build and (re)start the stack
 log "Building and starting containers"
-docker compose -f "$COMPOSE_FILE" --env-file .env up -d --build --remove-orphans
+# Prefer CI-built images (docker load) — an on-droplet build starves the live
+# API/Postgres on a small droplet and causes 5xx during every deploy.
+UP_FLAGS="--build"
+if [ -f images.tar.gz ]; then
+  log "Loading prebuilt images from CI (no on-droplet build)"
+  gunzip -c images.tar.gz | docker load
+  rm -f images.tar.gz
+  UP_FLAGS="--no-build"
+fi
+docker compose -f "$COMPOSE_FILE" --env-file .env up -d $UP_FLAGS --remove-orphans
 
 # --- 6. After a successful first run, stop re-seeding on later deploys
 if [ "$FIRST_RUN" = "1" ]; then
@@ -168,6 +159,12 @@ else
   echo "ℹ Proxy/TLS check not green yet — certificate provisioning can take a minute."
 fi
 
+# --- 8b. Diagnostics: migration state + recent API errors (no secrets in either)
+log "Migration status"
+docker compose -f "$COMPOSE_FILE" exec -T api npx prisma migrate status || true
+log "Recent API error log"
+docker compose -f "$COMPOSE_FILE" logs --no-color --tail=500 api 2>/dev/null | grep -B2 -A14 "ERROR \[" | tail -100 || echo "(no errors in recent log)"
+
 # --- 9. Provider connectivity checks (status codes only — never secrets)
 set +u
 # shellcheck disable=SC1091
@@ -182,42 +179,47 @@ if [ "${PAYMENT_PROVIDER:-qpay_mock}" = "qpay" ] && [ -n "${QPAY_USERNAME:-}" ];
     echo "⚠ QPay auth check returned HTTP $QPAY_CODE — шалгана уу (credential/whitelist)."
   fi
 fi
-# eBarimt vars are read straight from .env (NOT via shell sourcing — user-edited
-# lines can abort a `source` midway and silently skip this check). Defaults
-# mirror docker-compose.prod.yml so the check matches what the container runs.
+if [ "${SMS_PROVIDER:-mock}" = "callpro" ] && [ -n "${CALLPRO_API_KEY:-}" ]; then
+  # /docs is the gateway's own API reference — 200 proves the base URL routes.
+  SMS_CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 15 \
+    "${CALLPRO_BASE_URL:-https://api-text.callpro.mn/v1/sms}/docs" || echo "ERR")
+  if [ "$SMS_CODE" = "200" ]; then
+    echo "✅ CallPro SMS API OK (HTTP $SMS_CODE)"
+  else
+    echo "⚠ CallPro check returned HTTP $SMS_CODE — CALLPRO_BASE_URL-ээ шалгана уу."
+  fi
+fi
+# eBarimt POS API instance (vat.onlime.mn) — vars read straight from .env via
+# sed (NOT shell sourcing: a user-edited line can abort `source` midway and
+# silently skip this check, which is exactly what happened on 2026-08-10).
 EB_PROVIDER=$(sed -n 's/^EBARIMT_PROVIDER=//p' .env | tail -1 | tr -d '\r"' || true)
 EB_VAT_URL=$(sed -n 's/^VAT_BASE_URL=//p' .env | tail -1 | tr -d '\r"' || true)
 EB_TIN=$(sed -n 's/^EBARIMT_MERCHANT_TIN=//p' .env | tail -1 | tr -d '\r"' || true)
-EB_PROVIDER="${EB_PROVIDER:-posapi}"
-EB_VAT_URL="${EB_VAT_URL:-https://vat.onlime.mn}"
-EB_TIN="${EB_TIN:-37900846788}"
-if [ "$EB_PROVIDER" = "posapi" ] && [ -n "$EB_VAT_URL" ]; then
+if [ "${EB_PROVIDER:-mock}" = "posapi" ] && [ -n "$EB_VAT_URL" ]; then
   VAT_CODE=$(curl -s -o /tmp/ebarimt-info.json -w '%{http_code}' -m 15 \
     -H 'Accept: application/json' "${EB_VAT_URL%/}/rest/info" || echo "ERR")
   if [ "$VAT_CODE" = "200" ]; then
-    VAT_POS_NO=$(sed -n 's/.*"posNo"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /tmp/ebarimt-info.json | head -1 || true)
+    VAT_POS_NO=$(sed -n 's/.*"posNo"[[:space:]]*:[[:space:]]*"\{0,1\}\([0-9A-Za-z]*\).*/\1/p' /tmp/ebarimt-info.json | head -1 || true)
     echo "✅ eBarimt POS API OK (${EB_VAT_URL%/}/rest/info, posNo=${VAT_POS_NO:-?})"
-    if ! grep -q "$EB_TIN" /tmp/ebarimt-info.json; then
+    if [ -n "$EB_TIN" ] && ! grep -q "$EB_TIN" /tmp/ebarimt-info.json; then
       echo "⚠ merchantTin $EB_TIN нь instance-ийн /rest/info бүртгэлд алга — LIME-тэй шалгана уу."
     fi
   else
-    echo "⚠ eBarimt POS API check returned HTTP $VAT_CODE — VAT_BASE_URL-ээ шалгана уу (баримтууд PENDING-д хүлээгдэж, автоматаар дахин оролдоно)."
+    echo "⚠ eBarimt POS API instance HTTP $VAT_CODE — VAT_BASE_URL-ээ шалгана уу (баримтууд PENDING-д хүлээгдэж, автоматаар дахин оролдоно)."
   fi
   rm -f /tmp/ebarimt-info.json
 fi
-if [ "${SMS_PROVIDER:-mock}" = "callpro" ] && [ -n "${CALLPRO_API_KEY:-}" ]; then
-  SMS_CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 15 \
-    -H "x-api-key: ${CALLPRO_API_KEY}" \
-    "${CALLPRO_BASE_URL:-https://api-text.callpro.mn/v1/sms}/tenant-daily-message-count?operator=unitel" || echo "ERR")
-  if [ "$SMS_CODE" = "200" ]; then
-    echo "✅ CallPro SMS API OK (HTTP $SMS_CODE)"
-  elif [ "$SMS_CODE" = "401" ] || [ "$SMS_CODE" = "403" ]; then
-    echo "⚠ CallPro API key татгалзагдлаа (HTTP $SMS_CODE) — CALLPRO_API_KEY-г шалгана уу."
-  else
-    # 404 etc: the probe endpoint differs per contract — NOT proof of a bad
-    # key (real sends go through POST /send-sms and surface in MessageJob).
-    echo "ℹ CallPro probe endpoint HTTP $SMS_CODE — түлхүүр буруу гэсэн үг биш; бодит илгээлт /send-sms-ээр баталгаажина."
-  fi
+# Open ebarimt registry (no auth) — used by the onboarding regNo→name/ТТД lookup.
+# The lookup starts with getTinInfo?regNo= (getInfo takes ?tin=, not ?regNo=).
+# HTTP 200 хангалттай биш — ТТД нь `data` талбараар ирж байж merchantTin
+# автоматаар бөглөгдөнө, тиймээс хариуны бүтцийг нь мөн шалгана.
+EBARIMT_BODY=$(curl -s -m 15 -H 'Accept: application/json' \
+  "https://api.ebarimt.mn/api/info/check/getTinInfo?regNo=2657457" || echo "")
+if echo "$EBARIMT_BODY" | grep -qE '"data"[[:space:]]*:[[:space:]]*"?[0-9]'; then
+  echo "✅ ebarimt registry lookup OK (ТТД буцаалаа)"
+else
+  echo "⚠ ebarimt registry хариу хүлээгдсэн бүтэцтэй биш: ${EBARIMT_BODY:0:160}"
+  echo "   → регистрээр ТТД (merchantTin) автоматаар бөглөх боломжгүй байж магадгүй."
 fi
 
 log "Deploy complete → ${PUBLIC_URL}"

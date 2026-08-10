@@ -10,7 +10,7 @@ const MODULE_INFO: Record<string, { title: string; desc: string; price: string }
   SMS: { title: 'SMS илгээлт', desc: 'Төлбөрийн линкийг SMS-ээр хүргэх', price: '25₮/segment' },
   EBARIMT: { title: 'eBarimt', desc: 'Төлбөр бүрд НӨАТ-ын баримт автоматаар', price: '20,000₮/сар' },
   POS: { title: 'POS / Cloud Print', desc: 'Салбар дээрх баримт хэвлэлт', price: '20,000₮/төхөөрөмж' },
-  REMINDER: { title: 'Сануулга (удахгүй)', desc: 'Хугацаа хэтрэлтийн автомат сануулга', price: 'Тун удахгүй' },
+  REMINDER: { title: 'Автомат сануулга', desc: 'Хугацаа хэтэрсэн нэхэмжлэхэд 72 цаг тутам, дээд тал нь 3 SMS сануулга (10:00–20:00)', price: '25₮/segment' },
 };
 
 export default function BillingPage() {
@@ -46,8 +46,8 @@ export default function BillingPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Billing & Modules</h1>
-        <p className="mt-1 text-sm text-muted">Мөчлөг: {shortDate(data.cycleStart)}-оос хойш · Модулиа сонгож зардлаа удирдана</p>
+        <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Billing & Modules</h1>
+        <p className="mt-1 text-sm text-slate-500">Мөчлөг: {shortDate(data.cycleStart)}-оос хойш · Модулиа сонгож зардлаа удирдана</p>
       </div>
 
       {error && <ErrorNote message={error} />}
@@ -59,13 +59,13 @@ export default function BillingPage() {
             .filter((m) => MODULE_INFO[m.code])
             .map((m) => {
               const info = MODULE_INFO[m.code];
-              const disabled = m.code === 'REMINDER' || !isOwner;
+              const disabled = !isOwner;
               return (
                 <div key={m.code} className="card flex items-center justify-between gap-4 p-5">
                   <div>
-                    <p className="font-bold text-navy-900">{info.title}</p>
-                    <p className="mt-0.5 text-[13.5px] text-muted">{info.desc}</p>
-                    <p className="mt-1 text-[12.5px] font-semibold text-teal-600">{info.price}</p>
+                    <p className="font-bold text-slate-900">{info.title}</p>
+                    <p className="mt-0.5 text-[13.5px] text-slate-500">{info.desc}</p>
+                    <p className="mt-1 text-[12.5px] font-semibold text-indigo-600">{info.price}</p>
                   </div>
                   <button
                     role="switch"
@@ -85,7 +85,7 @@ export default function BillingPage() {
 
           {/* Usage meters */}
           <div className="card p-5">
-            <h2 className="font-bold text-navy-900">Энэ мөчлөгийн хэрэглээ</h2>
+            <h2 className="font-bold text-slate-900">Энэ мөчлөгийн хэрэглээ</h2>
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
               <Meter label="SMS segment" value={data.usage.smsSegments} />
               <Meter label="Нэхэмжлэх" value={data.usage.invoicesCreated} />
@@ -97,11 +97,11 @@ export default function BillingPage() {
 
         {/* Estimate */}
         <div className="card h-fit p-6">
-          <h2 className="font-bold text-navy-900">Сарын урьдчилсан нэхэмжлэх</h2>
+          <h2 className="font-bold text-slate-900">Сарын урьдчилсан нэхэмжлэх</h2>
           <div className="mt-4 space-y-3 text-sm">
             {data.estimate.lines.map((l) => (
               <div key={l.code} className="flex items-baseline justify-between gap-3">
-                <span className="text-muted">
+                <span className="text-slate-500">
                   {l.label}
                   {l.qty > 1 && <span className="text-navy-400"> × {l.qty.toLocaleString()}</span>}
                 </span>
@@ -109,12 +109,12 @@ export default function BillingPage() {
               </div>
             ))}
           </div>
-          <div className="mt-5 border-t border-line pt-4">
+          <div className="mt-5 border-t border-slate-200/60 pt-4">
             <div className="flex items-baseline justify-between">
-              <span className="font-bold text-navy-900">Нийт</span>
-              <span className="text-2xl font-extrabold tracking-tight text-teal-600">{mnt(data.estimate.total)}</span>
+              <span className="font-bold text-slate-900">Нийт</span>
+              <span className="text-2xl font-extrabold tracking-tight text-indigo-600">{mnt(data.estimate.total)}</span>
             </div>
-            <p className="mt-3 text-[12px] leading-snug text-muted">{data.estimate.note}</p>
+            <p className="mt-3 text-[12px] leading-snug text-slate-500">{data.estimate.note}</p>
           </div>
           {toggling && <div className="mt-3 flex justify-center"><Spinner /></div>}
         </div>
@@ -126,8 +126,8 @@ export default function BillingPage() {
 function Meter({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-xl bg-navy-50 px-4 py-3">
-      <p className="text-[12px] font-medium text-muted">{label}</p>
-      <p className="mt-0.5 text-xl font-bold text-navy-900">{value.toLocaleString()}</p>
+      <p className="text-[12px] font-medium text-slate-500">{label}</p>
+      <p className="mt-0.5 text-xl font-bold text-slate-900">{value.toLocaleString()}</p>
     </div>
   );
 }

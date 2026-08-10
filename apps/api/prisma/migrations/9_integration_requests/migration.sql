@@ -1,8 +1,5 @@
--- Integration onboarding requests (Bonum / eBarimt-LIME) + platform admin +
--- per-tenant Bonum merchant credentials.
---
--- IDEMPOTENT on purpose: the production DB may already carry overlapping
--- objects (schema evolved via `prisma db push` before this migration landed).
+-- Integration onboarding requests (Bonum / eBarimt-LIME). IDEMPOTENT:
+-- production may already have these from main's 2_onboarding_requests.
 
 DO $$ BEGIN
   CREATE TYPE "IntegrationKind" AS ENUM ('BONUM', 'EBARIMT');
@@ -11,13 +8,6 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
   CREATE TYPE "IntegrationRequestStatus" AS ENUM ('SUBMITTED', 'EMAIL_SENT', 'APPROVED', 'REJECTED');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isPlatformAdmin" BOOLEAN NOT NULL DEFAULT false;
-
-ALTER TABLE "Tenant"
-  ADD COLUMN IF NOT EXISTS "bonumTerminalId" TEXT,
-  ADD COLUMN IF NOT EXISTS "bonumAppSecretEnc" TEXT,
-  ADD COLUMN IF NOT EXISTS "bonumChecksumKeyEnc" TEXT;
 
 CREATE TABLE IF NOT EXISTS "IntegrationRequest" (
     "id" TEXT NOT NULL,

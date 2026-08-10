@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { EmptyState, ErrorNote, InvoiceBadge, PageLoader } from '@/components/ui';
 import { api } from '@/lib/api';
 import { INVOICE_STATE_MN, mnt, shortDate } from '@/lib/format';
@@ -11,6 +12,16 @@ const PAGE = 25;
 const FILTERS: (InvoiceState | 'ALL')[] = ['ALL', 'SENT', 'VIEWED', 'PAID', 'PARTIALLY_PAID', 'OVERDUE', 'CANCELLED'];
 
 export default function InvoicesPage() {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <InvoicesInner />
+    </Suspense>
+  );
+}
+
+function InvoicesInner() {
+  const router = useRouter();
+  const batchId = useSearchParams().get('batchId');
   const [items, setItems] = useState<Invoice[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -27,13 +38,14 @@ export default function InvoicesPage() {
       params.set('skip', String(page * PAGE));
       if (state !== 'ALL') params.set('state', state);
       if (query) params.set('search', query);
+      if (batchId) params.set('batchId', batchId);
       const res = await api<{ items: Invoice[]; total: number }>(`/invoices?${params.toString()}`);
       setItems(res.items);
       setTotal(res.total);
     } catch (e: any) {
       setError(e.message);
     }
-  }, [page, state, query]);
+  }, [page, state, query, batchId]);
 
   useEffect(() => {
     void load();
@@ -45,8 +57,19 @@ export default function InvoicesPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Нэхэмжлэх</h1>
-          <p className="mt-1 text-sm text-muted">{total.toLocaleString()} бичлэг</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Нэхэмжлэх</h1>
+          <p className="mt-1 flex items-center gap-2 text-sm text-slate-500">
+            {total.toLocaleString()} бичлэг
+            {batchId && (
+              <button
+                className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-[12.5px] font-semibold text-indigo-700 hover:bg-indigo-100"
+                onClick={() => router.replace('/invoices')}
+                title="Шүүлтүүр арилгах"
+              >
+                📥 Нэг импортын багц ✕
+              </button>
+            )}
+          </p>
         </div>
         <div className="flex gap-3">
           <Link href="/imports" className="btn-secondary">📥 Excel импорт</Link>
@@ -91,9 +114,9 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {error && <ErrorNote message={error} />}
+      {error && <ErrorNote message={error} onRetry={() => void load()} />}
       {!items ? (
-        <PageLoader />
+        error ? null : <PageLoader />
       ) : items.length === 0 ? (
         <EmptyState
           title="Нэхэмжлэх олдсонгүй"
@@ -104,7 +127,7 @@ export default function InvoicesPage() {
         <div className="card overflow-hidden">
           <div className="scroll-thin overflow-x-auto">
             <table className="w-full min-w-[720px]">
-              <thead className="bg-navy-50/60">
+              <thead className="bg-slate-50/50">
                 <tr>
                   <th className="th">№</th>
                   <th className="th">Төлөгч</th>
@@ -115,30 +138,30 @@ export default function InvoicesPage() {
                   <th className="th">Дуусах</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line">
+              <tbody className="divide-y divide-slate-200/60">
                 {items.map((inv) => (
-                  <tr key={inv.id} className="transition hover:bg-navy-50/40">
+                  <tr key={inv.id} className="transition hover:bg-white/60">
                     <td className="td">
-                      <Link href={`/invoices/${inv.id}`} className="font-semibold text-teal-700 hover:underline">
+                      <Link href={`/invoices/${inv.id}`} className="font-semibold text-indigo-700 hover:underline">
                         {inv.number}
                       </Link>
                     </td>
                     <td className="td">
                       <p className="font-medium">{inv.customer.name}</p>
-                      <p className="text-[12px] text-muted">{inv.customer.phone ?? ''}</p>
+                      <p className="text-[12px] text-slate-500">{inv.customer.phone ?? ''}</p>
                     </td>
-                    <td className="td max-w-[220px] truncate text-muted">{inv.description}</td>
+                    <td className="td max-w-[220px] truncate text-slate-500">{inv.description}</td>
                     <td className="td"><InvoiceBadge state={inv.state} /></td>
                     <td className="td text-right font-semibold">{mnt(inv.amount)}</td>
                     <td className="td text-right">{inv.balance > 0 ? mnt(inv.balance) : '—'}</td>
-                    <td className="td text-muted">{shortDate(inv.dueDate)}</td>
+                    <td className="td text-slate-500">{shortDate(inv.dueDate)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="flex items-center justify-between border-t border-line px-5 py-3 text-sm">
-            <p className="text-muted">
+          <div className="flex items-center justify-between border-t border-slate-200/60 px-5 py-3 text-sm">
+            <p className="text-slate-500">
               Хуудас {page + 1} / {pages}
             </p>
             <div className="flex gap-2">

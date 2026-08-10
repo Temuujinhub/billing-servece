@@ -41,7 +41,8 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
-          'Inter',
+          'Manrope Variable',
+          'Manrope',
           '-apple-system',
           'BlinkMacSystemFont',
           'Segoe UI',
@@ -52,9 +53,13 @@ const config: Config = {
         ],
       },
       boxShadow: {
-        card: '0 1px 2px rgba(11,30,51,0.05), 0 6px 20px -8px rgba(11,30,51,0.08)',
-        lift: '0 20px 50px -16px rgba(11,30,51,0.25)',
-        cta: '0 8px 24px -8px rgba(18,161,134,0.5)',
+        card: '0 10px 40px -15px rgba(15,23,42,0.08)',
+        lift: '0 24px 60px -18px rgba(15,23,42,0.22)',
+        cta: '0 8px 24px -8px rgba(79,70,229,0.5)',
+        glow: '0 0 25px rgba(79,70,229,0.45)',
+        'glow-emerald': '0 0 14px rgba(16,185,129,0.55)',
+        'glow-amber': '0 0 14px rgba(245,158,11,0.5)',
+        'glow-red': '0 0 14px rgba(239,68,68,0.45)',
       },
       borderRadius: {
         xl: '0.875rem',

@@ -8,7 +8,9 @@ export interface SessionUser {
   name: string;
   role: Role;
   tenantId: string;
-  isPlatformAdmin?: boolean;
+  isAdmin?: boolean;
+  /** Партнёрын ажилтан: BONUM | EBARIMT (энгийн хэрэглэгчид null). */
+  partnerKind?: 'BONUM' | 'EBARIMT' | null;
 }
 
 export interface AuthResponse {
@@ -103,6 +105,14 @@ export interface BatchPreview {
     valid: boolean;
   }[];
   estimate: { smsSegments: number; smsCost: number };
+}
+
+export interface InspectResult {
+  fileName: string;
+  rowCount: number;
+  columns: { index: number; header: string; samples: string[] }[];
+  suggested: Record<string, number>;
+  systemFields: { key: string; label: string; required: boolean }[];
 }
 
 export interface DashboardData {
@@ -202,7 +212,30 @@ export interface IntegrationRequest {
   emailedAt: string | null;
   decidedAt: string | null;
   createdAt: string;
-  tenant?: { id: string; name: string; regNo: string | null; contactEmail: string | null; contactPhone: string | null };
+}
+
+/**
+ * `/admin/integration-requests` (болон `/partner/requests`) нь байгууллагын
+ * одоогийн утгуудыг хамт буцаана — хариуны маягтыг тэдгээрээр урьдчилан
+ * бөглөж, аль хэдийн мэдэгдэж буй зүйлийг дахин бичүүлэхгүй. Шифрлэгдсэн
+ * нууц утга хэзээ ч ирэхгүй, зөвхөн байгаа эсэх нь тугаар ирнэ.
+ */
+export interface AdminIntegrationRequest extends IntegrationRequest {
+  tenant: {
+    id: string;
+    name: string;
+    regNo: string | null;
+    contactEmail: string | null;
+    contactPhone: string | null;
+    tin: string | null;
+    ebarimtMerchantTin: string | null;
+    ebarimtPosNo: string | null;
+    ebarimtBranchNo: string | null;
+    ebarimtDistrictCode: string | null;
+    bonumTerminalId: string | null;
+    hasBonumAppSecret: boolean;
+    hasBonumChecksumKey: boolean;
+  };
 }
 
 export interface TenantInfo {
@@ -210,14 +243,18 @@ export interface TenantInfo {
     id: string;
     name: string;
     regNo: string | null;
+    tin: string | null;
     kybStatus: string;
     invoicePrefix: string;
     contactEmail: string | null;
     contactPhone: string | null;
+    smsTemplate: string | null;
+    smsTransliterate: boolean;
     address: string | null;
     bankName: string | null;
-    bankAccountNo: string | null;
+    bankAccount: string | null;
     bankAccountName: string | null;
+    representative: string | null;
     ebarimtMerchantTin: string | null;
     ebarimtPosNo: string | null;
     ebarimtBranchNo: string | null;
@@ -230,4 +267,44 @@ export interface TenantInfo {
   };
   team: { id: string; role: Role; user: { id: string; name: string; email: string }; since: string }[];
   me: { userId: string; email: string; name: string; role: Role };
+}
+
+export interface TeamMember {
+  id: string;
+  role: Role;
+  user: { id: string; name: string; email: string };
+}
+
+export interface ReportsSummary {
+  days: number;
+  since: string;
+  invoices: { count: number; amount: number; outstanding: number };
+  payments: { count: number; gross: number; fee: number };
+  smsSegments: number;
+  byState: { state: InvoiceState; count: number; amount: number }[];
+  topCustomers: { customerId: string; name: string; invoices: number; amount: number }[];
+}
+
+export interface ApiKeyInfo {
+  id: string;
+  name: string;
+  prefix: string;
+  last4: string;
+  createdAt: string;
+  revokedAt: string | null;
+}
+
+export interface WebhookInfo {
+  id: string;
+  url: string;
+  events: string[];
+  active: boolean;
+  lastStatus: number | null;
+  lastAt: string | null;
+  createdAt: string;
+}
+
+export interface DevelopersOverview {
+  keys: ApiKeyInfo[];
+  webhooks: WebhookInfo[];
 }

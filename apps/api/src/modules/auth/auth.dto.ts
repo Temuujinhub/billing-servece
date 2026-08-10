@@ -2,25 +2,25 @@ import { TenantType } from '@prisma/client';
 import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class RegisterDto {
-  @IsEmail()
+  @IsEmail({}, { message: 'Имэйл хаяг буруу байна' })
   email!: string;
 
   // At least 8 chars with a letter and a digit — brute-force resistance floor.
   @IsString()
-  @MinLength(8)
-  @MaxLength(72)
+  @MinLength(8, { message: 'Нууц үг доод тал нь 8 тэмдэгт байна' })
+  @MaxLength(72, { message: 'Нууц үг хэт урт байна (дээд тал нь 72)' })
   @Matches(/(?=.*[A-Za-zА-Яа-яЁёӨөҮү])(?=.*\d)/, {
-    message: 'Нууц үг үсэг болон тоо агуулсан байх ёстой',
+    message: 'Нууц үг үсэг болон тоо хоёуланг агуулсан байх ёстой',
   })
   password!: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Нэрээ оруулна уу' })
   @MaxLength(120)
   name!: string;
 
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Байгууллагын нэрээ оруулна уу' })
   @MaxLength(200)
   organizationName!: string;
 
