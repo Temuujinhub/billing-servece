@@ -119,17 +119,19 @@ Bonum-д мерчант бүртгүүлэхэд байгууллага дара
 
 ### Юу ВЭ, юу БИШ вэ
 
-- `VAT_BASE_URL` нь **ТЕГ-ийн нийтийн API БИШ** — энэ нь өөрийн сервер дээр
-  ажиллах **POS API 3.0 локал үйлчилгээ** (ТЕГ-ээс өгдөг Docker image, LIME
-  холболтоор суулгасан instance).
-- Тухайн компани ТЕГ-т **өөрийн POS-оор бүртгүүлсэн** байх ёстой: өөрийн
-  `merchantTin` + тэр POS-д олгогдсон `posNo`. **LIME-ийн posNo-г өөр
-  компанийн баримтад ашиглаж болохгүй.**
+- `VAT_BASE_URL` нь **ТЕГ-ийн нийтийн API БИШ** — энэ нь **POS API 3.0
+  үйлчилгээ** (ТЕГ-ээс өгдөг сервис). Production дээр LIME-ийн hosted
+  instance-ийг ашиглана: **`https://vat.onlime.mn`** (LIME merchantTin
+  `37900846788`, districtCode `2315`).
+- Multi-merchant instance: баримт олгох компани бүр instance-ийн merchant
+  жагсаалтад (ТЕГ бүртгэлээр) орсон байх ёстой. `posNo`-г тусгайлан
+  тохируулаагүй бол adapter `GET /rest/info`-оос instance-ийн `posNo`-г
+  автоматаар авна.
 - Суусны дараа, код ажиллуулахаас өмнө бүртгэлээ шалгана:
 
 ```bash
-curl http://<pos-host>:<port>/rest/info
-# merchants, branches, тохируулсан TIN-үүд зөв эсэхийг харна
+curl https://vat.onlime.mn/rest/info
+# posNo, merchants, тохируулсан TIN-үүд зөв эсэхийг харна
 ```
 
 Мөн Dashboard-аас: `GET /api/v1/receipts/provider-info` (OWNER/ACCOUNTANT эрх)
@@ -141,15 +143,22 @@ curl http://<pos-host>:<port>/rest/info
 
 ```env
 EBARIMT_PROVIDER=posapi
-VAT_BASE_URL=http://ebarimt-pos:7080        # локал POS API 3.0 instance
+VAT_BASE_URL=https://vat.onlime.mn          # LIME-ийн POS API 3.0 instance
 # Түрээслэгч (tenant) бүр өөрийн бүртгэлээ Тохиргоо хуудаснаас оруулна;
 # доорх env утгууд нь fallback default:
-EBARIMT_MERCHANT_TIN=
-EBARIMT_POS_NO=
+EBARIMT_MERCHANT_TIN=37900846788            # LIME merchant TIN
+# EBARIMT_POS_NO=                           # хоосон = /rest/info-оос автомат
 EBARIMT_BRANCH_NO=001
-EBARIMT_DISTRICT_CODE=3505                  # өөрийн дүүргийн кодоор солино
+EBARIMT_DISTRICT_CODE=2315                  # LIME instance-ийн байршлын код
 EBARIMT_CLASSIFICATION_CODE=6499999         # бараа/үйлчилгээний ГХЭАТ код
+EBARIMT_BILL_ID_SUFFIX=01                   # ДДТД-ийн багцын suffix
+# EBARIMT_PAYMENT_CODE=                     # хоосон = автомат сонголт
 ```
+
+Төлбөрийн код (`payments[].code`): qpay-ээр орж ирсэн төлбөрт
+`BANK_TRANSFER_QPAY` (LIME instance дээр батлагдсан утга), бусдад
+`PAYMENT_CARD`. `EBARIMT_PAYMENT_CODE`-оор бүгдийг нэг утга руу тогтоож
+болно.
 
 Түрээслэгч бүрийн `merchantTin / posNo / branchNo / districtCode` нь
 Dashboard → Тохиргоо → «eBarimt бүртгэл» хэсэгт хадгалагдаж, env-ийн
@@ -188,8 +197,9 @@ BONUM_APP_SECRET=...
 BONUM_CHECKSUM_KEY=...
 
 EBARIMT_PROVIDER=posapi
-VAT_BASE_URL=http://ebarimt-pos:7080
-EBARIMT_DISTRICT_CODE=...
+VAT_BASE_URL=https://vat.onlime.mn
+EBARIMT_MERCHANT_TIN=37900846788
+EBARIMT_DISTRICT_CODE=2315
 ```
 
 Checklist:
