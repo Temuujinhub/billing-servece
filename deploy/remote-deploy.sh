@@ -172,14 +172,23 @@ if [ "${PAYMENT_PROVIDER:-qpay_mock}" = "qpay" ] && [ -n "${QPAY_USERNAME:-}" ];
     echo "⚠ QPay auth check returned HTTP $QPAY_CODE — шалгана уу (credential/whitelist)."
   fi
 fi
-if [ "${EBARIMT_PROVIDER:-mock}" = "posapi" ] && [ -n "${VAT_BASE_URL:-}" ]; then
+# eBarimt vars are read straight from .env (NOT via shell sourcing — user-edited
+# lines can abort a `source` midway and silently skip this check). Defaults
+# mirror docker-compose.prod.yml so the check matches what the container runs.
+EB_PROVIDER=$(sed -n 's/^EBARIMT_PROVIDER=//p' .env | tail -1 | tr -d '\r"' || true)
+EB_VAT_URL=$(sed -n 's/^VAT_BASE_URL=//p' .env | tail -1 | tr -d '\r"' || true)
+EB_TIN=$(sed -n 's/^EBARIMT_MERCHANT_TIN=//p' .env | tail -1 | tr -d '\r"' || true)
+EB_PROVIDER="${EB_PROVIDER:-posapi}"
+EB_VAT_URL="${EB_VAT_URL:-https://vat.onlime.mn}"
+EB_TIN="${EB_TIN:-37900846788}"
+if [ "$EB_PROVIDER" = "posapi" ] && [ -n "$EB_VAT_URL" ]; then
   VAT_CODE=$(curl -s -o /tmp/ebarimt-info.json -w '%{http_code}' -m 15 \
-    -H 'Accept: application/json' "${VAT_BASE_URL%/}/rest/info" || echo "ERR")
+    -H 'Accept: application/json' "${EB_VAT_URL%/}/rest/info" || echo "ERR")
   if [ "$VAT_CODE" = "200" ]; then
-    VAT_POS_NO=$(grep -o '"posNo"[[:space:]]*:[[:space:]]*"[^"]*"' /tmp/ebarimt-info.json | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
-    echo "✅ eBarimt POS API OK (${VAT_BASE_URL%/}/rest/info, posNo=${VAT_POS_NO:-?})"
-    if ! grep -q "${EBARIMT_MERCHANT_TIN:-37900846788}" /tmp/ebarimt-info.json; then
-      echo "⚠ merchantTin ${EBARIMT_MERCHANT_TIN:-37900846788} нь instance-ийн /rest/info бүртгэлд алга — LIME-тэй шалгана уу."
+    VAT_POS_NO=$(sed -n 's/.*"posNo"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /tmp/ebarimt-info.json | head -1 || true)
+    echo "✅ eBarimt POS API OK (${EB_VAT_URL%/}/rest/info, posNo=${VAT_POS_NO:-?})"
+    if ! grep -q "$EB_TIN" /tmp/ebarimt-info.json; then
+      echo "⚠ merchantTin $EB_TIN нь instance-ийн /rest/info бүртгэлд алга — LIME-тэй шалгана уу."
     fi
   else
     echo "⚠ eBarimt POS API check returned HTTP $VAT_CODE — VAT_BASE_URL-ээ шалгана уу (баримтууд PENDING-д хүлээгдэж, автоматаар дахин оролдоно)."
@@ -192,8 +201,12 @@ if [ "${SMS_PROVIDER:-mock}" = "callpro" ] && [ -n "${CALLPRO_API_KEY:-}" ]; the
     "${CALLPRO_BASE_URL:-https://api-text.callpro.mn/v1/sms}/tenant-daily-message-count?operator=unitel" || echo "ERR")
   if [ "$SMS_CODE" = "200" ]; then
     echo "✅ CallPro SMS API OK (HTTP $SMS_CODE)"
+  elif [ "$SMS_CODE" = "401" ] || [ "$SMS_CODE" = "403" ]; then
+    echo "⚠ CallPro API key татгалзагдлаа (HTTP $SMS_CODE) — CALLPRO_API_KEY-г шалгана уу."
   else
-    echo "⚠ CallPro check returned HTTP $SMS_CODE — API key-г шалгана уу."
+    # 404 etc: the probe endpoint differs per contract — NOT proof of a bad
+    # key (real sends go through POST /send-sms and surface in MessageJob).
+    echo "ℹ CallPro probe endpoint HTTP $SMS_CODE — түлхүүр буруу гэсэн үг биш; бодит илгээлт /send-sms-ээр баталгаажина."
   fi
 fi
 
