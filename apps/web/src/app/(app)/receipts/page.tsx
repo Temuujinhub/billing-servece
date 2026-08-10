@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import { EbarimtQr } from '@/components/ebarimt-qr';
 import { EmptyState, ErrorNote, PageLoader, ReceiptBadge, Spinner } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { dateTime, mnt } from '@/lib/format';
@@ -12,6 +13,7 @@ export default function ReceiptsPage() {
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [qrOpen, setQrOpen] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api<{ items: ReceiptRow[]; total: number }>('/receipts?take=100')
@@ -74,29 +76,45 @@ export default function ReceiptsPage() {
               </thead>
               <tbody className="divide-y divide-slate-200/60">
                 {items.map((r) => (
-                  <tr key={r.id} className="transition hover:bg-white/60">
-                    <td className="td text-slate-500">{dateTime(r.createdAt)}</td>
-                    <td className="td">
-                      <Link href={`/invoices/${r.transaction.intent.invoice.id}`} className="font-semibold text-indigo-700 hover:underline">
-                        {r.transaction.intent.invoice.number}
-                      </Link>
-                    </td>
-                    <td className="td">{r.transaction.intent.invoice.customer.name}</td>
-                    <td className="td text-right font-semibold">{mnt(r.transaction.gross)}</td>
-                    <td className="td max-w-[150px] truncate font-mono text-[12px]">{r.receiptNo ?? '—'}</td>
-                    <td className="td font-mono text-[13px] tracking-wider">{r.lottery ?? '—'}</td>
-                    <td className="td">
-                      <ReceiptBadge state={r.state} />
-                      {r.error && <p className="mt-1 max-w-[180px] truncate text-[11.5px] text-red-500" title={r.error}>{r.error}</p>}
-                    </td>
-                    <td className="td">
-                      {r.state === 'FAILED' && (
-                        <button onClick={() => retry(r.id)} disabled={retrying === r.id} className="btn-secondary px-3 py-1.5 text-[12.5px]">
-                          {retrying === r.id ? <Spinner className="h-4 w-4" /> : '↻ Дахих'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                  <Fragment key={r.id}>
+                    <tr className="transition hover:bg-white/60">
+                      <td className="td text-slate-500">{dateTime(r.createdAt)}</td>
+                      <td className="td">
+                        <Link href={`/invoices/${r.transaction.intent.invoice.id}`} className="font-semibold text-indigo-700 hover:underline">
+                          {r.transaction.intent.invoice.number}
+                        </Link>
+                      </td>
+                      <td className="td">{r.transaction.intent.invoice.customer.name}</td>
+                      <td className="td text-right font-semibold">{mnt(r.transaction.gross)}</td>
+                      <td className="td max-w-[150px] truncate font-mono text-[12px]">{r.receiptNo ?? '—'}</td>
+                      <td className="td font-mono text-[13px] tracking-wider">{r.lottery ?? '—'}</td>
+                      <td className="td">
+                        <ReceiptBadge state={r.state} />
+                        {r.error && <p className="mt-1 max-w-[180px] truncate text-[11.5px] text-red-500" title={r.error}>{r.error}</p>}
+                      </td>
+                      <td className="td">
+                        <div className="flex gap-2">
+                          {r.qrData && (
+                            <button onClick={() => setQrOpen(qrOpen === r.id ? null : r.id)} className="btn-secondary px-3 py-1.5 text-[12.5px]">
+                              {qrOpen === r.id ? '▴ QR' : '▾ QR'}
+                            </button>
+                          )}
+                          {r.state === 'FAILED' && (
+                            <button onClick={() => retry(r.id)} disabled={retrying === r.id} className="btn-secondary px-3 py-1.5 text-[12.5px]">
+                              {retrying === r.id ? <Spinner className="h-4 w-4" /> : '↻ Дахих'}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {qrOpen === r.id && r.qrData && (
+                      <tr>
+                        <td className="td bg-slate-50/60 text-center" colSpan={8}>
+                          <EbarimtQr data={r.qrData} size={184} className="py-2" />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

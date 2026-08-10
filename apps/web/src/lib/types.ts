@@ -73,7 +73,7 @@ export interface InvoiceDetail extends Invoice {
       providerPaymentId: string;
       gross: number;
       paidAt: string;
-      receipts: { id: string; state: string; receiptNo: string | null; lottery: string | null }[];
+      receipts: { id: string; state: string; receiptNo: string | null; lottery: string | null; qrData: string | null }[];
     }[];
     events: { id: string; type: string; createdAt: string }[];
   }[];
@@ -160,6 +160,7 @@ export interface ReceiptRow {
   id: string;
   receiptNo: string | null;
   lottery: string | null;
+  qrData: string | null;
   state: string;
   error: string | null;
   retries: number;
