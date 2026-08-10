@@ -10,7 +10,8 @@ interface JwtPayload {
   name: string;
   tenantId: string;
   role: AuthUser['role'];
-  isPlatformAdmin?: boolean;
+  isAdmin?: boolean;
+  partnerKind?: 'BONUM' | 'EBARIMT' | null;
 }
 
 @Injectable()
@@ -30,7 +31,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       name: payload.name,
       tenantId: payload.tenantId,
       role: payload.role,
-      isPlatformAdmin: payload.isPlatformAdmin === true,
+      isAdmin: payload.isAdmin === true,
+      partnerKind: payload.partnerKind === 'BONUM' || payload.partnerKind === 'EBARIMT' ? payload.partnerKind : null,
     };
   }
 }

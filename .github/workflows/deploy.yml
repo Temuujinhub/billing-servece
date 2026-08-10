@@ -1,119 +1,255 @@
 name: Deploy billingservice.mn
 
-# Deploys the stack to the DigitalOcean droplet and (temporarily) pauses the
-# hotel PMS stack that currently occupies ports 80/443.
+# Deploys the stack to the Mongolia-hosted production server.
 #   • Manually  : Actions tab → "Deploy billingservice.mn" → "Run workflow"
-#   • Automatic : on every push to main
+#   • Automatic : on every push to a PRODUCTION branch (below)
+#
+# PRODUCTION BRANCH: `main` — ГАНЦХАН эх сурвалж. Өмнө нь production өөр
+# салбараас (claude/billingservice-mn-setup-7glfgs) deploy хийгдэж, main-аас
+# deploy хийгдэхэд бүтэн функцүүд "алга болдог" будлиан гарч байсан (PR #11–#13,
+# мөн 2026-08-10). Тиймээс энэ жагсаалтад main-аас өөр салбар ХЭЗЭЭ Ч бүү нэм —
+# бүх өөрчлөлт PR-аар main руу орж байж серверт хүрнэ.
 #
 # Required secret: DEPLOY_SSH_KEY — private SSH key whose public key is in the
-# droplet's ~/.ssh/authorized_keys (same key the HOTEL_PMS repo uses).
+# server's ~/.ssh/authorized_keys.
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
+    inputs:
+      host:
+        description: Override target server IP (empty = DEPLOY_HOST var / default)
+        required: false
+        default: ""
+      bootstrap:
+        description: One-time new-server setup (needs DEPLOY_PASSWORD secret)
+        type: boolean
+        required: false
+        default: false
+      copy_env_from:
+        description: Old server IP to copy /opt/billingservice/.env from during bootstrap
+        required: false
+        default: "168.144.41.111"
+      migrate_db_from:
+        description: One-time full DB copy from this old server IP (empty = skip). OVERWRITES the target DB.
+        required: false
+        default: ""
+      diag:
+        description: Diagnostics only — print migration state and API logs, deploy nothing
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: deploy-billing-production
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Deploy to DigitalOcean
+  diag:
+    name: Server diagnostics
+    if: ${{ inputs.diag }}
     runs-on: ubuntu-latest
     env:
-      # 202.37.235.16 — Монголын үндсэн production сервер (eBarimt POS API 3.0
-      # локал үйлчилгээ энд хамт ажиллана). billing.mastrsys.com DNS энд заадаг.
-      # Хуучин DigitalOcean droplet (168.144.41.111) ашиглагдахаа больсон.
-      DEPLOY_HOST: ${{ vars.DEPLOY_HOST || '202.37.235.16' }}
+      DEPLOY_HOST: ${{ inputs.host || vars.DEPLOY_HOST || '202.37.235.16' }}
+      DEPLOY_USER: root
+      DEPLOY_PORT: "22"
+    steps:
+      - name: Configure SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || secrets.DEPLOY_SSH_KEY1 }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+      - name: Collect diagnostics
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<'EOSSH'
+          cd /opt/billingservice
+          C="docker compose -f docker-compose.prod.yml"
+          echo "=== _prisma_migrations ==="
+          $C exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT migration_name, started_at, finished_at, rolled_back_at, logs FROM _prisma_migrations ORDER BY started_at;"' || true
+          echo "=== Tenant columns ==="
+          $C exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT column_name FROM information_schema.columns WHERE table_name='"'"'Tenant'"'"' ORDER BY ordinal_position;"' || true
+          echo "=== PaymentIntent columns ==="
+          $C exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT column_name FROM information_schema.columns WHERE table_name='"'"'PaymentIntent'"'"' ORDER BY ordinal_position;"' || true
+          echo "=== API log head ==="
+          $C logs --no-color api 2>/dev/null | head -120 || true
+          EOSSH
+
+  deploy:
+    name: Deploy to DigitalOcean
+    if: ${{ !inputs.diag }}
+    runs-on: ubuntu-latest
+    env:
+      # Production moved to the Mongolia-hosted server (api.ebarimt.mn is
+      # geo-restricted to MN address space); the old DO droplet goes back to
+      # hotel PMS duty.
+      DEPLOY_HOST: ${{ inputs.host || vars.DEPLOY_HOST || '202.37.235.16' }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER || 'root' }}
       DEPLOY_PORT: ${{ vars.DEPLOY_SSH_PORT || '22' }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure SSH auth (key, password fallback)
+      # Build images on the runner so the small droplet never runs a Docker
+      # build — on-droplet builds starve the live API and cause 5xx blips.
+      - name: Build images in CI
+        run: |
+          # Compose interpolates runtime env even for `build`; feed throwaway
+          # values so required-var checks pass. They never reach the images —
+          # real secrets live only in the droplet's /opt/billingservice/.env.
+          cat > .env <<'EOF'
+          POSTGRES_PASSWORD=ci-build-only
+          JWT_ACCESS_SECRET=ci-build-only
+          JWT_REFRESH_SECRET=ci-build-only
+          ENCRYPTION_KEY=ci-build-only
+          WEBHOOK_SIGNING_SECRET=ci-build-only
+          EOF
+          docker compose -f docker-compose.prod.yml build api web
+          rm -f .env
+          docker save billingservice-api billingservice-web | gzip -1 > images.tar.gz
+          ls -lh images.tar.gz
+
+      - name: Configure SSH key
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY || secrets.DEPLOY_SSH_KEY1 }}
-          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-          # Prefer key auth when the key actually opens THIS host; otherwise
-          # fall back to password auth (DEPLOY_PASSWORD secret) via sshpass.
-          if [ -n "$DEPLOY_SSH_KEY" ]; then
-            printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
-            chmod 600 ~/.ssh/deploy_key
-            if ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-                "$DEPLOY_USER@$DEPLOY_HOST" true 2>/dev/null; then
-              echo "DEPLOY_AUTH=key" >> "$GITHUB_ENV"
-              echo "✅ Key auth works for $DEPLOY_HOST"
-              exit 0
-            fi
-            echo "Key auth failed for $DEPLOY_HOST — trying password auth."
-          fi
-          if [ -n "$SSHPASS" ]; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
-            if sshpass -e ssh -p "$DEPLOY_PORT" -o StrictHostKeyChecking=accept-new \
-                "$DEPLOY_USER@$DEPLOY_HOST" true; then
-              echo "DEPLOY_AUTH=password" >> "$GITHUB_ENV"
-              echo "✅ Password auth works for $DEPLOY_HOST"
-              exit 0
-            fi
-            echo "::error title=SSH auth failed::Neither DEPLOY_SSH_KEY nor DEPLOY_PASSWORD can open $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PORT."
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "::error title=Missing SSH key secret::Add DEPLOY_SSH_KEY under Settings → Secrets and variables → Actions."
             exit 1
           fi
-          echo "::error title=Missing SSH secrets::Add DEPLOY_SSH_KEY (authorized on the server) or DEPLOY_PASSWORD under Settings → Secrets and variables → Actions."
-          exit 1
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      # One-time new-server setup: installs the deploy key via password auth,
+      # copies .env from the old server (never printed), probes ebarimt.
+      - name: Bootstrap new host
+        if: ${{ inputs.bootstrap }}
+        env:
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+          OLD_HOST: ${{ inputs.copy_env_from }}
+        run: |
+          if [ -z "$DEPLOY_PASSWORD" ]; then
+            echo "::error::Add the new server's root password as the DEPLOY_PASSWORD secret first."; exit 1
+          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          ssh-keygen -y -f ~/.ssh/deploy_key > ~/.ssh/deploy_key.pub
+          sshpass -p "$DEPLOY_PASSWORD" ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" \
+            'mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'
+          sshpass -p "$DEPLOY_PASSWORD" ssh "$DEPLOY_USER@$DEPLOY_HOST" 'cat >> ~/.ssh/authorized_keys' < ~/.ssh/deploy_key.pub
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" 'echo "✅ key auth OK on $(hostname)"'
+          if [ -n "$OLD_HOST" ]; then
+            if ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "root@$OLD_HOST" 'cat /opt/billingservice/.env' > env.transfer 2>/dev/null; then
+              ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+                'mkdir -p /opt/billingservice && cat > /opt/billingservice/.env && chmod 600 /opt/billingservice/.env' < env.transfer
+              rm -f env.transfer
+              echo "✅ .env transferred (contents not shown)"
+            else
+              echo "::warning::Could not read old .env — a fresh one will be generated on first deploy."
+            fi
+          fi
+          CODE=$(ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            'curl -s -o /dev/null -w "%{http_code}" -m 15 "https://api.ebarimt.mn/api/info/check/getInfo?regNo=2657457"' || echo ERR)
+          echo "ebarimt registry from new host: HTTP $CODE"
 
       - name: Sync project to droplet
-        env:
-          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
-          if [ "$DEPLOY_AUTH" = "password" ]; then
-            RSH="sshpass -e ssh -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
-          else
-            RSH="ssh -i $HOME/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
-          fi
           rsync -az --delete \
             --exclude '.git' --exclude 'node_modules' --exclude '.next' --exclude 'dist' \
-            --exclude '.env' \
-            -e "$RSH" \
+            --exclude '.env' --exclude 'images.tar.gz' \
+            -e "ssh -i ~/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new" \
             ./ "$DEPLOY_USER@$DEPLOY_HOST:/opt/billingservice/"
 
-      - name: Run remote deploy script
-        env:
-          SSHPASS: ${{ secrets.DEPLOY_PASSWORD }}
+      - name: Ship prebuilt images
         run: |
-          if [ "$DEPLOY_AUTH" = "password" ]; then
-            SSH="sshpass -e ssh -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
-          else
-            SSH="ssh -i $HOME/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
-          fi
-          $SSH "$DEPLOY_USER@$DEPLOY_HOST" \
+          scp -i ~/.ssh/deploy_key -P "$DEPLOY_PORT" images.tar.gz \
+            "$DEPLOY_USER@$DEPLOY_HOST:/opt/billingservice/images.tar.gz"
+
+      - name: Run remote deploy script
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
             "PUBLIC_URL=https://billing.mastrsys.com DEPLOY_SHA=$GITHUB_SHA bash /opt/billingservice/deploy/remote-deploy.sh"
 
-      - name: Verify deployed droplet (not just DNS)
+      # One-time data move: pg_dump on the old server → full restore on the
+      # target (drops the target schema first — target data is REPLACED).
+      # Only row counts are printed, never data.
+      - name: Migrate database from old server
+        if: ${{ inputs.migrate_db_from != '' }}
+        env:
+          OLD_DB_HOST: ${{ inputs.migrate_db_from }}
         run: |
-          # DNS may point at a DIFFERENT server than the deploy target — verify
-          # the droplet we actually deployed to, via --resolve.
+          C="docker compose -f docker-compose.prod.yml"
+          echo "→ Dumping database on $OLD_DB_HOST…"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "root@$OLD_DB_HOST" \
+            "cd /opt/billingservice && $C exec -T postgres sh -c 'pg_dump -U \"\$POSTGRES_USER\" \"\$POSTGRES_DB\"'" | gzip -1 > dump.sql.gz
+          ls -lh dump.sql.gz
+          scp -i ~/.ssh/deploy_key -P "$DEPLOY_PORT" dump.sql.gz "$DEPLOY_USER@$DEPLOY_HOST:/opt/billingservice/dump.sql.gz"
+          echo "→ Restoring on $DEPLOY_HOST (api paused during restore)…"
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<'EOSSH'
+          set -e
+          cd /opt/billingservice
+          C="docker compose -f docker-compose.prod.yml"
+          $C stop api > /dev/null
+          $C exec -T postgres sh -c 'psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
+          gunzip -c dump.sql.gz | $C exec -T postgres sh -c 'psql -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > /dev/null
+          rm -f dump.sql.gz
+          $C start api > /dev/null
+          echo "→ Row counts after restore:"
+          $C exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -t -c "SELECT '\''tenants: '\'' || count(*) FROM \"Tenant\"; SELECT '\''users: '\'' || count(*) FROM \"User\"; SELECT '\''invoices: '\'' || count(*) FROM \"Invoice\";"'
+          EOSSH
+          rm -f dump.sql.gz
+          echo "✅ Database migrated."
+
+      # HTTP 200 нь ХУУЧИН контейнер ажиллаж байхад ч ирнэ — тиймээс шинэ код
+      # үнэхээр гарсан эсэхийг тусад нь батална: api контейнер энэ deploy-ийн
+      # үеэр дахин эхэлсэн байх ёстой.
+      - name: Verify deployed revision
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$GITHUB_SHA" <<'EOSSH'
+          set -e
+          REV="$1"
+          cd /opt/billingservice
+          C="docker compose -f docker-compose.prod.yml"
+          printf '%s\n' "$REV" > DEPLOYED_REVISION
+          CID=$($C ps -q api)
+          if [ -z "$CID" ]; then
+            echo "::error title=API container missing::docker compose ps -q api returned nothing"; exit 1
+          fi
+          STARTED=$(docker inspect -f '{{.State.StartedAt}}' "$CID")
+          AGE=$(( $(date -u +%s) - $(date -u -d "$STARTED" +%s) ))
+          echo "deployed revision : $REV"
+          echo "api started       : $STARTED (${AGE}s ago)"
+          # 15 минутаас хуучин бол энэ deploy контейнерийг сольсонгүй гэсэн үг.
+          if [ "$AGE" -gt 900 ]; then
+            echo "::error title=Stale container::api ${AGE}s өмнө эхэлсэн — энэ deploy шинэ дүрсийг гаргаагүй байна."
+            exit 1
+          fi
+          EOSSH
+
+      - name: Verify public endpoint serves THIS commit
+        run: |
+          # HTTP 200 хангалтгүй — /health/live одоо ажиллаж буй commit SHA-гаа
+          # буцаадаг тул буруу сервер эсвэл хуучин код "ногоон" харагдаж чадахгүй.
+          # --resolve: DNS өөр IP заасан ч бид ЯГ deploy хийсэн серверээ шалгана.
           DNS_IP=$(getent hosts billing.mastrsys.com | awk '{print $1}' | head -1)
           if [ -n "$DNS_IP" ] && [ "$DNS_IP" != "$DEPLOY_HOST" ]; then
             echo "::warning title=DNS mismatch::billing.mastrsys.com resolves to $DNS_IP but this workflow deployed to $DEPLOY_HOST — visitors are NOT seeing this deploy!"
           fi
-          # Not just "is it up" — the droplet must serve THIS commit's SHA
-          # (/health/live returns it), so a deploy to the wrong server or a
-          # container stuck on old code can never look green.
           for i in $(seq 1 20); do
             BODY=$(curl -fsSk --resolve "billing.mastrsys.com:443:$DEPLOY_HOST" --max-time 10 https://billing.mastrsys.com/health/live 2>/dev/null || true)
             if [ -n "$BODY" ]; then
               SERVED=$(printf '%s' "$BODY" | grep -o '"commit":"[a-f0-9]*"' | cut -d'"' -f4)
               if [ "$SERVED" = "$GITHUB_SHA" ]; then
-                echo "✅ Droplet $DEPLOY_HOST ($(getent hosts billing.mastrsys.com | awk '{print $1}' | head -1 || true) via DNS) is LIVE with commit $GITHUB_SHA"
+                echo "✅ Droplet $DEPLOY_HOST (DNS: ${DNS_IP:-?}) is LIVE with commit $GITHUB_SHA"
                 exit 0
               fi
-              echo "API up but serving commit '${SERVED:-none}' (expected $GITHUB_SHA) — waiting for the container to finish restarting…"
+              echo "API up but serving commit '${SERVED:-none}' (expected $GITHUB_SHA) — waiting…"
             fi
             sleep 6
           done
-          echo "::error::Droplet $DEPLOY_HOST is not serving commit $GITHUB_SHA — deploy буруу сервер эсвэл хуучин код ажилласаар байна."
+          echo "::error title=Wrong revision live::Droplet $DEPLOY_HOST is not serving commit $GITHUB_SHA — буруу сервер эсвэл хуучин код ажилласаар байна."
           exit 1

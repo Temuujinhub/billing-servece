@@ -36,7 +36,7 @@ export function PricingCalculator() {
               step={50}
               value={invoices}
               onChange={(e) => setInvoices(Number(e.target.value))}
-              className="w-full accent-teal-500"
+              className="w-full accent-indigo-600"
             />
           </div>
           <div>
@@ -50,16 +50,16 @@ export function PricingCalculator() {
               max={4}
               value={smsPerInvoice}
               onChange={(e) => setSmsPerInvoice(Number(e.target.value))}
-              className="w-full accent-teal-500"
+              className="w-full accent-indigo-600"
             />
-            <p className="mt-1 text-[12px] text-muted">Кирилл текст 70 тэмдэгт = 1 segment</p>
+            <p className="mt-1 text-[12px] text-slate-500">Кирилл текст 70 тэмдэгт = 1 segment</p>
           </div>
           <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-navy-800">
             <input
               type="checkbox"
               checked={ebarimt}
               onChange={(e) => setEbarimt(e.target.checked)}
-              className="h-4.5 w-4.5 accent-teal-500"
+              className="h-4.5 w-4.5 accent-indigo-600"
             />
             eBarimt холболт ({mnt(EBARIMT)}/сар)
           </label>
@@ -74,7 +74,7 @@ export function PricingCalculator() {
               max={10}
               value={pos}
               onChange={(e) => setPos(Number(e.target.value))}
-              className="w-full accent-teal-500"
+              className="w-full accent-indigo-600"
             />
           </div>
         </div>

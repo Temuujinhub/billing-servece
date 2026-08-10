@@ -69,12 +69,12 @@ async function main() {
   // membership in the demo tenant so the ordinary login flow works.
   await prisma.user.upsert({
     where: { email: 'admin@billingservice.mn' },
-    update: { isPlatformAdmin: true },
+    update: { platformAdmin: true },
     create: {
       email: 'admin@billingservice.mn',
       name: 'Платформын Админ',
       passwordHash: await bcrypt.hash('Admin123$', 12),
-      isPlatformAdmin: true,
+      platformAdmin: true,
       memberships: { create: { tenantId: tenant.id, role: 'VIEWER' } },
     },
   });
@@ -123,7 +123,7 @@ async function main() {
         balance: amount - paidAmount,
         state,
         dueDate: due,
-        sentAt: state === 'DRAFT' ? null : created,
+        sentAt: created,
         viewedAt: ['VIEWED', 'PAID', 'PARTIALLY_PAID'].includes(state) ? new Date(created.getTime() + 3600e3) : null,
         paidAt: state === 'PAID' ? new Date(created.getTime() + 2 * 864e5) : null,
         cancelledAt: state === 'CANCELLED' ? new Date(created.getTime() + 864e5) : null,

@@ -44,23 +44,23 @@ export default function ReceiptsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">eBarimt</h1>
-        <p className="mt-1 text-sm text-muted">
+        <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">eBarimt</h1>
+        <p className="mt-1 text-sm text-slate-500">
           {total.toLocaleString()} баримт
           {failed > 0 && <> · <span className="font-semibold text-red-600">{failed} амжилтгүй — дахин оролдоно уу</span></>}
         </p>
       </div>
 
-      {error && <ErrorNote message={error} />}
+      {error && <ErrorNote message={error} onRetry={() => window.location.reload()} />}
       {!items ? (
-        <PageLoader />
+        error ? null : <PageLoader />
       ) : items.length === 0 ? (
         <EmptyState title="Баримт үүсээгүй байна" hint="Төлбөр амжилттай болмогц eBarimt автоматаар үүснэ." />
       ) : (
         <div className="card overflow-hidden">
           <div className="scroll-thin overflow-x-auto">
             <table className="w-full min-w-[760px]">
-              <thead className="bg-navy-50/60">
+              <thead className="bg-slate-50/50">
                 <tr>
                   <th className="th">Огноо</th>
                   <th className="th">Нэхэмжлэх</th>
@@ -72,12 +72,12 @@ export default function ReceiptsPage() {
                   <th className="th"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line">
+              <tbody className="divide-y divide-slate-200/60">
                 {items.map((r) => (
-                  <tr key={r.id} className="transition hover:bg-navy-50/40">
-                    <td className="td text-muted">{dateTime(r.createdAt)}</td>
+                  <tr key={r.id} className="transition hover:bg-white/60">
+                    <td className="td text-slate-500">{dateTime(r.createdAt)}</td>
                     <td className="td">
-                      <Link href={`/invoices/${r.transaction.intent.invoice.id}`} className="font-semibold text-teal-700 hover:underline">
+                      <Link href={`/invoices/${r.transaction.intent.invoice.id}`} className="font-semibold text-indigo-700 hover:underline">
                         {r.transaction.intent.invoice.number}
                       </Link>
                     </td>

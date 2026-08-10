@@ -96,6 +96,6 @@ export class PaymentsController {
   @ApiBearerAuth()
   @Get('payments')
   list(@CurrentUser() user: AuthUser, @Query('take') take?: number, @Query('skip') skip?: number) {
-    return this.payments.list(user.tenantId, take ?? 50, skip ?? 0);
+    return this.payments.list(user.tenantId, Number(take) || 50, Number(skip) || 0);
   }
 }

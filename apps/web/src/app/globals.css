@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =============================================================================
+   billingservice.mn — Premium Fintech Glassmorphism design system.
+   Fusion of "Modern Clean Premium" (Wave) + high-end glass UI: soft gradient
+   canvas, floating glass cards, glossy glowing buttons, hover-reveal rows.
+   ========================================================================== */
+
 :root {
   color-scheme: light;
 }
@@ -12,11 +18,20 @@ html {
 }
 
 body {
-  @apply bg-surface text-ink font-sans;
+  @apply text-ink font-sans;
+  background:
+    radial-gradient(900px 460px at 85% -10%, rgba(99, 102, 241, 0.09), transparent 60%),
+    radial-gradient(700px 420px at -10% 30%, rgba(56, 189, 248, 0.08), transparent 55%),
+    linear-gradient(135deg, #f1f5f9 0%, #f8fafc 100%);
+  background-attachment: fixed;
+}
+
+h1, h2, h3 {
+  @apply tracking-tight;
 }
 
 ::selection {
-  @apply bg-teal-200 text-navy-900;
+  @apply bg-indigo-200 text-navy-900;
 }
 
 /* Thin, unobtrusive scrollbars for data tables */
@@ -25,38 +40,63 @@ body {
   width: 8px;
 }
 .scroll-thin::-webkit-scrollbar-thumb {
-  @apply rounded-full bg-navy-200;
+  @apply rounded-full bg-slate-300/70;
 }
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition
-      focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
+      transition-all duration-300 ease-out
+      focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2
       disabled:cursor-not-allowed disabled:opacity-50;
   }
+  /* Glossy gradient primary with inner highlight + soft glow on hover */
   .btn-primary {
-    @apply btn bg-teal-500 text-white shadow-cta hover:bg-teal-600 active:bg-teal-700;
+    @apply btn bg-gradient-to-br from-indigo-600 to-blue-500 text-white
+      shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_20px_-8px_rgba(79,70,229,0.5)]
+      hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_0_25px_rgba(79,70,229,0.45)]
+      hover:scale-[1.02] active:scale-[0.99];
   }
+  /* Fully glass secondary */
   .btn-secondary {
-    @apply btn border border-line bg-white text-navy-800 hover:border-navy-300 hover:bg-navy-50;
+    @apply btn border border-white/80 bg-white/40 text-slate-800 backdrop-blur-md
+      shadow-[0_4px_16px_-8px_rgba(15,23,42,0.12)] hover:bg-white/80 hover:scale-[1.01];
   }
   .btn-danger {
-    @apply btn border border-red-200 bg-white text-red-600 hover:bg-red-50;
+    @apply btn border border-red-200/80 bg-white/50 text-red-600 backdrop-blur-md
+      hover:bg-red-50/90 hover:shadow-[0_0_18px_rgba(239,68,68,0.18)];
   }
+  /* Floating glass card with hover-reveal illumination */
   .card {
-    @apply rounded-2xl border border-line bg-white shadow-card;
+    @apply rounded-3xl border border-white/60 bg-white/70 backdrop-blur-lg
+      shadow-[0_10px_40px_-15px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.6)]
+      transition-all duration-500
+      hover:border-indigo-500/40 hover:bg-white/80
+      hover:shadow-[0_16px_50px_-18px_rgba(79,70,229,0.18),inset_0_1px_0_rgba(255,255,255,0.7)];
   }
   .input {
-    @apply w-full rounded-lg border border-line bg-white px-3.5 py-2.5 text-sm text-ink placeholder:text-navy-300
-      focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100;
+    @apply w-full rounded-xl border border-white/80 bg-white/60 px-3.5 py-2.5 text-sm text-ink
+      backdrop-blur-md placeholder:text-slate-400 shadow-[inset_0_1px_2px_rgba(15,23,42,0.03)]
+      transition-all duration-300
+      focus:border-indigo-400 focus:bg-white/90 focus:outline-none focus:ring-2 focus:ring-indigo-200/70;
   }
   .label {
-    @apply mb-1.5 block text-[13px] font-medium text-navy-600;
+    @apply mb-1.5 block text-[13px] font-semibold tracking-tight text-slate-600;
   }
   .th {
-    @apply px-4 py-3 text-left text-[12px] font-semibold uppercase tracking-wide text-muted;
+    @apply px-4 py-3 text-left text-[11.5px] font-bold uppercase tracking-[0.08em] text-slate-500;
   }
   .td {
-    @apply px-4 py-3.5 text-sm text-navy-800;
+    @apply px-4 py-3.5 text-sm text-slate-800;
+  }
+  /* Sleek glass-pill hover reveal for data rows */
+  .card tbody tr {
+    @apply transition-all duration-300;
+  }
+  .card tbody tr:hover {
+    @apply bg-white/60 backdrop-blur-sm;
+  }
+  .card thead {
+    @apply bg-slate-50/50;
   }
 }

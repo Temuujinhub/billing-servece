@@ -57,6 +57,11 @@ export class CreateInvoiceDto {
   @IsOptional()
   @IsBoolean()
   send?: boolean;
+
+  /** Create an eBarimt receipt after payment (default true; module must be on). */
+  @IsOptional()
+  @IsBoolean()
+  ebarimt?: boolean;
 }
 
 export class ListInvoicesDto {

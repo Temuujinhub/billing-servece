@@ -46,38 +46,70 @@ model Tenant {
   type          TenantType   @default(ORGANIZATION)
   name          String
   regNo         String?
+  // Татвар төлөгчийн дугаар (ТТД) — resolved from api.ebarimt.mn by regNo.
+  tin           String?
   status        TenantStatus @default(ACTIVE)
   kybStatus     KybStatus    @default(DRAFT)
   invoicePrefix String       @default("INV")
   timezone      String       @default("Asia/Ulaanbaatar")
   contactEmail  String?
   contactPhone  String?
-  // --- PSP onboarding (Bonum anket §: байгууллагын мэдээлэл) ---
+  // KYB onboarding details (M-03) + PSP onboarding (Bonum anket)
   address         String?
   bankName        String?
-  bankAccountNo   String?
+  bankAccount     String?
   bankAccountName String?
+  representative  String?
   // --- eBarimt POS API 3.0 (ТЕГ-т бүртгэлтэй ӨӨРИЙН merchantTin/posNo) ---
   ebarimtMerchantTin  String?
   ebarimtPosNo        String?
   ebarimtBranchNo     String?
   ebarimtDistrictCode String?
+  // ТЕГ-ийн бүртгэлээс (getInfo?tin=) татсан татварын төлөв. Баримтын taxType
+  // үүнээс шалтгаална — НӨАТ суутган төлөгч биш байгууллагад 10% бодохгүй.
+  ebarimtVatPayer      Boolean?
+  ebarimtVatFreeProj   Boolean?
+  ebarimtCityPayer     Boolean?
   // --- Bonum merchant credentials (per tenant; secrets AES-256-GCM encrypted) ---
   bonumTerminalId     String?
   bonumAppSecretEnc   String?
   bonumChecksumKeyEnc String?
+  // Custom payer SMS template with {{нэр}} {{дүн}} {{дугаар}} {{хугацаа}} {{линк}} {{байгууллага}} vars.
+  smsTemplate   String?
+  // Send SMS transliterated to Latin (GSM-7: 160 chars/segment vs 70 — ~half the cost).
+  smsTransliterate Boolean @default(false)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  memberships  Membership[]
-  customers    Customer[]
-  invoices     Invoice[]
-  batches      InvoiceBatch[]
-  modules      TenantModule[]
-  usageEvents  UsageEvent[]
-  auditLogs    AuditLog[]
-  invoiceSeq   InvoiceSequence?
+  memberships     Membership[]
+  customers       Customer[]
+  invoices        Invoice[]
+  batches         InvoiceBatch[]
+  modules         TenantModule[]
+  usageEvents     UsageEvent[]
+  auditLogs       AuditLog[]
+  invoiceSeq      InvoiceSequence?
+  providerConfigs ProviderConfig[]
+  apiKeys         ApiKey[]
+  webhooks        WebhookEndpoint[]
   integrationRequests IntegrationRequest[]
+}
+
+/// Tenant-level external provider settings (QPAY, CALLPRO). Secret fields
+/// inside `config` are AES-256-GCM encrypted before storage; the env vars act
+/// as a platform-wide fallback when no row exists.
+model ProviderConfig {
+  id        String   @id @default(uuid())
+  tenantId  String
+  code      String // QPAY | CALLPRO
+  enabled   Boolean  @default(false)
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, code])
 }
 
 enum Role {
@@ -88,15 +120,15 @@ enum Role {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  phone        String?
-  name         String
-  passwordHash String
-  // Platform staff: sees ALL tenants' integration requests (/admin/*).
-  isPlatformAdmin Boolean @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default(uuid())
+  email         String   @unique
+  phone         String?
+  name          String
+  passwordHash  String
+  // Platform-operator access: sees the admin area (production column: "platformAdmin").
+  platformAdmin Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   memberships   Membership[]
   refreshTokens RefreshToken[]
@@ -264,6 +296,10 @@ model Invoice {
   viewedAt    DateTime?
   paidAt      DateTime?
   cancelledAt DateTime?
+  // Per-invoice opt-in: create an eBarimt receipt after payment (module must also be on).
+  ebarimtEnabled Boolean   @default(true)
+  remindersSent  Int       @default(0)
+  lastReminderAt DateTime?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -379,16 +415,18 @@ enum TxStatus {
 }
 
 model PaymentTransaction {
-  id                String   @id @default(uuid())
+  id                String    @id @default(uuid())
   intentId          String
   provider          String
   providerPaymentId String
   gross             Int
-  fee               Int      @default(0)
+  fee               Int       @default(0)
   net               Int
-  status            TxStatus @default(SUCCEEDED)
-  paidAt            DateTime @default(now())
-  createdAt         DateTime @default(now())
+  status            TxStatus  @default(SUCCEEDED)
+  paidAt            DateTime  @default(now())
+  refundedAt        DateTime?
+  refundReason      String?
+  createdAt         DateTime  @default(now())
 
   intent   PaymentIntent   @relation(fields: [intentId], references: [id])
   receipts EbarimtReceipt[]
@@ -487,6 +525,79 @@ model IdempotencyKey {
   createdAt   DateTime @default(now())
 
   @@unique([tenantId, key])
+}
+
+// Scoped partner API keys (M-22 / PRD §9.2): only the SHA-256 hash is stored.
+model ApiKey {
+  id        String    @id @default(uuid())
+  tenantId  String
+  name      String
+  prefix    String // "bsk_XXXX" shown in UI
+  keyHash   String    @unique
+  last4     String
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
+
+// Merchant outbound webhooks (PRD §9.3) — HMAC-signed, at-least-once.
+model WebhookEndpoint {
+  id         String    @id @default(uuid())
+  tenantId   String
+  url        String
+  secret     String // HMAC signing secret (shown once at creation)
+  events     Json // ["payment.succeeded", "receipt.created", ...]
+  active     Boolean   @default(true)
+  lastStatus Int?
+  lastAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
+
+// Platform-wide key-value settings: pricing, feature flags (admin-editable).
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+enum IncidentStatus {
+  OPEN
+  MONITORING
+  RESOLVED
+}
+
+model Incident {
+  id         String         @id @default(uuid())
+  title      String
+  severity   String         @default("SEV3") // SEV1..SEV4
+  status     IncidentStatus @default(OPEN)
+  note       String?
+  createdBy  String?
+  createdAt  DateTime       @default(now())
+  resolvedAt DateTime?
+
+  @@index([status, createdAt])
+}
+
+// Admin-triggered ledger-vs-provider verification sweep (PRD A-12/13).
+model ReconciliationRun {
+  id          String   @id @default(uuid())
+  provider    String
+  periodStart DateTime
+  periodEnd   DateTime
+  total       Int      @default(0)
+  matched     Int      @default(0)
+  mismatched  Int      @default(0)
+  items       Json // [{intentId, invoiceNumber, tenantName, issue, gross}]
+  createdBy   String?
+  createdAt   DateTime @default(now())
 }
 
 model AuditLog {

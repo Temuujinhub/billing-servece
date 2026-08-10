@@ -36,8 +36,8 @@ export function AreaChart({
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label="Сүүлийн 30 хоногийн төлөлт">
         <defs>
           <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#12A186" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#12A186" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="#6366F1" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#6366F1" stopOpacity="0.02" />
           </linearGradient>
         </defs>
         {[0.25, 0.5, 0.75].map((f) => (
@@ -47,15 +47,15 @@ export function AreaChart({
             x2={pad.left + w}
             y1={pad.top + h * f}
             y2={pad.top + h * f}
-            stroke="#E5EAF0"
+            stroke="rgba(148,163,184,0.3)"
             strokeDasharray="3 5"
           />
         ))}
         {data.length > 0 && (
           <>
             <path d={area} fill="url(#areaFill)" />
-            <path d={line} fill="none" stroke="#12A186" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-            {pts.length > 0 && <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="4" fill="#12A186" stroke="#fff" strokeWidth="2" />}
+            <path d={line} fill="none" stroke="#6366F1" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+            {pts.length > 0 && <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="4" fill="#6366F1" stroke="#fff" strokeWidth="2" />}
           </>
         )}
         {data.length > 0 && (
@@ -70,7 +70,7 @@ export function AreaChart({
         )}
       </svg>
       {peak && peak.amount > 0 && (
-        <p className="mt-1 text-right text-[12px] text-muted">
+        <p className="mt-1 text-right text-[12px] text-slate-500">
           Оргил: {peak.date.slice(5)} — <span className="font-semibold text-navy-800">{formatValue(peak.amount)}</span>
         </p>
       )}
@@ -100,7 +100,7 @@ export function Donut({
   return (
     <div className="flex items-center gap-5">
       <svg width={size} height={size} viewBox="0 0 160 160" role="img" aria-label={centerLabel}>
-        <circle cx="80" cy="80" r={r} fill="none" stroke="#EDF1F5" strokeWidth="18" />
+        <circle cx="80" cy="80" r={r} fill="none" stroke="rgba(148,163,184,0.2)" strokeWidth="18" />
         {segments.map((s) => {
           const frac = s.value / total;
           const dash = `${frac * c} ${c}`;

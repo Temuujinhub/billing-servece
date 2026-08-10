@@ -18,6 +18,17 @@ export const envValidationSchema = Joi.object({
   CORS_ORIGINS: Joi.string().default('http://localhost:3000'),
   PAYMENT_SANDBOX: Joi.string().valid('true', 'false').default('true'),
   SEED_ON_START: Joi.string().valid('true', 'false').default('false'),
+  // Comma-separated emails that get platform-admin access on login.
+  ADMIN_EMAILS: Joi.string().allow('').default(''),
+  // Legacy alias of ADMIN_EMAILS — existing server .env files use this name.
+  PLATFORM_ADMIN_EMAILS: Joi.string().allow('').default(''),
+  // One-time admin account provisioning (never stored in the repo).
+  ADMIN_BOOTSTRAP_EMAIL: Joi.string().email().allow('').default(''),
+  ADMIN_BOOTSTRAP_PASSWORD: Joi.string().allow('').default(''),
+  // Партнёрын ажилтнуудын имэйл (таслалаар) — нэвтрэхэд нь зөвхөн өөрт
+  // хамаарах бүртгэлийн хүсэлтүүдийг харах/шийдэх эрх нээгдэнэ.
+  PARTNER_BONUM_EMAILS: Joi.string().allow('').default(''),
+  PARTNER_EBARIMT_EMAILS: Joi.string().allow('').default(''),
 
   // --- Payment provider selection (real credentials only via droplet .env) ---
   PAYMENT_PROVIDER: Joi.string().valid('qpay_mock', 'qpay', 'bonum').default('qpay_mock'),
@@ -38,22 +49,29 @@ export const envValidationSchema = Joi.object({
 
   // --- eBarimt provider: mock | qpay (bundled) | posapi (ТЕГ POS API 3.0 local) ---
   EBARIMT_PROVIDER: Joi.string().valid('mock', 'qpay', 'posapi').default('mock'),
-  // POS API 3.0 instance (LIME hosted: https://vat.onlime.mn) — NOT the public ТЕГ API.
+  // Local POS API 3.0 instance (LIME-ээр суулгасан) — NOT the public ТЕГ API.
   VAT_BASE_URL: Joi.string().uri().when('EBARIMT_PROVIDER', { is: 'posapi', then: Joi.required(), otherwise: Joi.optional().allow('') }),
   // Env defaults; tenants override via ebarimtMerchantTin/ebarimtPosNo fields.
   EBARIMT_MERCHANT_TIN: Joi.string().optional().allow(''),
-  // Optional — auto-discovered from GET {VAT_BASE_URL}/rest/info when empty.
   EBARIMT_POS_NO: Joi.string().optional().allow(''),
   EBARIMT_BRANCH_NO: Joi.string().default('001'),
-  EBARIMT_DISTRICT_CODE: Joi.string().default('2315'),
+  EBARIMT_DISTRICT_CODE: Joi.string().default('3505'),
   EBARIMT_CLASSIFICATION_CODE: Joi.string().default('6499999'),
-  EBARIMT_BILL_ID_SUFFIX: Joi.string().default('01'),
-  // Force a payments[].code; empty = auto (qpay → BANK_TRANSFER_QPAY, else PAYMENT_CARD).
-  EBARIMT_PAYMENT_CODE: Joi.string().optional().allow(''),
-
-  // Платформын админууд — таслалаар тусгаарласан имэйлүүд; нэвтрэх үед
-  // isPlatformAdmin эрх автоматаар олгогдоно (production-д seed ажиллахгүй тул).
-  PLATFORM_ADMIN_EMAILS: Joi.string().optional().allow(''),
+  // Сугалаа/QR-ийг хэдэн цаг хадгалах вэ. ТЕГ-ийн заавраар эдгээрийг баримтанд
+  // хэвлэхээс өөрөөр хадгалахыг хориглодог тул хугацаа дуусмагц NULL болгоно.
+  // 0 = огт хадгалахгүй (баримт үүсмэгц цэвэрлэнэ).
+  EBARIMT_QR_RETENTION_HOURS: Joi.number().min(0).default(72),
+  // --- ТЕГ операторын сервис (оператороос мерчант бүртгүүлэх хүсэлт) ---
+  // Түлхүүрийг Posapi@itc.gov.mn-ээс авна. Тохируулаагүй бол зөвхөн энэ товч
+  // идэвхгүй болно — бусад онбординг хэвийн үргэлжилнэ.
+  EBARIMT_OPR_BASE_URL: Joi.string().uri().default('https://api.ebarimt.mn'),
+  EBARIMT_OPR_API_KEY: Joi.string().optional().allow(''),
+  EBARIMT_OPR_POS_NO: Joi.string().optional().allow(''),
+  // Bearer токен: тогтмолоор эсвэл нэгдсэн нэвтрэлтээр (client_credentials).
+  EBARIMT_OPR_TOKEN: Joi.string().optional().allow(''),
+  EBARIMT_OIDC_TOKEN_URL: Joi.string().uri().optional().allow(''),
+  EBARIMT_OIDC_CLIENT_ID: Joi.string().optional().allow(''),
+  EBARIMT_OIDC_CLIENT_SECRET: Joi.string().optional().allow(''),
 
   // --- Email provider (onboarding хүсэлт Bonum/LIME рүү илгээх) ---
   EMAIL_PROVIDER: Joi.string().valid('mock', 'smtp').default('mock'),

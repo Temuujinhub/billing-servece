@@ -100,9 +100,17 @@ async function tryRefresh(): Promise<boolean> {
   return refreshing;
 }
 
-/** Authenticated request with automatic refresh-once-then-redirect. */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Authenticated request with automatic refresh-once-then-redirect.
+ * Read-only requests (GET) additionally retry once on 5xx/network failure —
+ * this rides out the brief API restart during a deploy instead of surfacing
+ * a scary error for a 2-second blip.
+ */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? localStorage.getItem(LS_ACCESS) : null;
+  const isRead = !init.method || init.method.toUpperCase() === 'GET';
   try {
     return await rawRequest<T>(path, init, token);
   } catch (e) {
@@ -112,6 +120,12 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
         return rawRequest<T>(path, init, localStorage.getItem(LS_ACCESS));
       }
       window.location.href = '/login';
+      throw e;
+    }
+    const retryable = isRead && (!(e instanceof ApiError) || e.status >= 500);
+    if (retryable && typeof window !== 'undefined') {
+      await sleep(1500);
+      return rawRequest<T>(path, init, localStorage.getItem(LS_ACCESS));
     }
     throw e;
   }

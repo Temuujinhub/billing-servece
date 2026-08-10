@@ -54,6 +54,14 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://billing.mastrsys.com}
       PAYMENT_SANDBOX: ${PAYMENT_SANDBOX:-true}
       SEED_ON_START: ${SEED_ON_START:-false}
+      # Comma-separated emails that get the /admin area on login
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      # Legacy alias — existing server .env files set this name; both work.
+      PLATFORM_ADMIN_EMAILS: ${PLATFORM_ADMIN_EMAILS:-}
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      PARTNER_BONUM_EMAILS: ${PARTNER_BONUM_EMAILS:-}
+      PARTNER_EBARIMT_EMAILS: ${PARTNER_EBARIMT_EMAILS:-}
       # Provider selection — real credentials live only in the droplet's .env
       PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-qpay_mock}
       QPAY_BASE_URL: ${QPAY_BASE_URL:-https://merchant.qpay.mn}
@@ -66,18 +74,13 @@ services:
       BONUM_CHECKSUM_KEY: ${BONUM_CHECKSUM_KEY:-}
       BONUM_LANG: ${BONUM_LANG:-mn}
       BONUM_LINK_TTL_MINUTES: ${BONUM_LINK_TTL_MINUTES:-60}
-      # eBarimt — LIME-ийн POS API 3.0 instance-ээр production-д шууд ажиллана.
-      # posNo нь /rest/info-оос автоматаар танигдана (шаардлагатай бол override).
-      EBARIMT_PROVIDER: ${EBARIMT_PROVIDER:-posapi}
-      VAT_BASE_URL: ${VAT_BASE_URL:-https://vat.onlime.mn}
-      EBARIMT_MERCHANT_TIN: ${EBARIMT_MERCHANT_TIN:-37900846788}
+      EBARIMT_PROVIDER: ${EBARIMT_PROVIDER:-mock}
+      VAT_BASE_URL: ${VAT_BASE_URL:-}
+      EBARIMT_MERCHANT_TIN: ${EBARIMT_MERCHANT_TIN:-}
       EBARIMT_POS_NO: ${EBARIMT_POS_NO:-}
       EBARIMT_BRANCH_NO: ${EBARIMT_BRANCH_NO:-001}
-      EBARIMT_DISTRICT_CODE: ${EBARIMT_DISTRICT_CODE:-2315}
+      EBARIMT_DISTRICT_CODE: ${EBARIMT_DISTRICT_CODE:-3505}
       EBARIMT_CLASSIFICATION_CODE: ${EBARIMT_CLASSIFICATION_CODE:-6499999}
-      EBARIMT_BILL_ID_SUFFIX: ${EBARIMT_BILL_ID_SUFFIX:-01}
-      EBARIMT_PAYMENT_CODE: ${EBARIMT_PAYMENT_CODE:-}
-      PLATFORM_ADMIN_EMAILS: ${PLATFORM_ADMIN_EMAILS:-}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-mock}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}

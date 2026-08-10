@@ -1,8 +1,39 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { formatMnt, smsSegments } from '../../common/utils';
+import { formatMnt, smsSegments, transliterateMn } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
-import { SMS_PORT, SmsPort } from '../providers/sms.port';
+import { ProviderResolver } from '../providers/provider-resolver.service';
+
+export const DEFAULT_SMS_TEMPLATE =
+  '{{байгууллага}}: Танд {{дүн}} нэхэмжлэх ирлээ{{хугацаа}}. Төлөх: {{линк}}';
+
+export interface SmsTemplateContext {
+  tenantName: string;
+  customerName: string;
+  invoiceNumber: string;
+  amount: number;
+  payUrl: string;
+  dueDate?: Date | null;
+}
+
+/**
+ * Renders the tenant's custom SMS template (Settings → Мессежийн загвар).
+ * Supported variables: {{байгууллага}} {{нэр}} {{дугаар}} {{дүн}} {{хугацаа}} {{линк}}.
+ * {{линк}} is mandatory — enforced at save time; appended defensively here too.
+ */
+export function renderSmsTemplate(template: string | null | undefined, ctx: SmsTemplateContext): string {
+  const tpl = template?.trim() || DEFAULT_SMS_TEMPLATE;
+  const due = ctx.dueDate ? `, хугацаа: ${ctx.dueDate.toISOString().slice(0, 10)}` : '';
+  let out = tpl
+    .replaceAll('{{байгууллага}}', ctx.tenantName)
+    .replaceAll('{{нэр}}', ctx.customerName)
+    .replaceAll('{{дугаар}}', ctx.invoiceNumber)
+    .replaceAll('{{дүн}}', formatMnt(ctx.amount))
+    .replaceAll('{{хугацаа}}', due)
+    .replaceAll('{{линк}}', ctx.payUrl);
+  if (!out.includes(ctx.payUrl)) out = `${out} ${ctx.payUrl}`;
+  return out.slice(0, 480); // hard cap ≈ 7 UCS-2 segments
+}
 
 /**
  * SMS dispatch. Jobs are QUEUED inside the caller's DB transaction (so the
@@ -17,13 +48,8 @@ export class MessagingService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(SMS_PORT) private readonly sms: SmsPort,
+    private readonly resolver: ProviderResolver,
   ) {}
-
-  buildInvoiceSms(opts: { tenantName: string; amount: number; payUrl: string; dueDate?: Date | null }): string {
-    const due = opts.dueDate ? `, хугацаа: ${opts.dueDate.toISOString().slice(0, 10)}` : '';
-    return `${opts.tenantName}: Танд ${formatMnt(opts.amount)} нэхэмжлэх ирлээ${due}. Төлөх: ${opts.payUrl}`;
-  }
 
   /**
    * Queue an SMS inside the caller's transaction and meter the segments
@@ -33,14 +59,21 @@ export class MessagingService {
     tx: Prisma.TransactionClient,
     opts: { tenantId: string; invoiceId?: string; recipient: string; body: string },
   ) {
-    const segments = smsSegments(opts.body);
+    // Tenant opt-in: transliterate to Latin so the SMS packs GSM-7 segments
+    // (160/153 chars) instead of UCS-2 (70/67) — roughly half the cost.
+    const tenant = await tx.tenant.findUnique({
+      where: { id: opts.tenantId },
+      select: { smsTransliterate: true },
+    });
+    const body = tenant?.smsTransliterate ? transliterateMn(opts.body) : opts.body;
+    const segments = smsSegments(body);
     const job = await tx.messageJob.create({
       data: {
         tenantId: opts.tenantId,
         invoiceId: opts.invoiceId,
         channel: 'sms',
         recipient: opts.recipient,
-        body: opts.body,
+        body,
         segments,
         status: 'QUEUED',
       },
@@ -61,6 +94,7 @@ export class MessagingService {
    * has committed. Never throws — submission failures are recorded per-job.
    */
   async dispatchQueued(tenantId: string): Promise<{ submitted: number; failed: number }> {
+    const sms = await this.resolver.getSmsPort(tenantId);
     const jobs = await this.prisma.messageJob.findMany({
       where: { tenantId, status: 'QUEUED' },
       orderBy: { createdAt: 'asc' },
@@ -76,7 +110,7 @@ export class MessagingService {
       });
       if (claimed.count === 0) continue;
       try {
-        const result = await this.sms.send({ to: job.recipient, text: job.body });
+        const result = await sms.send({ tenantId, to: job.recipient, text: job.body });
         await this.prisma.messageJob.update({
           where: { id: job.id },
           data: {
@@ -96,8 +130,52 @@ export class MessagingService {
       }
     }
     if (jobs.length > 0) {
-      this.logger.log(`SMS dispatch: ${submitted} submitted, ${failed} failed (provider=${this.sms.code})`);
+      this.logger.log(`SMS dispatch: ${submitted} submitted, ${failed} failed (provider=${sms.code})`);
     }
     return { submitted, failed };
+  }
+
+  /**
+   * Poll SUBMITTED jobs for their delivery outcome (CallPro message-detail).
+   * SMS providers confirm delivery asynchronously, so a job would otherwise sit
+   * at SUBMITTED forever. Safe to call repeatedly — never throws, and only
+   * touches jobs the provider gave us a reference for.
+   */
+  async refreshDeliveryStatus(tenantId: string, take = 100): Promise<{ delivered: number; undelivered: number; pending: number }> {
+    const sms = await this.resolver.getSmsPort(tenantId);
+    if (!sms.getStatus) return { delivered: 0, undelivered: 0, pending: 0 };
+
+    const jobs = await this.prisma.messageJob.findMany({
+      where: { tenantId, status: 'SUBMITTED', providerRef: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(take, 200),
+    });
+    let delivered = 0;
+    let undelivered = 0;
+    let pending = 0;
+    for (const job of jobs) {
+      try {
+        const status = await sms.getStatus(tenantId, job.providerRef!);
+        if (status.state === 'DELIVERED') {
+          await this.prisma.messageJob.updateMany({
+            where: { id: job.id, status: 'SUBMITTED' },
+            data: { status: 'DELIVERED', error: null },
+          });
+          delivered += 1;
+        } else if (status.state === 'UNDELIVERED') {
+          await this.prisma.messageJob.updateMany({
+            where: { id: job.id, status: 'SUBMITTED' },
+            data: { status: 'FAILED', error: 'Оператор мессежийг хүргэж чадсангүй (UNDELIVERED).' },
+          });
+          undelivered += 1;
+        } else {
+          pending += 1;
+        }
+      } catch (e: any) {
+        pending += 1;
+        this.logger.warn(`SMS status poll failed for job ${job.id}: ${e?.message}`);
+      }
+    }
+    return { delivered, undelivered, pending };
   }
 }
