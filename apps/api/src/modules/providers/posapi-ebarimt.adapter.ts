@@ -23,6 +23,10 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
   private registeredTins: Set<string> | null = null;
   /** Операторын POS дугаар (/rest/info) — posNo тохируулаагүй үеийн fallback. */
   private instancePosNo: string | null = null;
+  /** Top-түвшний merchants[] (баримт багцын эзэн байж чадах TIN-үүд). */
+  private merchantTins: Set<string> | null = null;
+  /** Борлуулагч TIN → түүнийг агуулж буй top-түвшний merchant-ийн TIN. */
+  private sellerParent: Map<string, string> | null = null;
   private infoFlight: Promise<Set<string> | null> | null = null;
 
   constructor(private readonly config: ConfigService) {}
@@ -82,28 +86,43 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
   async instanceInfo(): Promise<PosApiInstanceInfo> {
     const body = await this.info();
     const merchants: { name: string | null; tin: string }[] = [];
+    // Борлуулагч = merchants[] өөрсдөө + тэдгээрийн customers[]. LIME-ийн
+    // vat.onlime.mn дээр гэрээт компаниуд (Медиапрофессионал г.м) операторын
+    // ГАНЦ merchant-ийн customers дотор бүртгэгддэг — тэд өөрсдөө top-түвшний
+    // merchant БИШ ч энэ POS-оор баримт олгох эрхтэй.
+    const sellers = new Map<string, { name: string | null; viaMerchantTin: string }>();
     for (const m of Array.isArray(body?.merchants) ? body.merchants : []) {
       const tin = str(m?.tin) ?? str(m?.merchantTin);
-      if (tin) merchants.push({ name: str(m?.name), tin });
+      if (!tin) continue;
+      merchants.push({ name: str(m?.name), tin });
+      if (!sellers.has(tin)) sellers.set(tin, { name: str(m?.name), viaMerchantTin: tin });
+      for (const c of Array.isArray(m?.customers) ? m.customers : []) {
+        const ctin = str(c?.tin);
+        if (ctin && !sellers.has(ctin)) sellers.set(ctin, { name: str(c?.name), viaMerchantTin: tin });
+      }
     }
     // Кэшийг зэрэг шинэчилнэ (баримт үүсгэхийн өмнөх хамгаалалт үүнийг уншдаг).
-    this.registeredTins = new Set(merchants.map((m) => m.tin));
+    this.registeredTins = new Set(sellers.keys());
+    this.sellerParent = new Map(Array.from(sellers, ([tin, v]) => [tin, v.viaMerchantTin]));
+    this.merchantTins = new Set(merchants.map((m) => m.tin));
     this.instancePosNo = str(body?.posNo);
     return {
       operatorName: str(body?.operatorName),
       operatorTin: str(body?.operatorTIN) ?? str(body?.operatorTin),
       posNo: this.instancePosNo,
       merchants,
+      sellers: Array.from(sellers, ([tin, v]) => ({ tin, name: v.name, viaMerchantTin: v.viaMerchantTin })),
     };
   }
 
   /**
    * Админы «Холболт шалгах»: /rest/info-г ШИНЭЭР татаад тухайн компанийн
-   * merchantTin энэ POS дээр бүртгэгдсэн эсэхийг хэлнэ.
+   * merchantTin энэ POS дээр (merchant эсвэл операторын customer-ээр)
+   * бүртгэгдсэн эсэхийг хэлнэ.
    */
   async checkRegistration(merchantTin?: string | null): Promise<{ tins: string[]; registered: boolean | null }> {
     const info = await this.instanceInfo();
-    const tins = info.merchants.map((m) => m.tin);
+    const tins = info.sellers.map((s) => s.tin);
     if (!merchantTin) return { tins, registered: null };
     // Хоосон жагсаалт нь "мэдэхгүй" — instance нь мерчантуудаа ил гаргаагүй байж болно.
     return { tins, registered: tins.length === 0 ? null : tins.includes(merchantTin) };
@@ -111,9 +130,10 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
 
   /**
    * Онбордингийн сүүлийн алхам: мерчант ebarimt.mn дээрээ операторын хүсэлтийг
-   * баталгаажуулмагц түүний ТТД энэ instance-ийн `merchants` жагсаалтад гарч
-   * ирдэг. Тэр үед л уг мерчант операторын `posNo` дээр баримт хэвлэх эрхтэй
-   * болно — тиймээс posNo-г хэрэглэгчээр бичүүлэхгүй, эндээс шууд олгоно.
+   * баталгаажуулмагц түүний ТТД энэ instance-ийн бүртгэлд (merchants эсвэл
+   * операторын customers) гарч ирдэг. Тэр үед л уг компани операторын `posNo`
+   * дээр баримт хэвлэх эрхтэй болно — posNo-г хэрэглэгчээр бичүүлэхгүй,
+   * эндээс шууд олгоно.
    */
   async discoverRegistration(merchantTin?: string | null): Promise<{
     posNo: string | null;
@@ -122,20 +142,20 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
     merchants: { name: string | null; tin: string }[];
   }> {
     const info = await this.instanceInfo();
-    const matched = Boolean(merchantTin && info.merchants.some((m) => m.tin === merchantTin));
-    return { posNo: info.posNo, matched, merchants: info.merchants };
+    const matched = Boolean(merchantTin && info.sellers.some((s) => s.tin === merchantTin));
+    // Жагсаалтад борлуулагчдыг (операторын customers орсон) буцаана — админ UI
+    // "хэн бүртгэлтэй вэ"-г үүгээр харуулдаг.
+    return { posNo: info.posNo, matched, merchants: info.sellers.map((s) => ({ name: s.name, tin: s.tin })) };
   }
 
-  /** Lazily collect registered TINs; null = info unavailable (don't block). */
+  /** Lazily collect registered seller TINs; null = info unavailable (don't block). */
   private async getRegisteredTins(): Promise<Set<string> | null> {
     if (this.registeredTins) return this.registeredTins;
     if (!this.infoFlight) {
       this.infoFlight = this.instanceInfo()
         .then((info) => {
-          const tins = new Set(info.merchants.map((m) => m.tin));
-          this.registeredTins = tins;
-          this.logger.log(`POS API ready — POS ${info.posNo ?? '?'}, ${tins.size} merchant(s)`);
-          return tins;
+          this.logger.log(`POS API ready — POS ${info.posNo ?? '?'}, ${info.merchants.length} merchant(s), ${info.sellers.length} seller(s)`);
+          return this.registeredTins;
         })
         .catch((e) => {
           this.logger.warn(`POS API /rest/info unavailable: ${e?.message}`);
@@ -158,8 +178,24 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
     const tins = await this.getRegisteredTins();
     if (tins && tins.size > 0 && !tins.has(merchant.merchantTin)) {
       throw new Error(
-        `merchantTin ${merchant.merchantTin} is not registered on the POS API instance (${this.baseUrl}/rest/info) — register the company first`,
+        `merchantTin ${merchant.merchantTin} is not registered on the POS API instance (${this.baseUrl}/rest/info: merchants + customers аль алинд нь алга) — register the company first`,
       );
+    }
+
+    // Оператор-дамжуулсан загвар (LIME vat.onlime.mn): гэрээт компани нь
+    // top-түвшний merchant БИШ, операторын merchant-ийн customer байдаг.
+    // Тэр үед багцын (top) merchantTin = ОПЕРАТОРЫН TIN, дэд баримтын
+    // merchantTin = БОРЛУУЛАГЧ компанийн TIN байж баримт амжилттай гардаг
+    // (LIME-ийн ажиллаж буй жишээ кодтой ижил). Өөрөө top merchant бол
+    // хоёр түвшинд өөрийн TIN явна.
+    const sellerTin = merchant.merchantTin;
+    let batchTin = sellerTin;
+    if (this.merchantTins && !this.merchantTins.has(sellerTin)) {
+      const parent = this.sellerParent?.get(sellerTin);
+      if (parent) {
+        batchTin = parent;
+        this.logger.log(`eBarimt operator-mediated receipt: batch=${batchTin} (оператор), seller=${sellerTin}`);
+      }
     }
 
     const total = round2(args.amount);
@@ -199,7 +235,9 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
       totalVat: vat,
       totalCityTax: 0,
       districtCode: merchant.districtCode,
-      merchantTin: merchant.merchantTin,
+      // Багцын эзэн: өөрөө merchant бол өөрийн TIN, операторын customer бол
+      // операторын TIN (дэд баримт нь борлуулагчийн TIN-ийг агуулна).
+      merchantTin: batchTin,
       posNo: merchant.posNo,
       customerTin: isB2B ? args.customerTin : null,
       consumerNo: null,
@@ -212,7 +250,7 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
       receipts: [
         {
           taxType,
-          merchantTin: merchant.merchantTin,
+          merchantTin: sellerTin,
           customerTin: isB2B ? args.customerTin : null,
           totalAmount: total,
           totalVAT: vat,
@@ -278,7 +316,10 @@ export interface PosApiInstanceInfo {
   operatorName: string | null;
   operatorTin: string | null;
   posNo: string | null;
+  /** Top-түвшний merchants[] — баримт багцын эзэн байж чадах TIN-үүд. */
   merchants: { name: string | null; tin: string }[];
+  /** Баримт олгох эрхтэй БҮХ TIN: merchants + тэдгээрийн customers. */
+  sellers: { name: string | null; tin: string; viaMerchantTin: string }[];
 }
 
 function str(v: unknown): string | null {
