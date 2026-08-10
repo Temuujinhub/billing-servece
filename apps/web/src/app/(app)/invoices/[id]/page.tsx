@@ -65,7 +65,14 @@ export default function InvoiceDetailPage() {
   timeline.push({ ts: inv.createdAt, label: 'Нэхэмжлэх үүсгэсэн' });
   if (inv.sentAt) timeline.push({ ts: inv.sentAt, label: 'Илгээсэн (SMS + линк)' });
   for (const job of inv.messageJobs) {
-    timeline.push({ ts: job.createdAt, label: `SMS → ${job.recipient} · ${job.segments} segment · ${MESSAGE_STATE_MN[job.status] ?? job.status}` });
+    // Failed sends carry the provider's error — show it, "Амжилтгүй" alone
+    // gives the operator nothing to act on.
+    const failReason = job.status === 'FAILED' && job.error ? ` — ${job.error.slice(0, 160)}` : '';
+    timeline.push({
+      ts: job.createdAt,
+      label: `SMS → ${job.recipient} · ${job.segments} segment · ${MESSAGE_STATE_MN[job.status] ?? job.status}${failReason}`,
+      tone: job.status === 'FAILED' ? 'text-red-600' : undefined,
+    });
   }
   for (const intent of inv.intents) {
     for (const ev of intent.events) {

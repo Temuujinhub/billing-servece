@@ -90,7 +90,7 @@ jobs:
             SSH="ssh -i $HOME/.ssh/deploy_key -p $DEPLOY_PORT -o StrictHostKeyChecking=accept-new"
           fi
           $SSH "$DEPLOY_USER@$DEPLOY_HOST" \
-            "PUBLIC_URL=https://billing.mastrsys.com bash /opt/billingservice/deploy/remote-deploy.sh"
+            "PUBLIC_URL=https://billing.mastrsys.com DEPLOY_SHA=$GITHUB_SHA bash /opt/billingservice/deploy/remote-deploy.sh"
 
       - name: Verify deployed droplet (not just DNS)
         run: |
@@ -100,12 +100,20 @@ jobs:
           if [ -n "$DNS_IP" ] && [ "$DNS_IP" != "$DEPLOY_HOST" ]; then
             echo "::warning title=DNS mismatch::billing.mastrsys.com resolves to $DNS_IP but this workflow deployed to $DEPLOY_HOST — visitors are NOT seeing this deploy!"
           fi
+          # Not just "is it up" — the droplet must serve THIS commit's SHA
+          # (/health/live returns it), so a deploy to the wrong server or a
+          # container stuck on old code can never look green.
           for i in $(seq 1 20); do
-            if curl -fsSk --resolve "billing.mastrsys.com:443:$DEPLOY_HOST" --max-time 10 https://billing.mastrsys.com/health/live > /dev/null 2>&1; then
-              echo "✅ Droplet $DEPLOY_HOST serves https://billing.mastrsys.com/health/live"
-              exit 0
+            BODY=$(curl -fsSk --resolve "billing.mastrsys.com:443:$DEPLOY_HOST" --max-time 10 https://billing.mastrsys.com/health/live 2>/dev/null || true)
+            if [ -n "$BODY" ]; then
+              SERVED=$(printf '%s' "$BODY" | grep -o '"commit":"[a-f0-9]*"' | cut -d'"' -f4)
+              if [ "$SERVED" = "$GITHUB_SHA" ]; then
+                echo "✅ Droplet $DEPLOY_HOST ($(getent hosts billing.mastrsys.com | awk '{print $1}' | head -1 || true) via DNS) is LIVE with commit $GITHUB_SHA"
+                exit 0
+              fi
+              echo "API up but serving commit '${SERVED:-none}' (expected $GITHUB_SHA) — waiting for the container to finish restarting…"
             fi
             sleep 6
           done
-          echo "::error::Deployed droplet $DEPLOY_HOST did not serve /health/live."
+          echo "::error::Droplet $DEPLOY_HOST is not serving commit $GITHUB_SHA — deploy буруу сервер эсвэл хуучин код ажилласаар байна."
           exit 1

@@ -59,7 +59,7 @@ export interface InvoiceDetail extends Invoice {
   cancelledAt: string | null;
   batch?: { id: string; fileName: string | null; status: string } | null;
   shortLinks: { id: string; clicks: number; createdAt: string; expiresAt: string | null; revokedAt: string | null }[];
-  messageJobs: { id: string; recipient: string; body: string; segments: number; status: string; createdAt: string }[];
+  messageJobs: { id: string; recipient: string; body: string; segments: number; status: string; error: string | null; createdAt: string }[];
   intents: {
     id: string;
     state: string;

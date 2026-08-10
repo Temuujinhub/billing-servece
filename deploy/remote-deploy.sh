@@ -25,6 +25,16 @@ HOTEL_PMS_DIR="/opt/cloud-pms"
 
 cd "$APP_DIR"
 
+# Deploy provenance: the workflow passes DEPLOY_SHA=$GITHUB_SHA; persist it so
+# manual re-runs keep the last known SHA. /health/live serves it back, and the
+# workflow FAILS the deploy when the live SHA doesn't match the pushed commit.
+if [ -n "${DEPLOY_SHA:-}" ]; then
+  echo "$DEPLOY_SHA" > .deploy-sha
+else
+  DEPLOY_SHA=$(cat .deploy-sha 2>/dev/null || echo '')
+fi
+export DEPLOY_SHA
+
 log() { printf '\n\033[1;34m▶ %s\033[0m\n' "$*"; }
 
 # --- 1. Ensure some swap so building Next.js/Nest won't OOM on a small droplet

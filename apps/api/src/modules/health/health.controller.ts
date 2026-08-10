@@ -13,7 +13,14 @@ export class HealthController {
   @Public()
   @Get('live')
   live() {
-    return { status: 'ok', service: 'billingservice-api', ts: new Date().toISOString() };
+    return {
+      status: 'ok',
+      service: 'billingservice-api',
+      // Deployed git SHA (deploy workflow → DEPLOY_SHA) — deploy бүрийг
+      // "яг энэ commit энэ сервер дээр ажиллаж байна" гэж нотлох гэрч.
+      commit: process.env.DEPLOY_SHA || null,
+      ts: new Date().toISOString(),
+    };
   }
 
   @Public()
