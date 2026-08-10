@@ -38,14 +38,18 @@ export const envValidationSchema = Joi.object({
 
   // --- eBarimt provider: mock | qpay (bundled) | posapi (ТЕГ POS API 3.0 local) ---
   EBARIMT_PROVIDER: Joi.string().valid('mock', 'qpay', 'posapi').default('mock'),
-  // Local POS API 3.0 instance (LIME-ээр суулгасан) — NOT the public ТЕГ API.
+  // POS API 3.0 instance (LIME hosted: https://vat.onlime.mn) — NOT the public ТЕГ API.
   VAT_BASE_URL: Joi.string().uri().when('EBARIMT_PROVIDER', { is: 'posapi', then: Joi.required(), otherwise: Joi.optional().allow('') }),
   // Env defaults; tenants override via ebarimtMerchantTin/ebarimtPosNo fields.
   EBARIMT_MERCHANT_TIN: Joi.string().optional().allow(''),
+  // Optional — auto-discovered from GET {VAT_BASE_URL}/rest/info when empty.
   EBARIMT_POS_NO: Joi.string().optional().allow(''),
   EBARIMT_BRANCH_NO: Joi.string().default('001'),
-  EBARIMT_DISTRICT_CODE: Joi.string().default('3505'),
+  EBARIMT_DISTRICT_CODE: Joi.string().default('2315'),
   EBARIMT_CLASSIFICATION_CODE: Joi.string().default('6499999'),
+  EBARIMT_BILL_ID_SUFFIX: Joi.string().default('01'),
+  // Force a payments[].code; empty = auto (qpay → BANK_TRANSFER_QPAY, else PAYMENT_CARD).
+  EBARIMT_PAYMENT_CODE: Joi.string().optional().allow(''),
 
   // Платформын админууд — таслалаар тусгаарласан имэйлүүд; нэвтрэх үед
   // isPlatformAdmin эрх автоматаар олгогдоно (production-д seed ажиллахгүй тул).

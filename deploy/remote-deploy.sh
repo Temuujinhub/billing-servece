@@ -97,6 +97,24 @@ SMS_PROVIDER=mock
 EOF
 fi
 
+# --- 4b. eBarimt (ТЕГ POS API 3.0, LIME instance) — nэмэгдээгүй хуучин .env-д
+#         нөхөж бичнэ (idempotent). posNo нь /rest/info-оос автоматаар танигдана.
+if ! grep -q '^EBARIMT_PROVIDER=' .env; then
+  log "Enabling eBarimt POS API 3.0 (LIME instance) in .env"
+  cat >> .env <<'EOF'
+
+# --- eBarimt — ТЕГ POS API 3.0, LIME-ийн instance ---------------------------
+EBARIMT_PROVIDER=posapi
+VAT_BASE_URL=https://vat.onlime.mn
+EBARIMT_MERCHANT_TIN=37900846788
+# EBARIMT_POS_NO=            # хоосон = /rest/info-оос автоматаар авна
+EBARIMT_BRANCH_NO=001
+EBARIMT_DISTRICT_CODE=2315
+EBARIMT_CLASSIFICATION_CODE=6499999
+EBARIMT_BILL_ID_SUFFIX=01
+EOF
+fi
+
 # --- 5. Build and (re)start the stack
 log "Building and starting containers"
 docker compose -f "$COMPOSE_FILE" --env-file .env up -d --build --remove-orphans
@@ -153,6 +171,20 @@ if [ "${PAYMENT_PROVIDER:-qpay_mock}" = "qpay" ] && [ -n "${QPAY_USERNAME:-}" ];
   else
     echo "⚠ QPay auth check returned HTTP $QPAY_CODE — шалгана уу (credential/whitelist)."
   fi
+fi
+if [ "${EBARIMT_PROVIDER:-mock}" = "posapi" ] && [ -n "${VAT_BASE_URL:-}" ]; then
+  VAT_CODE=$(curl -s -o /tmp/ebarimt-info.json -w '%{http_code}' -m 15 \
+    -H 'Accept: application/json' "${VAT_BASE_URL%/}/rest/info" || echo "ERR")
+  if [ "$VAT_CODE" = "200" ]; then
+    VAT_POS_NO=$(grep -o '"posNo"[[:space:]]*:[[:space:]]*"[^"]*"' /tmp/ebarimt-info.json | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+    echo "✅ eBarimt POS API OK (${VAT_BASE_URL%/}/rest/info, posNo=${VAT_POS_NO:-?})"
+    if ! grep -q "${EBARIMT_MERCHANT_TIN:-37900846788}" /tmp/ebarimt-info.json; then
+      echo "⚠ merchantTin ${EBARIMT_MERCHANT_TIN:-37900846788} нь instance-ийн /rest/info бүртгэлд алга — LIME-тэй шалгана уу."
+    fi
+  else
+    echo "⚠ eBarimt POS API check returned HTTP $VAT_CODE — VAT_BASE_URL-ээ шалгана уу (баримтууд PENDING-д хүлээгдэж, автоматаар дахин оролдоно)."
+  fi
+  rm -f /tmp/ebarimt-info.json
 fi
 if [ "${SMS_PROVIDER:-mock}" = "callpro" ] && [ -n "${CALLPRO_API_KEY:-}" ]; then
   SMS_CODE=$(curl -s -o /dev/null -w '%{http_code}' -m 15 \
