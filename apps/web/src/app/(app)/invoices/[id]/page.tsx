@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
+import { EbarimtQr } from '@/components/ebarimt-qr';
 import { ErrorNote, InvoiceBadge, Modal, PageLoader, ReceiptBadge } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { dateTime, mnt, shortDate, MESSAGE_STATE_MN } from '@/lib/format';
@@ -143,6 +144,11 @@ export default function InvoiceDetailPage() {
               </div>
               {receipt.receiptNo && <p className="mt-2 break-all font-mono text-[12px] text-navy-600">{receipt.receiptNo}</p>}
               {receipt.lottery && <p className="mt-1 text-[13px]">Сугалаа: <b className="tracking-widest">{receipt.lottery}</b></p>}
+              {receipt.qrData && (
+                <div className="mt-3 text-center">
+                  <EbarimtQr data={receipt.qrData} size={148} />
+                </div>
+              )}
             </div>
           )}
         </div>

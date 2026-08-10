@@ -3,6 +3,7 @@
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
+import { EbarimtQr } from '@/components/ebarimt-qr';
 import { Spinner } from '@/components/ui';
 import { apiPublic, ApiError } from '@/lib/api';
 import { mnt, shortDate } from '@/lib/format';
@@ -239,6 +240,11 @@ export default function PayPage() {
                       <div className="flex justify-between"><span className="text-slate-500">Баримтын №</span><span className="font-mono text-[12px] font-semibold">{receipt.receiptNo}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">Сугалааны дугаар</span><b className="tracking-widest text-navy-900">{receipt.lottery}</b></div>
                     </div>
+                    {receipt.qrData && (
+                      <div className="mt-4 text-center">
+                        <EbarimtQr data={receipt.qrData} size={184} />
+                      </div>
+                    )}
                   </div>
                 )}
                 {receipt && (receipt.state === 'PENDING' || receipt.state === 'FAILED') && (
