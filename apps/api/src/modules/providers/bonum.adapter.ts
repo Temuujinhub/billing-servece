@@ -311,7 +311,16 @@ export class BonumAdapter implements PaymentProviderPort {
       callback: args.returnUrl ?? publicUrl,
       transactionId,
       expiresIn,
-      items: [{ title: args.description.slice(0, 120) || 'Нэхэмжлэх', amount: args.amount, count: 1 }],
+      // Bonum-ийн BonumInvoiceItemDto нь `remark`-ийг ЗААВАЛ (non-null) шаарддаг —
+      // орхивол 500 "JSON parse error ... missing value for creator parameter remark".
+      items: [
+        {
+          title: args.description.slice(0, 120) || 'Нэхэмжлэх',
+          remark: args.description.slice(0, 120) || 'Нэхэмжлэх',
+          amount: args.amount,
+          count: 1,
+        },
+      ],
     });
 
     if (!body?.invoiceId) {
