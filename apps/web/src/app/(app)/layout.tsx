@@ -102,20 +102,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               );
             })}
             {user.isPlatformAdmin && (
-              <>
-                <p className="px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-widest text-navy-300">Платформ</p>
-                <Link
-                  href="/admin/requests"
-                  onClick={() => setMenuOpen(false)}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] font-medium transition ${
-                    pathname.startsWith('/admin/requests') ? 'bg-teal-50 text-teal-700' : 'text-navy-700 hover:bg-navy-50'
-                  }`}
-                  aria-current={pathname.startsWith('/admin/requests') ? 'page' : undefined}
-                >
-                  <span aria-hidden="true">📮</span>
-                  Бүртгэлийн хүсэлт
-                </Link>
-              </>
+              // Админ ажил ТУСДАА бүрхүүлд (/admin/*) — merchant цэстэй холихгүй,
+              // зөвхөн шилжих хаалга энд байна.
+              <Link
+                href="/admin/requests"
+                onClick={() => setMenuOpen(false)}
+                className="mt-4 flex items-center gap-3 rounded-lg border border-navy-900 bg-navy-900 px-3 py-2.5 text-[14px] font-semibold text-white transition hover:bg-navy-800"
+              >
+                <span aria-hidden="true">🛡</span>
+                Платформ админ руу →
+              </Link>
             )}
             <div className="mt-auto rounded-xl bg-navy-50 p-4 text-[12.5px] leading-snug text-navy-600">
               <p className="font-bold text-navy-800">billingservice.mn</p>

@@ -40,6 +40,9 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: 4000
+      # Deploy provenance — /health/live returns this so every deploy is
+      # verifiable end-to-end (set by deploy/remote-deploy.sh).
+      DEPLOY_SHA: ${DEPLOY_SHA:-}
       DATABASE_URL: postgresql://${POSTGRES_USER:-billing}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-billingservice}?schema=public
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
