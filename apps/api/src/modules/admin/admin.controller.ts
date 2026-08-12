@@ -270,28 +270,43 @@ export class AdminController {
   @Get('ebarimt-operator')
   async ebarimtOperator() {
     const row = await this.prisma.platformSetting.findUnique({ where: { key: 'ebarimtOperator' } });
-    const cfg = (row?.value as { apiKey?: string; posNo?: string; baseUrl?: string } | null) ?? {};
+    const cfg = (row?.value as { apiKey?: string; posNo?: string; baseUrl?: string; tokenUrl?: string; clientId?: string; username?: string; password?: string } | null) ?? {};
     return {
       hasApiKey: Boolean(cfg.apiKey),
       posNo: cfg.posNo ?? '',
       baseUrl: cfg.baseUrl ?? '',
+      tokenUrl: cfg.tokenUrl ?? '',
+      clientId: cfg.clientId ?? '',
+      username: cfg.username ?? '',
+      hasPassword: Boolean(cfg.password),
       envApiKeySet: Boolean(process.env.EBARIMT_OPR_API_KEY),
       envPosNoSet: Boolean(process.env.EBARIMT_OPR_POS_NO),
     };
   }
 
+  /** ТЕГ-ийн нэгдсэн нэвтрэлтээс токен бодитоор авч болж буйг шалгана. */
+  @HttpCode(200)
+  @Post('ebarimt-operator/test-token')
+  testOperatorToken() {
+    return this.operator.testToken();
+  }
+
   @Put('ebarimt-operator')
   async setEbarimtOperator(
     @CurrentUser() user: AuthUser,
-    @Body() body: { apiKey?: string; posNo?: string; baseUrl?: string },
+    @Body() body: { apiKey?: string; posNo?: string; baseUrl?: string; tokenUrl?: string; clientId?: string; username?: string; password?: string },
   ) {
     const row = await this.prisma.platformSetting.findUnique({ where: { key: 'ebarimtOperator' } });
-    const prev = (row?.value as { apiKey?: string; posNo?: string; baseUrl?: string } | null) ?? {};
+    const prev = (row?.value as { apiKey?: string; posNo?: string; baseUrl?: string; tokenUrl?: string; clientId?: string; username?: string; password?: string } | null) ?? {};
     const value = {
-      // Хоосон орхивол хуучин түлхүүр хэвээр (write-only талбар).
+      // Хоосон орхивол хуучин нууц утгууд хэвээр (write-only талбарууд).
       apiKey: body.apiKey?.trim() ? encryptString(body.apiKey.trim()) : (prev.apiKey ?? undefined),
       posNo: (body.posNo ?? prev.posNo ?? '').trim(),
       baseUrl: (body.baseUrl ?? prev.baseUrl ?? '').trim(),
+      tokenUrl: (body.tokenUrl ?? prev.tokenUrl ?? '').trim(),
+      clientId: (body.clientId ?? prev.clientId ?? '').trim(),
+      username: (body.username ?? prev.username ?? '').trim(),
+      password: body.password?.trim() ? encryptString(body.password.trim()) : (prev.password ?? undefined),
     };
     await this.prisma.platformSetting.upsert({
       where: { key: 'ebarimtOperator' },
@@ -302,7 +317,16 @@ export class AdminController {
     await this.prisma.auditLog.create({
       data: { actorId: user.userId, actorEmail: user.email, action: 'admin.ebarimt_operator.updated', targetType: 'setting', targetId: 'ebarimtOperator', meta: { posNo: value.posNo, hasApiKey: Boolean(value.apiKey) } },
     });
-    return { ok: true, hasApiKey: Boolean(value.apiKey), posNo: value.posNo, baseUrl: value.baseUrl };
+    return {
+      ok: true,
+      hasApiKey: Boolean(value.apiKey),
+      posNo: value.posNo,
+      baseUrl: value.baseUrl,
+      tokenUrl: value.tokenUrl,
+      clientId: value.clientId,
+      username: value.username,
+      hasPassword: Boolean(value.password),
+    };
   }
 
   // ---------------------------- онбординг имэйл хүлээн авагчид (Bonum/LIME)
