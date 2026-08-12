@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ReceiptPurgeService } from './receipt-purge.service';
+import { ReceiptRetryService } from './receipt-retry.service';
 import { ReceiptsController } from './receipts.controller';
 import { ReceiptsService } from './receipts.service';
 
 @Module({
   controllers: [ReceiptsController],
-  providers: [ReceiptsService, ReceiptPurgeService],
+  providers: [ReceiptsService, ReceiptPurgeService, ReceiptRetryService],
   exports: [ReceiptsService],
 })
 export class ReceiptsModule {}

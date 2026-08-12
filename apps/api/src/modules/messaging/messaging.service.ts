@@ -52,12 +52,15 @@ export class MessagingService {
   ) {}
 
   /**
-   * Queue an SMS inside the caller's transaction and meter the segments
-   * (SMS_SEGMENT_SENT drives the 25₮/segment line on the bill).
+   * Queue an SMS inside the caller's transaction and meter it.
+   * Тариф v2: илгээлт бүр INVOICE_MSG_SENT=1 (үнэ нь serviceCode-оор:
+   * EXCEL_SMS 100₮ / API_SMS tenant үнэ) — segment нь зөвхөн өртгийн
+   * аналитикт SMS_SEGMENT_SENT-ээр хадгалагдана. serviceCode=null (платформын
+   * өөрийн нэхэмжлэх г.м.) үед илгээлтийн төлбөр тооцохгүй.
    */
   async sendSms(
     tx: Prisma.TransactionClient,
-    opts: { tenantId: string; invoiceId?: string; recipient: string; body: string },
+    opts: { tenantId: string; invoiceId?: string; recipient: string; body: string; serviceCode?: string | null },
   ) {
     // Tenant opt-in: transliterate to Latin so the SMS packs GSM-7 segments
     // (160/153 chars) instead of UCS-2 (70/67) — roughly half the cost.
@@ -83,9 +86,21 @@ export class MessagingService {
         tenantId: opts.tenantId,
         meterCode: 'SMS_SEGMENT_SENT',
         qty: segments,
+        serviceCode: opts.serviceCode ?? null,
         sourceEventId: `sms:${job.id}`,
       },
     });
+    if (opts.serviceCode === 'EXCEL_SMS' || opts.serviceCode === 'API_SMS') {
+      await tx.usageEvent.create({
+        data: {
+          tenantId: opts.tenantId,
+          meterCode: 'INVOICE_MSG_SENT',
+          qty: 1,
+          serviceCode: opts.serviceCode,
+          sourceEventId: `msg:${job.id}`,
+        },
+      });
+    }
     return job;
   }
 

@@ -55,9 +55,11 @@ async function main() {
       invoiceSeq: { create: { next: 1 } },
       modules: {
         create: [
-          { code: 'SMS', enabled: true },
+          { code: 'EXCEL_SMS', enabled: true },
+          { code: 'API_SMS', enabled: true, unitPrice: 75 },
+          { code: 'EBARIMT_API', enabled: true, tier: 1 },
+          { code: 'POS_EBARIMT', enabled: true, quantity: 2 },
           { code: 'EBARIMT', enabled: true },
-          { code: 'POS', enabled: true, quantity: 2 },
           { code: 'REMINDER', enabled: false },
         ],
       },

@@ -93,6 +93,7 @@ model Tenant {
   apiKeys         ApiKey[]
   webhooks        WebhookEndpoint[]
   integrationRequests IntegrationRequest[]
+  posTerminals    PosTerminal[]
 }
 
 /// Tenant-level external provider settings (QPAY, CALLPRO). Secret fields
@@ -296,6 +297,11 @@ model Invoice {
   viewedAt    DateTime?
   paidAt      DateTime?
   cancelledAt DateTime?
+  // Гарал: ui | import | api | platform (платформын өөрийн үйлчилгээний нэхэмжлэх).
+  // Илгээлтийн үнэ аль үйлчилгээгээр тоологдохыг энэ талбар шийднэ.
+  source      String       @default("ui")
+  // B2B eBarimt: төлөгч байгууллагын регистр — байвал баримт ORGANIZATION төрлөөр гарна.
+  payerRegNo  String?
   // Per-invoice opt-in: create an eBarimt receipt after payment (module must also be on).
   ebarimtEnabled Boolean   @default(true)
   remindersSent  Int       @default(0)
@@ -465,7 +471,14 @@ enum ReceiptState {
 model EbarimtReceipt {
   id            String       @id @default(uuid())
   tenantId      String
-  transactionId String       @unique
+  // Төлбөрөөс үүдэлтэй баримтад заавал; standalone (api/pos) баримтад null.
+  transactionId String?      @unique
+  // Баримтын гарал: payment (нэхэмжлэхийн төлбөр) | api (Үйлчилгээ 3) | pos (Үйлчилгээ 4)
+  source        String       @default("payment")
+  // Standalone баримтын дүн/тайлбар (payment баримт нь гүйлгээнээсээ авна).
+  amount        Int?
+  description   String?
+  deviceId      String? // pos source: аль терминалаас
   receiptNo     String?
   lottery       String?
   qrData        String?
@@ -477,21 +490,33 @@ model EbarimtReceipt {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  transaction PaymentTransaction @relation(fields: [transactionId], references: [id])
+  transaction PaymentTransaction? @relation(fields: [transactionId], references: [id])
 
   @@index([tenantId, state, createdAt])
+  @@index([state, retries, createdAt])
 }
 
 // ---------------------------------------------------------------------------
 // Modules, usage metering & platform billing
 // ---------------------------------------------------------------------------
 
+// Үйлчилгээний каталог (4 үндсэн үйлчилгээ + туслах модулиуд):
+//   EXCEL_SMS   — Үйлчилгээ 1: Excel/UI нэхэмжлэх + SMS (100₮/илгээлт, eBarimt багтсан)
+//   API_SMS     — Үйлчилгээ 2: API нэхэмжлэх + SMS (tenant бүр тохиролцооны unitPrice)
+//   EBARIMT_API — Үйлчилгээ 3: өөрийн системд eBarimt (шатлалтай сарын хураамж + onboarding)
+//   POS_EBARIMT — Үйлчилгээ 4: POS терминалаас eBarimt (идэвхтэй төхөөрөмж × 20,000₮/сар)
+//   EBARIMT     — дотоод туг: төлбөрт баримт автоматаар гаргах холболт (үнэгүй, интеграц батлагдахад асна)
+//   REMINDER    — автомат сануулга (илгээлт нь харгалзах үйлчилгээний үнээр тоологдоно)
 model TenantModule {
   id        String   @id @default(uuid())
   tenantId  String
-  code      String // SMS | EBARIMT | POS | API | REMINDER
+  code      String // EXCEL_SMS | API_SMS | EBARIMT_API | POS_EBARIMT | EBARIMT | REMINDER
   enabled   Boolean  @default(false)
-  quantity  Int      @default(1) // e.g. number of POS devices
+  quantity  Int      @default(1)
+  // Tenant-тэй тохиролцсон нэгж үнэ (₮/илгээлт) — null бол глобал тариф.
+  unitPrice Int?
+  // EBARIMT_API-ийн шатлал (1..3) — сарын баримтын хязгаар/хураамжийг тодорхойлно.
+  tier      Int?
   updatedAt DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
@@ -502,14 +527,68 @@ model TenantModule {
 model UsageEvent {
   id            String   @id @default(uuid())
   tenantId      String
-  meterCode     String // SMS_SEGMENT_SENT | RECEIPT_CREATED | INVOICE_CREATED | PAYMENT_SUCCEEDED
+  meterCode     String // INVOICE_MSG_SENT | SMS_SEGMENT_SENT | RECEIPT_CREATED | INVOICE_CREATED | PAYMENT_SUCCEEDED
   qty           Int      @default(1)
+  // Аль үйлчилгээний хэрэглээ вэ (EXCEL_SMS | API_SMS | EBARIMT_API | POS_EBARIMT) — тооцоонд ялгаж ашиглана.
+  serviceCode   String?
   occurredAt    DateTime @default(now())
   sourceEventId String   @unique
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId, meterCode, occurredAt])
+  @@index([tenantId, serviceCode, occurredAt])
+}
+
+// Үйлчилгээ 4: бүртгэгдсэн POS терминал. API-аас ирсэн device_id-гаар автоматаар
+// таниж бүртгэнэ; сарын хураамж = тухайн сард идэвхтэй байсан терминалын тоо.
+model PosTerminal {
+  id           String   @id @default(uuid())
+  tenantId     String
+  deviceId     String
+  name         String?
+  status       String   @default("ACTIVE") // ACTIVE | BLOCKED
+  receiptCount Int      @default(0)
+  firstSeenAt  DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, deviceId])
+  @@index([tenantId, lastSeenAt])
+}
+
+// Платформын өөрийн үйлчилгээний сарын тооцоо (сар хаахад үүснэ, идемпотент).
+// invoiceId нь biller tenant дотор үүссэн бодит нэхэмжлэх (SMS-ээр илгээгдэнэ).
+model ServiceBill {
+  id        String   @id @default(uuid())
+  tenantId  String // тооцоо гарсан харилцагч байгууллага
+  cycle     String // "2026-08"
+  lines     Json // [{code,label,qty,unitPrice,amount}]
+  subtotal  Int
+  vat       Int
+  total     Int
+  status    String   @default("CREATED") // CREATED | INVOICED
+  invoiceId String?
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, cycle])
+  @@index([cycle])
+}
+
+// Нэг удаагийн төлбөр (ж: EBARIMT_API onboarding 100,000₮) — дараагийн сар
+// хаахад тооцоонд орж billedCycle-ээр тэмдэглэгдэнэ.
+model ServiceCharge {
+  id          String   @id @default(uuid())
+  tenantId    String
+  code        String // EBARIMT_API_ONBOARDING | ...
+  label       String
+  amount      Int
+  billedCycle String?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, billedCycle])
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +614,10 @@ model ApiKey {
   prefix    String // "bsk_XXXX" shown in UI
   keyHash   String    @unique
   last4     String
+  // Эрхийн хүрээ: ["invoice","receipt","pos"] — хоосон бол бүх эрхтэй (хуучин түлхүүрүүд).
+  scopes    Json      @default("[]")
+  // live | test — test түлхүүр юу ч бичихгүй, симуляц хариу буцаана (Postman-аар турших).
+  mode      String    @default("live")
   createdAt DateTime  @default(now())
   revokedAt DateTime?
 

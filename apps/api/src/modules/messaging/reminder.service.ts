@@ -93,6 +93,8 @@ export class ReminderService implements OnApplicationBootstrap, OnModuleDestroy 
               invoiceId: invoice.id,
               recipient: invoice.customer.phone!,
               body: body.slice(0, 480),
+              // Сануулга ч илгээлтийн үнээр (нэхэмжлэхийн гарлын үйлчилгээгээр) тоологдоно.
+              serviceCode: invoice.source === 'api' ? 'API_SMS' : invoice.source === 'platform' ? null : 'EXCEL_SMS',
             });
             sent += 1;
           });

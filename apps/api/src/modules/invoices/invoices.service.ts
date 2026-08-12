@@ -25,6 +25,14 @@ export function canTransition(from: InvoiceState, to: InvoiceState): boolean {
   return TRANSITIONS[from]?.includes(to) ?? false;
 }
 
+/** Нэхэмжлэхийн гарал → илгээлт аль үйлчилгээгээр тоологдох вэ.
+ *  platform (өөрийн үйлчилгээний нэхэмжлэх) илгээлт төлбөргүй → null. */
+export function serviceCodeOf(source: string): 'EXCEL_SMS' | 'API_SMS' | null {
+  if (source === 'api') return 'API_SMS';
+  if (source === 'platform') return null;
+  return 'EXCEL_SMS'; // ui | import
+}
+
 @Injectable()
 export class InvoicesService {
   constructor(
@@ -89,7 +97,24 @@ export class InvoicesService {
    * sequence bump, customer upsert, invoice, link, SMS job, meters — commit in
    * ONE transaction so a crash can't leave a half-created invoice behind.
    */
-  async create(user: AuthUser, dto: CreateInvoiceDto) {
+  async create(user: AuthUser, dto: CreateInvoiceDto, source: 'ui' | 'api' | 'platform' = 'ui') {
+    // Үйлчилгээний хаалт: ui/import → EXCEL_SMS, api → API_SMS идэвхтэй байх ёстой.
+    if (source !== 'platform') {
+      const requiredModule = source === 'api' ? 'API_SMS' : 'EXCEL_SMS';
+      const module = await this.prisma.tenantModule.findUnique({
+        where: { tenantId_code: { tenantId: user.tenantId, code: requiredModule } },
+      });
+      if (!module?.enabled) {
+        throw apiError(
+          HttpStatus.FORBIDDEN,
+          'MODULE_DISABLED',
+          source === 'api'
+            ? 'API нэхэмжлэх үйлчилгээ идэвхгүй байна — Billing хуудаснаас идэвхжүүлнэ үү.'
+            : 'Нэхэмжлэх илгээх үйлчилгээ идэвхгүй байна — Billing хуудаснаас идэвхжүүлнэ үү.',
+          `Service module ${requiredModule} is disabled.`,
+        );
+      }
+    }
     if (!dto.customerId && !(dto.customerName && dto.customerPhone)) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
@@ -131,6 +156,7 @@ export class InvoicesService {
         description: dto.description.trim(),
         dueDate,
         ebarimtEnabled: dto.ebarimt,
+        source,
       });
 
       let payUrl: string | null = null;
@@ -168,6 +194,8 @@ export class InvoicesService {
       dueDate: Date | null;
       batchId?: string;
       ebarimtEnabled?: boolean;
+      source?: string;
+      payerRegNo?: string | null;
     },
   ) {
     // Atomic per-tenant sequence (UPDATE … RETURNING keeps concurrent creates safe).
@@ -192,6 +220,8 @@ export class InvoicesService {
         state: 'DRAFT',
         dueDate: data.dueDate,
         ebarimtEnabled: data.ebarimtEnabled ?? true,
+        source: data.source ?? 'ui',
+        payerRegNo: data.payerRegNo ?? null,
       },
     });
     await tx.usageEvent.create({
@@ -248,6 +278,7 @@ export class InvoicesService {
         invoiceId: invoice.id,
         recipient: invoice.customer.phone,
         body,
+        serviceCode: serviceCodeOf(invoice.source),
       });
     }
 
@@ -284,6 +315,7 @@ export class InvoicesService {
             tenantId: user.tenantId,
             invoiceId: id,
             recipient: full.customer.phone,
+            serviceCode: serviceCodeOf(full.source),
             body: renderSmsTemplate(full.tenant.smsTemplate, {
               tenantName: full.tenant.name,
               customerName: full.customer.name,
