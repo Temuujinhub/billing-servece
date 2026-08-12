@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { decryptString } from '../../common/crypto';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /**
  * ТЕГ-ийн ОПЕРАТОРЫН сервис — «Хэрэглэгчийн систем нийлүүлэгч» (оператор
@@ -39,24 +41,64 @@ interface TokenState {
   expiresAt: number;
 }
 
+interface OperatorSettings {
+  apiKey?: string; // encrypted at rest
+  posNo?: string;
+  baseUrl?: string;
+}
+
 @Injectable()
 export class EbarimtOperatorService {
   private readonly logger = new Logger(EbarimtOperatorService.name);
   private token: TokenState | null = null;
+  private settingsCache: { value: OperatorSettings; ts: number } | null = null;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
 
-  private get baseUrl(): string {
-    return (this.config.get<string>('EBARIMT_OPR_BASE_URL') ?? 'https://api.ebarimt.mn').replace(/\/$/, '');
+  /** Админ UI-аас хадгалсан тохиргоо (PlatformSetting 'ebarimtOperator') — env-ээс тэргүүлнэ. */
+  private async settings(): Promise<OperatorSettings> {
+    if (this.settingsCache && Date.now() - this.settingsCache.ts < 30_000) return this.settingsCache.value;
+    const row = await this.prisma.platformSetting.findUnique({ where: { key: 'ebarimtOperator' } }).catch(() => null);
+    const value = (row?.value as OperatorSettings) ?? {};
+    this.settingsCache = { value, ts: Date.now() };
+    return value;
   }
 
-  private get apiKey(): string | null {
-    return this.config.get<string>('EBARIMT_OPR_API_KEY') ?? null;
+  /** Тохиргоо шинэчлэгдмэгц кэш хүчингүй болно (админ хадгалахад дуудагдана). */
+  invalidateSettings() {
+    this.settingsCache = null;
+    this.token = null;
+  }
+
+  private async effectiveBaseUrl(): Promise<string> {
+    const s = await this.settings();
+    return (s.baseUrl || this.config.get<string>('EBARIMT_OPR_BASE_URL') || 'https://api.ebarimt.mn').replace(/\/$/, '');
+  }
+
+  private async effectiveApiKey(): Promise<string | null> {
+    const s = await this.settings();
+    if (s.apiKey) {
+      try {
+        return decryptString(s.apiKey);
+      } catch {
+        this.logger.warn('ebarimtOperator.apiKey тайлагдсангүй (ENCRYPTION_KEY солигдсон?) — env fallback');
+      }
+    }
+    return this.config.get<string>('EBARIMT_OPR_API_KEY') || null;
+  }
+
+  /** Админ тохиргоо эсвэл env-ийн операторын POS дугаар. */
+  async configuredPosNo(): Promise<string | null> {
+    const s = await this.settings();
+    return s.posNo || this.config.get<string>('EBARIMT_OPR_POS_NO') || null;
   }
 
   /** Операторын эрх тохируулагдсан эсэх — UI товчийг үүгээр асаана. */
-  get enabled(): boolean {
-    return Boolean(this.apiKey);
+  async isEnabled(): Promise<boolean> {
+    return Boolean(await this.effectiveApiKey());
   }
 
   /**
@@ -96,19 +138,19 @@ export class EbarimtOperatorService {
   }
 
   private async post(path: string, body: unknown): Promise<OperatorRequestResult> {
-    const apiKey = this.apiKey;
+    const apiKey = await this.effectiveApiKey();
     if (!apiKey) {
       return {
         ok: false,
         status: null,
-        message_mn: 'Операторын API түлхүүр (EBARIMT_OPR_API_KEY) серверт тохируулаагүй байна.',
+        message_mn: 'Операторын API түлхүүр тохируулаагүй байна — Админ → Интеграци → «ТЕГ операторын эрх» хэсэгт оруулна уу.',
         details: [],
       };
     }
     const bearer = await this.bearer();
     let res: Response;
     try {
-      res = await fetch(`${this.baseUrl}${path}`, {
+      res = await fetch(`${await this.effectiveBaseUrl()}${path}`, {
         method: 'POST',
         headers: {
           Accept: 'application/json',

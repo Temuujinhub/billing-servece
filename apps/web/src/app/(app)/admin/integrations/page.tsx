@@ -181,6 +181,10 @@ export default function IntegrationsPage() {
   const [cForm, setCForm] = useState({ apiKey: '', from: '' });
   const [globalizing, setGlobalizing] = useState(false);
   const [globalMsg, setGlobalMsg] = useState<string | null>(null);
+  const [opr, setOpr] = useState<{ hasApiKey: boolean; posNo: string; baseUrl: string; envApiKeySet: boolean; envPosNoSet: boolean } | null>(null);
+  const [oprKey, setOprKey] = useState('');
+  const [oprSaving, setOprSaving] = useState(false);
+  const [oprMsg, setOprMsg] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api<Integrations>('/integrations')
@@ -205,7 +209,31 @@ export default function IntegrationsPage() {
     api<{ items: District[] }>('/tenant/districts')
       .then((d) => setDistricts(d.items ?? []))
       .catch(() => setDistricts([]));
+    // ТЕГ операторын эрх (админ тохиргоо) — байхгүй бол env fallback.
+    api<{ hasApiKey: boolean; posNo: string; baseUrl: string; envApiKeySet: boolean; envPosNoSet: boolean }>('/admin/ebarimt-operator')
+      .then(setOpr)
+      .catch(() => setOpr(null));
   }, [load]);
+
+  /** ТЕГ операторын эрх хадгалах — «ТЕГ-т бүртгүүлэх хүсэлт» товчийг ажиллуулна. */
+  async function saveOperator() {
+    if (!opr) return;
+    setOprSaving(true);
+    setOprMsg(null);
+    try {
+      const r = await api<{ ok: boolean; hasApiKey: boolean; posNo: string; baseUrl: string }>('/admin/ebarimt-operator', {
+        method: 'PUT',
+        body: JSON.stringify({ apiKey: oprKey || undefined, posNo: opr.posNo, baseUrl: opr.baseUrl || undefined }),
+      });
+      setOpr((o) => (o ? { ...o, hasApiKey: r.hasApiKey, posNo: r.posNo, baseUrl: r.baseUrl } : o));
+      setOprKey('');
+      setOprMsg('Хадгалагдлаа — одоо «ТЕГ-т бүртгүүлэх хүсэлт» товч ажиллана.');
+    } catch (e) {
+      setOprMsg(e instanceof ApiError ? e.message : 'Хадгалж чадсангүй');
+    } finally {
+      setOprSaving(false);
+    }
+  }
 
   /** 4-р алхам: ТЕГ рүү мерчант бүртгүүлэх хүсэлт илгээнэ. */
   async function requestMerchant() {
@@ -501,6 +529,49 @@ export default function IntegrationsPage() {
             </span>
             {data.ebarimt.cityPayer === true && ' · НХАТ суутган төлөгч'} — баримтын татварын төрөл үүнээс шалтгаална.
           </p>
+        )}
+
+        {isAdmin && opr && (
+          <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/40 px-4 py-3">
+            <p className="text-[12.5px] font-bold text-slate-700">ТЕГ операторын эрх (платформ даяар нэг)</p>
+            <p className="mt-1 text-[12px] text-slate-500">
+              «ТЕГ-т бүртгүүлэх хүсэлт» товч энэ түлхүүрээр saveOprMerchants дуудна. Түлхүүрийг ТЕГ-ээс
+              (Posapi@itc.gov.mn) авна. {opr.envApiKeySet && !opr.hasApiKey && 'Одоогоор серверийн env түлхүүр ашиглагдаж байна.'}
+            </p>
+            <div className="mt-2 grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className="label">API түлхүүр {opr.hasApiKey && <span className="text-teal-600">(хадгалагдсан ✓)</span>}</label>
+                <input
+                  type="password"
+                  className="input"
+                  value={oprKey}
+                  onChange={(e) => setOprKey(e.target.value)}
+                  placeholder={opr.hasApiKey ? 'Солих бол шинээр бичнэ' : 'X-API-KEY'}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div>
+                <label className="label">Операторын POS дугаар</label>
+                <input
+                  className="input"
+                  value={opr.posNo}
+                  onChange={(e) => setOpr((o) => (o ? { ...o, posNo: e.target.value } : o))}
+                  placeholder={opr.envPosNoSet ? '(env утга бий)' : 'ж: 10025383'}
+                />
+              </div>
+              <div className="flex items-end">
+                <button onClick={saveOperator} disabled={oprSaving} className="btn-primary w-full">
+                  {oprSaving ? <Spinner className="h-4 w-4 text-white" /> : 'Хадгалах'}
+                </button>
+              </div>
+            </div>
+            {!opr.hasApiKey && !opr.envApiKeySet && (
+              <p className="mt-2 text-[12.5px] font-semibold text-amber-700">
+                ⚠ Түлхүүр тохируулаагүй — «ТЕГ-т бүртгүүлэх хүсэлт» товч ажиллахгүй, компаниуд ebarimt.mn дээр гарч ирэхгүй.
+              </p>
+            )}
+            {oprMsg && <p className="mt-2 text-[12.5px] font-semibold text-slate-700">{oprMsg}</p>}
+          </div>
         )}
 
         <div className="mt-4 space-y-3 rounded-xl bg-slate-50 px-4 py-3">

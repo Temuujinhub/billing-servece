@@ -640,10 +640,12 @@ export class ProviderConfigService {
    * «POS дугаар татах» дарахад бүртгэл нь /rest/info дээр гарч ирнэ.
    */
   async requestEbarimtMerchant(user: AuthUser): Promise<{ ok: boolean; message_mn: string; details: string[] }> {
-    if (!this.operator.enabled) {
+    if (!(await this.operator.isEnabled())) {
       return {
         ok: false,
-        message_mn: 'Операторын API түлхүүр серверт тохируулаагүй байна (EBARIMT_OPR_API_KEY).',
+        message_mn:
+          'ТЕГ операторын API түлхүүр тохируулаагүй байна — Админ → Интеграци → «ТЕГ операторын эрх» хэсэгт ' +
+          'түлхүүрээ (Posapi@itc.gov.mn-ээс авна) оруулснаар энэ товч ажиллана.',
         details: [],
       };
     }
@@ -654,13 +656,13 @@ export class ProviderConfigService {
     // Мерчант нь ОПЕРАТОРЫН POS дээр бүртгэгддэг. Мерчантын өөрийн хадгалсан
     // утгыг энд ХЭРЭГЛЭХГҮЙ — өөр POS руу хүсэлт явбал бүртгэл буруу газар очно.
     const posNo =
-      this.config.get<string>('EBARIMT_OPR_POS_NO') || (await this.operatorPosNo()) || '';
+      (await this.operator.configuredPosNo()) || (await this.operatorPosNo()) || '';
     if (!posNo) {
       return {
         ok: false,
         message_mn:
-          'Операторын POS дугаар тодорхойгүй байна — EBARIMT_OPR_POS_NO-г тохируулах, эсвэл ' +
-          'баримтын сервер (VAT_BASE_URL) ажиллаж байх шаардлагатай.',
+          'Операторын POS дугаар тодорхойгүй байна — Админ → Интеграци → «ТЕГ операторын эрх» хэсэгт оруулах, ' +
+          'эсвэл баримтын сервер (VAT_BASE_URL) ажиллаж байх шаардлагатай.',
         details: [],
       };
     }

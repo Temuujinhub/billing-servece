@@ -1,8 +1,10 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { encryptString } from '../../common/crypto';
 import { AdminOnly, AuthUser, CurrentUser } from '../../common/decorators';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MonthCloseService } from '../billing/month-close.service';
+import { EbarimtOperatorService } from '../providers/ebarimt-operator.service';
 import { ProviderConfigService } from '../providers/provider-config.service';
 import { AdminService } from './admin.service';
 
@@ -32,6 +34,7 @@ export class AdminController {
     private readonly admin: AdminService,
     private readonly providerConfigs: ProviderConfigService,
     private readonly monthClose: MonthCloseService,
+    private readonly operator: EbarimtOperatorService,
   ) {}
 
   // ---------------------------------------------- System health (ops runbook)
@@ -259,6 +262,47 @@ export class AdminController {
       data: { actorId: user.userId, actorEmail: user.email, action: 'admin.month_close', targetType: 'cycle', targetId: cycle, meta: result as any },
     });
     return result;
+  }
+
+  // ------------------------- ТЕГ операторын эрх (saveOprMerchants түлхүүр)
+
+  /** Операторын API түлхүүр/POS дугаар — «ТЕГ-т бүртгүүлэх хүсэлт» товчийг ажиллуулна. */
+  @Get('ebarimt-operator')
+  async ebarimtOperator() {
+    const row = await this.prisma.platformSetting.findUnique({ where: { key: 'ebarimtOperator' } });
+    const cfg = (row?.value as { apiKey?: string; posNo?: string; baseUrl?: string } | null) ?? {};
+    return {
+      hasApiKey: Boolean(cfg.apiKey),
+      posNo: cfg.posNo ?? '',
+      baseUrl: cfg.baseUrl ?? '',
+      envApiKeySet: Boolean(process.env.EBARIMT_OPR_API_KEY),
+      envPosNoSet: Boolean(process.env.EBARIMT_OPR_POS_NO),
+    };
+  }
+
+  @Put('ebarimt-operator')
+  async setEbarimtOperator(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { apiKey?: string; posNo?: string; baseUrl?: string },
+  ) {
+    const row = await this.prisma.platformSetting.findUnique({ where: { key: 'ebarimtOperator' } });
+    const prev = (row?.value as { apiKey?: string; posNo?: string; baseUrl?: string } | null) ?? {};
+    const value = {
+      // Хоосон орхивол хуучин түлхүүр хэвээр (write-only талбар).
+      apiKey: body.apiKey?.trim() ? encryptString(body.apiKey.trim()) : (prev.apiKey ?? undefined),
+      posNo: (body.posNo ?? prev.posNo ?? '').trim(),
+      baseUrl: (body.baseUrl ?? prev.baseUrl ?? '').trim(),
+    };
+    await this.prisma.platformSetting.upsert({
+      where: { key: 'ebarimtOperator' },
+      create: { key: 'ebarimtOperator', value },
+      update: { value },
+    });
+    this.operator.invalidateSettings();
+    await this.prisma.auditLog.create({
+      data: { actorId: user.userId, actorEmail: user.email, action: 'admin.ebarimt_operator.updated', targetType: 'setting', targetId: 'ebarimtOperator', meta: { posNo: value.posNo, hasApiKey: Boolean(value.apiKey) } },
+    });
+    return { ok: true, hasApiKey: Boolean(value.apiKey), posNo: value.posNo, baseUrl: value.baseUrl };
   }
 
   // ---------------------------- онбординг имэйл хүлээн авагчид (Bonum/LIME)
