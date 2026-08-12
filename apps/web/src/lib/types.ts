@@ -104,7 +104,7 @@ export interface BatchPreview {
     warnings: string[] | null;
     valid: boolean;
   }[];
-  estimate: { smsSegments: number; smsCost: number };
+  estimate: { smsSegments: number; invoiceMsgs: number; msgUnitPrice: number; smsCost: number };
 }
 
 export interface InspectResult {
@@ -165,19 +165,89 @@ export interface ReceiptRow {
   error: string | null;
   retries: number;
   createdAt: string;
+  /** Баримтын гарал: payment (нэхэмжлэхийн төлбөр) | api (Үйлчилгээ 3) | pos (Үйлчилгээ 4). */
+  source: 'payment' | 'api' | 'pos';
+  /** Standalone (api/pos) баримтын дүн/тайлбар — payment баримт нь гүйлгээнээсээ авна. */
+  amount: number | null;
+  description: string | null;
+  deviceId: string | null;
+  /** Standalone баримтад NULL. */
   transaction: {
     gross: number;
     paidAt: string;
     intent: { invoice: { id: string; number: string; customer: { name: string } } };
-  };
+  } | null;
+}
+
+/** Тарифын загвар v2 — суурь хураамжгүй, 4 үйлчилгээ, НӨАТ нэмж тооцно. */
+export interface EbarimtTier {
+  upTo: number | null;
+  fee: number;
+}
+
+export interface PublicPricing {
+  INVOICE_MSG: number;
+  API_INVOICE_MSG: number;
+  EBARIMT_API_ONBOARDING: number;
+  EBARIMT_API_TIERS: EbarimtTier[];
+  POS_PER_DEVICE: number;
+  VAT_PERCENT: number;
+}
+
+export interface TenantModuleInfo {
+  code: string;
+  enabled: boolean;
+  quantity: number;
+  /** Tenant-тэй тохиролцсон нэгж үнэ — null бол глобал тариф. */
+  unitPrice?: number | null;
+  /** EBARIMT_API шатлал (1..3). */
+  tier?: number | null;
+}
+
+export interface PosTerminal {
+  id: string;
+  deviceId: string;
+  name: string | null;
+  status: 'ACTIVE' | 'BLOCKED';
+  receiptCount: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+export interface ServiceBill {
+  id: string;
+  tenantId?: string;
+  cycle: string;
+  lines: { code: string; label: string; qty: number; unitPrice: number; amount: number }[];
+  subtotal: number;
+  vat: number;
+  total: number;
+  status: string;
+  invoiceId: string | null;
+  createdAt: string;
 }
 
 export interface BillingOverview {
   cycleStart: string;
-  modules: { code: string; enabled: boolean; quantity: number }[];
-  usage: { smsSegments: number; receiptsCreated: number; invoicesCreated: number; paymentsSucceeded: number };
+  modules: TenantModuleInfo[];
+  pricing: PublicPricing;
+  usage: {
+    invoiceMsgsExcel: number;
+    invoiceMsgsApi: number;
+    apiReceipts: number;
+    apiReceiptLimit: number | null;
+    activeTerminals: number;
+    smsSegments: number;
+    receiptsCreated: number;
+    invoicesCreated: number;
+    paymentsSucceeded: number;
+  };
+  terminals: PosTerminal[];
+  bills: ServiceBill[];
   estimate: {
     lines: { code: string; label: string; qty: number; unitPrice: number; amount: number }[];
+    subtotal: number;
+    vat: number;
     total: number;
     note: string;
   };
@@ -286,11 +356,15 @@ export interface ReportsSummary {
   topCustomers: { customerId: string; name: string; invoices: number; amount: number }[];
 }
 
+export type ApiKeyScope = 'invoice' | 'receipt' | 'pos';
+
 export interface ApiKeyInfo {
   id: string;
   name: string;
   prefix: string;
   last4: string;
+  scopes: ApiKeyScope[];
+  mode: 'live' | 'test';
   createdAt: string;
   revokedAt: string | null;
 }

@@ -386,6 +386,43 @@ export default function IntegrationsPage() {
           view={data.ebarimt}
         />
 
+        {/* Бэлэн байдлын чеклист — «Тохируулаагүй» гэж таамаглуулахын оронд яг юу дутууг заана. */}
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white/60 px-4 py-3">
+          <p className="text-[12.5px] font-bold text-slate-700">Бэлэн байдлын шалгалт</p>
+          <ul className="mt-1.5 space-y-1 text-[12.5px]">
+            {[
+              {
+                ok: Boolean(data.ebarimt.baseUrl),
+                label: 'Баримтын үйлчилгээний хаяг (VAT_BASE_URL)',
+                hint: 'Серверийн .env-д тохируулна — LIME-ийн суулгасан POS API 3.0 instance.',
+              },
+              {
+                ok: Boolean(data.ebarimt.merchantTin),
+                label: 'ТТД (merchantTin)',
+                hint: 'Тохиргоо хуудсанд регистрээ хадгалахад автоматаар бөглөгдөнө.',
+              },
+              {
+                ok: Boolean(data.ebarimt.posNo),
+                label: 'POS дугаар (операторын)',
+                hint: 'ТЕГ-т бүртгүүлж баталгаажсаны дараа «⬇️ POS дугаар татах» товчоор автоматаар.',
+              },
+              {
+                ok: Boolean(data.ebarimt.districtCode),
+                label: 'Байршлын код (дүүрэг/сум)',
+                hint: 'Доорх «Байршил» цэснээс сонгоно.',
+              },
+            ].map((c) => (
+              <li key={c.label} className={c.ok ? 'text-teal-700' : 'text-amber-700'}>
+                {c.ok ? '✅' : '⬜'} <span className="font-semibold">{c.label}</span>
+                {!c.ok && <span className="text-slate-500"> — {c.hint}</span>}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[12px] text-slate-500">
+            Бүгд ✅ болсны дараа «Холболт шалгах» товчоор ТТД энэ instance дээр бүртгэлтэй эсэхийг эцэслэн баталгаажуулна.
+          </p>
+        </div>
+
         <div className="mt-5 grid gap-4 sm:grid-cols-4">
           <div>
             <label className="label">ТТД (merchantTin)</label>

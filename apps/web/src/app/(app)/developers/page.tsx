@@ -4,9 +4,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { EmptyState, ErrorNote, Modal, PageLoader, Spinner } from '@/components/ui';
 import { api, ApiError, getSessionUser } from '@/lib/api';
 import { dateTime, shortDate } from '@/lib/format';
-import type { DevelopersOverview } from '@/lib/types';
+import type { ApiKeyScope, DevelopersOverview } from '@/lib/types';
 
 const EVENTS = ['payment.succeeded', 'receipt.created'];
+
+const SCOPES: { value: ApiKeyScope; label: string }[] = [
+  { value: 'invoice', label: 'Нэхэмжлэх API (Үйлчилгээ 2)' },
+  { value: 'receipt', label: 'eBarimt API (Үйлчилгээ 3)' },
+  { value: 'pos', label: 'POS терминал (Үйлчилгээ 4)' },
+];
+
+const SCOPE_BADGE: Record<string, string> = { invoice: 'Нэхэмжлэх', receipt: 'eBarimt', pos: 'POS' };
 
 function CopyField({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
@@ -38,6 +46,8 @@ export default function DevelopersPage() {
 
   const [keyModal, setKeyModal] = useState(false);
   const [keyName, setKeyName] = useState('');
+  const [keyScopes, setKeyScopes] = useState<ApiKeyScope[]>(['invoice']);
+  const [keyTestMode, setKeyTestMode] = useState(false);
   const [newKeySecret, setNewKeySecret] = useState<string | null>(null);
 
   const [hookModal, setHookModal] = useState(false);
@@ -61,10 +71,12 @@ export default function DevelopersPage() {
     try {
       const res = await api<{ key: unknown; secret: string }>('/developers/keys', {
         method: 'POST',
-        body: JSON.stringify({ name: keyName.trim() }),
+        body: JSON.stringify({ name: keyName.trim(), scopes: keyScopes, mode: keyTestMode ? 'test' : 'live' }),
       });
       setNewKeySecret(res.secret);
       setKeyName('');
+      setKeyScopes(['invoice']);
+      setKeyTestMode(false);
       load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
@@ -153,6 +165,7 @@ export default function DevelopersPage() {
               <tr>
                 <th className="th">Нэр</th>
                 <th className="th">Түлхүүр</th>
+                <th className="th">Эрх / Горим</th>
                 <th className="th">Үүссэн</th>
                 <th className="th">Төлөв</th>
                 <th className="th" />
@@ -163,6 +176,22 @@ export default function DevelopersPage() {
                 <tr key={k.id} className={k.revokedAt ? 'opacity-50' : ''}>
                   <td className="td font-medium">{k.name}</td>
                   <td className="td font-mono text-[13px] text-slate-500">{k.prefix}…{k.last4}</td>
+                  <td className="td">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {(k.scopes ?? []).length === 0 ? (
+                        <span className="rounded-full bg-navy-50 px-2 py-0.5 text-[11.5px] font-semibold text-navy-700">Бүх эрх</span>
+                      ) : (
+                        k.scopes.map((s) => (
+                          <span key={s} className="rounded-full bg-navy-50 px-2 py-0.5 text-[11.5px] font-semibold text-navy-700">
+                            {SCOPE_BADGE[s] ?? s}
+                          </span>
+                        ))
+                      )}
+                      {k.mode === 'test' && (
+                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11.5px] font-bold text-amber-700 ring-1 ring-inset ring-amber-200">Тест</span>
+                      )}
+                    </div>
+                  </td>
                   <td className="td text-slate-500">{shortDate(k.createdAt)}</td>
                   <td className="td">
                     {k.revokedAt ? (
@@ -271,6 +300,67 @@ export default function DevelopersPage() {
           <li>• Webhook бүр <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">X-Billing-Signature</code> толгойтой — whsec_ нууцаар HMAC-SHA256 баталгаажуулна.</li>
           <li>• Webhook хүлээн авсныг 2xx статусаар хариулна; амжилтгүй бол 1 удаа дахин оролдоно.</li>
         </ul>
+
+        <h2 className="pt-2 font-bold text-slate-900">eBarimt баримт үүсгэх (Үйлчилгээ 3 · 4)</h2>
+        <p className="text-[13.5px] leading-relaxed text-slate-600">
+          <b>POST /api/v1/partner/receipts</b> — өөрийн системээс НӨАТ-ын баримт шууд үүсгэнэ.{' '}
+          <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">device_id</code> дамжуулбал POS горим:
+          терминал автоматаар бүртгэгдэж, баримтын тоо хязгааргүй. <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">Idempotency-Key</code>{' '}
+          толгой давхар хүсэлтээс хамгаална.
+        </p>
+        <div className="rounded-xl bg-navy-900 p-4">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">eBarimt API — баримт үүсгэх (Үйлчилгээ 3)</p>
+          <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://billing.mastrsys.com/api/v1/partner/receipts \\
+  -H "X-Api-Key: bsk_ТАНЫ_ТҮЛХҮҮР" \\
+  -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: order-10041" \\
+  -d '{
+    "amount": 45000,
+    "description": "Худалдан авалт #10041",
+    "receipt_type": "CITIZEN",
+    "payment_method": "CARD"
+  }'`}</pre>
+        </div>
+        <div className="rounded-xl bg-navy-900 p-4">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">POS терминал — device_id-тэй баримт (Үйлчилгээ 4)</p>
+          <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://billing.mastrsys.com/api/v1/partner/receipts \\
+  -H "X-Api-Key: bsk_ТАНЫ_ТҮЛХҮҮР" \\
+  -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: pos-7788-000123" \\
+  -d '{
+    "amount": 12500,
+    "description": "Кассын борлуулалт",
+    "payment_method": "CASH",
+    "device_id": "POS-7788",
+    "device_name": "Салбар 1 касс"
+  }'`}</pre>
+        </div>
+        <div className="rounded-xl bg-navy-900 p-4">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Хариу (201)</p>
+          <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`{
+  "id": "rcp_7f3a…",
+  "state": "CREATED",
+  "receipt_no": "0000123456",
+  "lottery": "AB12345678",
+  "qr_data": "…",
+  "receipt_type": "CITIZEN",
+  "device_id": "POS-7788",
+  "error": null
+}`}</pre>
+        </div>
+        <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-slate-600">
+          <li>• <b>GET /api/v1/partner/receipts/:id</b> — баримтын төлөв шалгах (state, amount, receipt_no, lottery, qr_data, created_at).</li>
+          <li>• <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">receipt_type</code>: CITIZEN | ORGANIZATION (ORGANIZATION үед <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">payer_reg_no</code> шаардлагатай).</li>
+          <li>• <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">payment_method</code>: CASH | CARD | BANK_TRANSFER.</li>
+          <li>• Тест түлхүүр (<code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">bsk_test_…</code>) юу ч бичихгүй — <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">test: true</code> тэмдэгтэй симуляц хариу буцаана.</li>
+        </ul>
+        <a
+          href="/billingservice-partner-api.postman_collection.json"
+          download
+          className="btn-secondary inline-flex items-center gap-2 px-4 py-2 text-[13.5px]"
+        >
+          ⬇ Postman collection татах
+        </a>
       </div>
 
       {/* Create key modal */}
@@ -295,6 +385,39 @@ export default function DevelopersPage() {
               <label className="label">Нэр (юунд ашиглах вэ)</label>
               <input className="input" value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="Ж: ERP интеграци" maxLength={80} />
             </div>
+            <div>
+              <label className="label">Эрх (scope)</label>
+              <div className="space-y-2">
+                {SCOPES.map((s) => {
+                  const on = keyScopes.includes(s.value);
+                  return (
+                    <label key={s.value} className="flex cursor-pointer items-center gap-3 rounded-xl bg-navy-50/60 px-3.5 py-2.5 text-[13.5px] font-medium text-navy-800">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-indigo-600"
+                        checked={on}
+                        onChange={() => setKeyScopes((cur) => (on ? cur.filter((v) => v !== s.value) : [...cur, s.value]))}
+                      />
+                      {s.label}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/60 px-3.5 py-2.5 text-[13.5px] font-medium text-amber-900">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-amber-600"
+                checked={keyTestMode}
+                onChange={(e) => setKeyTestMode(e.target.checked)}
+              />
+              <span>
+                Тест түлхүүр
+                <span className="mt-0.5 block text-[12px] font-normal text-amber-800">
+                  Тест түлхүүр юу ч бичихгүй — симуляц хариу буцаана. Postman collection-оор турших боломжтой.
+                </span>
+              </span>
+            </label>
             <div className="flex justify-end gap-3">
               <button className="btn-secondary" onClick={() => setKeyModal(false)}>Болих</button>
               <button className="btn-primary min-w-[120px]" onClick={createKey} disabled={busy || !keyName.trim()}>

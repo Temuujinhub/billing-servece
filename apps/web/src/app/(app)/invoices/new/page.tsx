@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { ErrorNote, Spinner } from '@/components/ui';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, apiPublic } from '@/lib/api';
 import { mnt } from '@/lib/format';
 import type { InvoiceDetail } from '@/lib/types';
 
@@ -21,6 +21,15 @@ export default function NewInvoicePage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [msgPrice, setMsgPrice] = useState(100);
+
+  useEffect(() => {
+    apiPublic<{ INVOICE_MSG: number }>('/public/pricing')
+      .then((p) => {
+        if (typeof p?.INVOICE_MSG === 'number') setMsgPrice(p.INVOICE_MSG);
+      })
+      .catch(() => undefined);
+  }, []);
 
   const amountNum = Number(form.amount.replace(/[,\s]/g, '')) || 0;
 
@@ -108,7 +117,7 @@ export default function NewInvoicePage() {
             </div>
             {form.send && (
               <p className="mt-2 border-t border-white/10 pt-2 text-[12.5px] leading-snug text-navy-300">
-                + SMS илгээх зардал ~2 segment ≈ 50₮ — энэ нь <b className="text-navy-100">танай байгууллагын сарын billing-д</b> нэмэгдэх үйлчилгээний зардал бөгөөд нэхэмжлэхийн дүнд орохгүй.
+                + Нэг илгээлт {msgPrice}₮ — eBarimt багтсан. Энэ нь <b className="text-navy-100">танай байгууллагын сарын billing-д</b> нэмэгдэх үйлчилгээний зардал бөгөөд нэхэмжлэхийн дүнд орохгүй.
               </p>
             )}
           </div>
