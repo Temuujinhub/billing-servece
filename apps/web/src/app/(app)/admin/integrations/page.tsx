@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ErrorNote, PageLoader, Spinner } from '@/components/ui';
 import { api, ApiError, getSessionUser } from '@/lib/api';
 
-type Source = 'db' | 'env' | 'none';
+type Source = 'db' | 'global' | 'env' | 'none';
 
 interface BonumView {
   enabled: boolean;
@@ -80,6 +80,7 @@ interface SyncResult {
 
 const SOURCE_MN: Record<Source, string> = {
   db: 'UI-аас хадгалсан',
+  global: 'Глобал (бүх байгууллагад нэг)',
   env: 'Серверийн .env-ээс',
   none: 'Тохируулаагүй',
 };
@@ -178,6 +179,8 @@ export default function IntegrationsPage() {
   const [requesting, setRequesting] = useState(false);
   const [qForm, setQForm] = useState({ username: '', password: '', invoiceCode: '' });
   const [cForm, setCForm] = useState({ apiKey: '', from: '' });
+  const [globalizing, setGlobalizing] = useState(false);
+  const [globalMsg, setGlobalMsg] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api<Integrations>('/integrations')
@@ -214,6 +217,25 @@ export default function IntegrationsPage() {
       setMerchantReq({ ok: false, message_mn: e instanceof ApiError ? e.message : 'Илгээж чадсангүй', details: [] });
     } finally {
       setRequesting(false);
+    }
+  }
+
+  /** Ажиллаж буй CallPro тохиргоог платформ даяар нэг болгоно (зөрүүтэй хуучин түлхүүрүүд устна). */
+  async function makeCallproGlobal() {
+    setGlobalizing(true);
+    setGlobalMsg(null);
+    try {
+      const r = await api<{ ok: boolean; message_mn: string }>('/integrations/CALLPRO/make-global', {
+        method: 'POST',
+        body: JSON.stringify({ apiKey: cForm.apiKey || undefined, from: cForm.from.trim() || undefined }),
+      });
+      setGlobalMsg(r.message_mn);
+      setCForm((f) => ({ ...f, apiKey: '' }));
+      load();
+    } catch (e) {
+      setGlobalMsg(e instanceof ApiError ? e.message : 'Амжилтгүй боллоо');
+    } finally {
+      setGlobalizing(false);
     }
   }
 
@@ -659,6 +681,18 @@ export default function IntegrationsPage() {
             )
           }
         />
+        <div className="mt-4 rounded-xl bg-slate-50 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={makeCallproGlobal} disabled={globalizing} className="btn-secondary">
+              {globalizing ? <Spinner className="h-4 w-4" /> : '🌐 Бүх байгууллагад энэ түлхүүрийг хэрэглэх'}
+            </button>
+            <p className="flex-1 text-[12px] leading-snug text-slate-500">
+              Одоо ажиллаж буй тохиргоог платформ даяар НЭГ болгоно — байгууллага тус бүрийн тусдаа (зөрүүтэй)
+              CallPro түлхүүрүүд устаж, бүх SMS энэ түлхүүрээр явна.
+            </p>
+          </div>
+          {globalMsg && <p className="mt-2 text-[12.5px] font-semibold text-slate-700">{globalMsg}</p>}
+        </div>
         <p className="mt-3 text-[12px] leading-snug text-slate-500">
           Унтраахад SMS mock горимд бичигдэнэ (бодит илгээлт хийгдэхгүй). Мессежийн бүтцийг Тохиргоо → Мессежийн загвар
           хэсгээс өөрчилнө. Мессеж дэх линкийн домэйныг оператор урьдчилан баталгаажуулсан байх шаардлагатай.

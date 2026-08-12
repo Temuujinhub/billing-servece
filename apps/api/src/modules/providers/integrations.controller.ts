@@ -92,6 +92,17 @@ export class IntegrationsController {
   }
 
   /**
+   * Ажиллаж буй CallPro тохиргоог платформ даяар нэг болгоно — бүх tenant-ийн
+   * тусдаа (зөрүүтэй) CALLPRO тохиргоо устаж, нэг түлхүүр хэрэглэгдэнэ.
+   */
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('CALLPRO/make-global')
+  makeCallproGlobal(@CurrentUser() user: AuthUser, @Body() dto: SaveIntegrationDto) {
+    return this.configs.makeCallproGlobal(user, dto);
+  }
+
+  /**
    * eBarimt: /rest/info-оос тухайн байгууллагын POS дугаарыг татаж авна.
    * Хэрэглэгч ebarimt.mn дээрээ операторын хүсэлтээ баталгаажуулсны дараа энэ
    * товчийг дарахад branchNo/posNo автоматаар бөглөгдөнө.
