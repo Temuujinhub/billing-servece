@@ -308,7 +308,11 @@ function round2(n: number): number {
  * BANK_TRANSFER_QPAY). Bonum бол картын гарц, QPay нь өөрийн кодтой.
  */
 function paymentCode(provider: string): string {
-  return provider.startsWith('qpay') ? 'BANK_TRANSFER_QPAY' : 'PAYMENT_CARD';
+  if (provider.startsWith('qpay')) return 'BANK_TRANSFER_QPAY';
+  // Standalone (Үйлчилгээ 3/4) баримтад төлбөрийн хэлбэрээ API-аас зааж өгнө.
+  if (provider === 'cash') return 'CASH';
+  if (provider === 'bank_transfer') return 'BANK_TRANSFER';
+  return 'PAYMENT_CARD';
 }
 
 /** /rest/info: нэг instance = операторын нэг POS + бүртгэлтэй мерчантууд. */

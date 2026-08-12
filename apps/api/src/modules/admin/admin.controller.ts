@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query } from 
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AdminOnly, AuthUser, CurrentUser } from '../../common/decorators';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MonthCloseService } from '../billing/month-close.service';
 import { ProviderConfigService } from '../providers/provider-config.service';
 import { AdminService } from './admin.service';
 
@@ -30,6 +31,7 @@ export class AdminController {
     private readonly prisma: PrismaService,
     private readonly admin: AdminService,
     private readonly providerConfigs: ProviderConfigService,
+    private readonly monthClose: MonthCloseService,
   ) {}
 
   // ---------------------------------------------- System health (ops runbook)
@@ -141,6 +143,18 @@ export class AdminController {
     return this.admin.setTenantModule(user, id, code.toUpperCase(), Boolean(body.enabled), body.quantity);
   }
 
+  /** Tenant-тэй тохиролцсон нэгж үнэ (ж: API илгээлт 75₮) / eBarimt API шатлал. */
+  @HttpCode(200)
+  @Put('merchants/:id/pricing/:code')
+  setTenantPricing(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('code') code: string,
+    @Body() body: { unitPrice?: number | null; tier?: number | null },
+  ) {
+    return this.admin.setTenantPricing(user, id, code.toUpperCase(), body.unitPrice ?? null, body.tier ?? null);
+  }
+
   // -------------------------------------------- A-07..A-09 transactions
 
   @Get('transactions')
@@ -228,8 +242,31 @@ export class AdminController {
   }
 
   @Put('pricing')
-  setPricing(@CurrentUser() user: AuthUser, @Body() body: Record<string, number>) {
-    return this.admin.setPricing(user, body);
+  setPricing(@CurrentUser() user: AuthUser, @Body() body: Record<string, unknown>) {
+    return this.admin.setPricing(user, body as any);
+  }
+
+  // ------------------------------------ платформын сарын тооцоо (month-close)
+
+  /** Сар хаах — өмнөх (эсвэл заасан) мөчлөгийн тооцоог үүсгэж нэхэмжилнэ. */
+  @HttpCode(200)
+  @Post('billing/close-month')
+  async closeMonth(@CurrentUser() user: AuthUser, @Body() body: { cycle?: string }) {
+    const cycle = body?.cycle || MonthCloseService.previousCycle();
+    const result = await this.monthClose.closeMonth(cycle);
+    await this.prisma.auditLog.create({
+      data: { actorId: user.userId, actorEmail: user.email, action: 'admin.month_close', targetType: 'cycle', targetId: cycle, meta: result as any },
+    });
+    return result;
+  }
+
+  @Get('billing/bills')
+  bills(@Query('cycle') cycle?: string, @Query('take') take?: number) {
+    return this.prisma.serviceBill.findMany({
+      where: cycle ? { cycle } : undefined,
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Number(take) || 100, 300),
+    });
   }
 
   @Get('features')

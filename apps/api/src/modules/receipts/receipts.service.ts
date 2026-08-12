@@ -50,10 +50,57 @@ export class ReceiptsService {
     });
   }
 
-  /** Drain PENDING receipts for a tenant (invoked after payments + retry endpoint). */
-  async processPending(tenantId: string) {
+  /**
+   * Standalone баримт (Үйлчилгээ 3: API / Үйлчилгээ 4: POS) — нэхэмжлэх,
+   * төлбөрийн гинжгүйгээр шууд үүсгэнэ. PENDING бичээд синхроноор нэг удаа
+   * оролдоно; амжилтгүй бол sweeper дараа нь дахин оролдоно.
+   */
+  async createStandalone(args: {
+    tenantId: string;
+    source: 'api' | 'pos';
+    amount: number;
+    description?: string | null;
+    receiptType?: 'CITIZEN' | 'ORGANIZATION';
+    payerRegNo?: string | null;
+    deviceId?: string | null;
+    paymentMethod?: 'CASH' | 'CARD' | 'BANK_TRANSFER';
+  }) {
+    const receipt = await this.prisma.ebarimtReceipt.create({
+      data: {
+        tenantId: args.tenantId,
+        source: args.source,
+        amount: args.amount,
+        description: args.description?.slice(0, 128) ?? null,
+        deviceId: args.deviceId ?? null,
+        receiptType: args.receiptType === 'ORGANIZATION' ? 'ORGANIZATION' : 'CITIZEN',
+        payerRegNo: args.payerRegNo ?? null,
+        state: 'PENDING',
+        // paymentMethod-ыг error талбарт биш тусдаа хадгалахгүй — provider
+        // дуудлагад л хэрэгтэй тул description-ий хамт доор дамжуулна.
+      },
+    });
+    await this.processOne(receipt.id, args.paymentMethod);
+    return this.prisma.ebarimtReceipt.findUniqueOrThrow({ where: { id: receipt.id } });
+  }
+
+  /** Нэг баримтыг provider руу илгээх (payment + standalone хоёуланд). */
+  private async processOne(receiptId: string, paymentMethod?: 'CASH' | 'CARD' | 'BANK_TRANSFER') {
+    const receipt = await this.prisma.ebarimtReceipt.findUnique({
+      where: { id: receiptId },
+      include: {
+        transaction: {
+          select: {
+            provider: true,
+            providerPaymentId: true,
+            gross: true,
+            intent: { select: { invoice: { select: { number: true, description: true, payerRegNo: true } } } },
+          },
+        },
+      },
+    });
+    if (!receipt || !['PENDING', 'FAILED'].includes(receipt.state) || receipt.retries >= 5) return false;
     const tenant = await this.prisma.tenant.findUniqueOrThrow({
-      where: { id: tenantId },
+      where: { id: receipt.tenantId },
       select: {
         tin: true,
         ebarimtMerchantTin: true,
@@ -64,83 +111,104 @@ export class ReceiptsService {
         ebarimtVatFreeProj: true,
       },
     });
-    const pending = await this.prisma.ebarimtReceipt.findMany({
-      where: { tenantId, state: { in: ['PENDING', 'FAILED'] }, retries: { lt: 5 } },
-      take: 20,
-      include: {
-        transaction: {
-          select: {
-            provider: true,
-            providerPaymentId: true,
-            gross: true,
-            intent: { select: { invoice: { select: { number: true, description: true } } } },
-          },
-        },
-      },
-    });
     const keepQr = this.purge.retentionHours > 0;
-    let processed = 0;
-    for (const receipt of pending) {
-      try {
-        const invoice = receipt.transaction.intent.invoice;
-        const result = await this.ebarimt.createReceipt({
-          tenantId,
-          amount: receipt.transaction.gross,
-          description: `${invoice.number} ${invoice.description}`.slice(0, 128),
-          receiptType: receipt.receiptType === 'ORGANIZATION' ? 'ORGANIZATION' : 'CITIZEN',
-          customerTin: receipt.payerRegNo,
-          paymentProvider: receipt.transaction.provider,
-          providerPaymentId: receipt.transaction.providerPaymentId,
-          merchant: {
-            // merchantTin = ТТД. Тусад нь бөглөөгүй бол байгууллагын ТТД-г авна.
-            merchantTin: tenant.ebarimtMerchantTin || tenant.tin,
-            posNo: tenant.ebarimtPosNo,
-            branchNo: tenant.ebarimtBranchNo,
-            districtCode: tenant.ebarimtDistrictCode,
-            vatPayer: tenant.ebarimtVatPayer,
-            vatFreeProject: tenant.ebarimtVatFreeProj,
+    const tenantId = receipt.tenantId;
+    try {
+      const invoice = receipt.transaction?.intent.invoice;
+      // Нэхэмжлэх дээр төлөгч байгууллагын регистр байвал B2B баримт гаргана.
+      const payerRegNo = receipt.payerRegNo || invoice?.payerRegNo || null;
+      const receiptType = receipt.receiptType === 'ORGANIZATION' || (invoice?.payerRegNo && receipt.source === 'payment')
+        ? 'ORGANIZATION'
+        : 'CITIZEN';
+      const result = await this.ebarimt.createReceipt({
+        tenantId,
+        amount: receipt.transaction?.gross ?? receipt.amount ?? 0,
+        description: (invoice ? `${invoice.number} ${invoice.description}` : (receipt.description ?? 'Борлуулалт')).slice(0, 128),
+        receiptType,
+        customerTin: payerRegNo,
+        paymentProvider: receipt.transaction?.provider ?? (paymentMethod === 'CASH' ? 'cash' : paymentMethod === 'BANK_TRANSFER' ? 'bank_transfer' : 'card'),
+        providerPaymentId: receipt.transaction?.providerPaymentId ?? receipt.id,
+        merchant: {
+          // merchantTin = ТТД. Тусад нь бөглөөгүй бол байгууллагын ТТД-г авна.
+          merchantTin: tenant.ebarimtMerchantTin || tenant.tin,
+          posNo: tenant.ebarimtPosNo,
+          branchNo: tenant.ebarimtBranchNo,
+          districtCode: tenant.ebarimtDistrictCode,
+          vatPayer: tenant.ebarimtVatPayer,
+          vatFreeProject: tenant.ebarimtVatFreeProj,
+        },
+      });
+      let claimedNow = false;
+      await this.prisma.$transaction(async (tx) => {
+        const claimed = await tx.ebarimtReceipt.updateMany({
+          where: { id: receipt.id, state: { in: ['PENDING', 'FAILED'] } },
+          data: {
+            state: 'CREATED',
+            receiptNo: result.receiptNo,
+            receiptType,
+            payerRegNo,
+            // Хадгалах хугацаа 0 бол сугалаа/QR-г огт бичихгүй (ТЕГ-ийн
+            // заавар: баримтанд хэвлэхээс өөрөөр хадгалахыг хориглоно).
+            lottery: keepQr ? result.lottery : null,
+            qrData: keepQr ? result.qrData : null,
+            error: null,
           },
         });
-        await this.prisma.$transaction(async (tx) => {
-          const claimed = await tx.ebarimtReceipt.updateMany({
-            where: { id: receipt.id, state: { in: ['PENDING', 'FAILED'] } },
+        if (claimed.count > 0) {
+          claimedNow = true;
+          await tx.usageEvent.create({
             data: {
-              state: 'CREATED',
-              receiptNo: result.receiptNo,
-              // Хадгалах хугацаа 0 бол сугалаа/QR-г огт бичихгүй (ТЕГ-ийн
-              // заавар: баримтанд хэвлэхээс өөрөөр хадгалахыг хориглоно).
-              lottery: keepQr ? result.lottery : null,
-              qrData: keepQr ? result.qrData : null,
-              error: null,
+              tenantId,
+              meterCode: 'RECEIPT_CREATED',
+              qty: 1,
+              serviceCode: receipt.source === 'api' ? 'EBARIMT_API' : receipt.source === 'pos' ? 'POS_EBARIMT' : null,
+              sourceEventId: `rcpt:${receipt.id}`,
             },
           });
-          if (claimed.count > 0) {
-            await tx.usageEvent.create({
-              data: {
-                tenantId,
-                meterCode: 'RECEIPT_CREATED',
-                qty: 1,
-                sourceEventId: `rcpt:${receipt.id}`,
-              },
-            });
-            processed += 1;
-          }
-        });
+        }
+      });
+      if (claimedNow) {
         this.webhooks.emit(tenantId, 'receipt.created', {
           receipt_id: receipt.id,
           transaction_id: receipt.transactionId,
           receipt_no: result.receiptNo,
           lottery: result.lottery,
         });
-      } catch (e: any) {
-        await this.prisma.ebarimtReceipt.update({
-          where: { id: receipt.id },
-          data: { state: 'FAILED', retries: { increment: 1 }, error: String(e?.message ?? e).slice(0, 500) },
-        });
-        this.logger.warn(`eBarimt create failed for ${receipt.id}: ${e?.message}`);
       }
+      return claimedNow;
+    } catch (e: any) {
+      await this.prisma.ebarimtReceipt.update({
+        where: { id: receipt.id },
+        data: { state: 'FAILED', retries: { increment: 1 }, error: String(e?.message ?? e).slice(0, 500) },
+      });
+      this.logger.warn(`eBarimt create failed for ${receipt.id}: ${e?.message}`);
+      return false;
+    }
+  }
+
+  /** Drain PENDING receipts for a tenant (invoked after payments + retry endpoint). */
+  async processPending(tenantId: string) {
+    const pending = await this.prisma.ebarimtReceipt.findMany({
+      where: { tenantId, state: { in: ['PENDING', 'FAILED'] }, retries: { lt: 5 } },
+      take: 20,
+      select: { id: true },
+    });
+    let processed = 0;
+    for (const receipt of pending) {
+      if (await this.processOne(receipt.id)) processed += 1;
     }
     return { processed };
+  }
+
+  /** Бүх tenant-ийн гацсан баримтыг дахин оролдох sweeper-т зориулсан жагсаалт. */
+  async tenantsWithPending(): Promise<string[]> {
+    const rows = await this.prisma.ebarimtReceipt.findMany({
+      where: { state: { in: ['PENDING', 'FAILED'] }, retries: { lt: 5 } },
+      select: { tenantId: true },
+      distinct: ['tenantId'],
+      take: 100,
+    });
+    return rows.map((r) => r.tenantId);
   }
 
   async list(tenantId: string, take = 50, skip = 0) {

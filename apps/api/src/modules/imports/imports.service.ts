@@ -9,6 +9,7 @@ import { CustomersService } from '../customers/customers.service';
 import { InvoicesService } from '../invoices/invoices.service';
 import { MAX_INVOICE_AMOUNT } from '../invoices/invoices.dto';
 import { MessagingService } from '../messaging/messaging.service';
+import { BillingService } from '../billing/billing.service';
 
 const MAX_ROWS = 5000; // MVP guardrail; PRD targets 50k rows via async workers in Phase 2
 
@@ -71,6 +72,7 @@ export class ImportsService {
     private readonly customers: CustomersService,
     private readonly invoices: InvoicesService,
     private readonly messaging: MessagingService,
+    private readonly billing: BillingService,
   ) {}
 
   // ---------------------------------------------------------------- inspect
@@ -184,6 +186,8 @@ export class ImportsService {
     if (!batch) {
       throw apiError(HttpStatus.NOT_FOUND, 'BATCH_NOT_FOUND', 'Импортын багц олдсонгүй.', 'Import batch not found.');
     }
+    // Илгээлтийн үнэ: tenant-тэй тохиролцсон үнэ > глобал тариф (админ тохиргоо).
+    const msgUnitPrice = await this.billing.unitPriceFor(tenantId, 'EXCEL_SMS');
     let smsSegmentEstimate = 0;
     for (const row of batch.rows) {
       if (!row.valid || !row.normalized) continue;
@@ -212,7 +216,10 @@ export class ImportsService {
       })),
       estimate: {
         smsSegments: smsSegmentEstimate,
-        smsCost: smsSegmentEstimate * 25, // business assumption from the PRD, confirm with provider contract
+        // Тариф v2: илгээлт бүр (segment-ээс үл хамааран) нэг үнэтэй, eBarimt багтсан.
+        invoiceMsgs: batch.validCount,
+        msgUnitPrice,
+        smsCost: batch.validCount * msgUnitPrice,
       },
     };
   }
@@ -236,6 +243,18 @@ export class ImportsService {
    * APPROVED first so a double-click can't dispatch twice (idempotency).
    */
   async approve(user: AuthUser, batchId: string) {
+    // Үйлчилгээ 1 (EXCEL_SMS) идэвхтэй байж импортын илгээлт хийгдэнэ.
+    const smsModule = await this.prisma.tenantModule.findUnique({
+      where: { tenantId_code: { tenantId: user.tenantId, code: 'EXCEL_SMS' } },
+    });
+    if (!smsModule?.enabled) {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'MODULE_DISABLED',
+        'Нэхэмжлэх илгээх үйлчилгээ идэвхгүй байна — Billing хуудаснаас идэвхжүүлнэ үү.',
+        'Service module EXCEL_SMS is disabled.',
+      );
+    }
     const batch = await this.prisma.invoiceBatch.findFirst({ where: { id: batchId, tenantId: user.tenantId } });
     if (!batch) {
       throw apiError(HttpStatus.NOT_FOUND, 'BATCH_NOT_FOUND', 'Импортын багц олдсонгүй.', 'Import batch not found.');
@@ -286,6 +305,7 @@ export class ImportsService {
             description: n.description,
             dueDate: n.dueDate ? new Date(n.dueDate) : null,
             batchId,
+            source: 'import',
           });
           await this.invoices.dispatchInvoice(tx, invoice.id, user.tenantId);
           created += 1;

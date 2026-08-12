@@ -6,7 +6,7 @@ import { EbarimtOperatorService } from './ebarimt-operator.service';
 import { EbarimtRegistryService } from './ebarimt-registry.service';
 import { EBARIMT_PORT } from './ebarimt.port';
 import { EMAIL_PORT } from './email.port';
-import { IntegrationsController } from './integrations.controller';
+import { IntegrationsController, TenantEbarimtController } from './integrations.controller';
 import { MockEbarimtAdapter } from './mock-ebarimt.adapter';
 import { MockEmailAdapter } from './mock-email.adapter';
 import { MockQpayAdapter } from './mock-qpay.adapter';
@@ -29,7 +29,7 @@ import { SmtpEmailAdapter } from './smtp-email.adapter';
  */
 @Global()
 @Module({
-  controllers: [IntegrationsController],
+  controllers: [IntegrationsController, TenantEbarimtController],
   providers: [
     ProviderConfigService,
     ProviderResolver,

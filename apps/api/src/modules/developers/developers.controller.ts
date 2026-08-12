@@ -2,17 +2,31 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post } from
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { randomBytes } from 'crypto';
-import { IsArray, IsNotEmpty, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
+import { IsArray, IsIn, IsNotEmpty, IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
 import { AuthUser, CurrentUser, Roles } from '../../common/decorators';
 import { apiError } from '../../common/filters/http-exception.filter';
 import { sha256 } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
+
+export const API_SCOPES = ['invoice', 'receipt', 'pos'] as const;
 
 class CreateKeyDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(80)
   name!: string;
+
+  /** Эрхийн хүрээ: invoice (Үйлчилгээ 2), receipt (Үйлчилгээ 3), pos (Үйлчилгээ 4).
+   *  Хоосон бол бүх эрхтэй (хуучин түлхүүрүүдтэй ижил). */
+  @IsOptional()
+  @IsArray()
+  @IsIn(API_SCOPES as unknown as string[], { each: true })
+  scopes?: string[];
+
+  /** test түлхүүр юу ч бичихгүй — зөвхөн симуляц хариу (Postman-аар турших). */
+  @IsOptional()
+  @IsIn(['live', 'test'])
+  mode?: 'live' | 'test';
 }
 
 class CreateWebhookDto {
@@ -39,7 +53,7 @@ export class DevelopersController {
       this.prisma.apiKey.findMany({
         where: { tenantId: user.tenantId },
         orderBy: { createdAt: 'desc' },
-        select: { id: true, name: true, prefix: true, last4: true, createdAt: true, revokedAt: true },
+        select: { id: true, name: true, prefix: true, last4: true, scopes: true, mode: true, createdAt: true, revokedAt: true },
       }),
       this.prisma.webhookEndpoint.findMany({
         where: { tenantId: user.tenantId },
@@ -57,16 +71,18 @@ export class DevelopersController {
     if (active >= 5) {
       throw apiError(HttpStatus.BAD_REQUEST, 'TOO_MANY_KEYS', 'Идэвхтэй түлхүүр дээд тал нь 5 байна.', 'At most 5 active keys.');
     }
-    const raw = `bsk_${randomBytes(24).toString('base64url')}`;
+    const raw = `bsk_${dto.mode === 'test' ? 'test_' : ''}${randomBytes(24).toString('base64url')}`;
     const key = await this.prisma.apiKey.create({
       data: {
         tenantId: user.tenantId,
         name: dto.name.trim(),
-        prefix: raw.slice(0, 8),
+        prefix: raw.slice(0, dto.mode === 'test' ? 13 : 8),
         keyHash: sha256(raw),
         last4: raw.slice(-4),
+        scopes: (dto.scopes ?? []) as any,
+        mode: dto.mode ?? 'live',
       },
-      select: { id: true, name: true, prefix: true, last4: true, createdAt: true, revokedAt: true },
+      select: { id: true, name: true, prefix: true, last4: true, scopes: true, mode: true, createdAt: true, revokedAt: true },
     });
     await this.prisma.auditLog.create({
       data: { tenantId: user.tenantId, actorId: user.userId, actorEmail: user.email, action: 'apikey.created', targetType: 'apikey', targetId: key.id },

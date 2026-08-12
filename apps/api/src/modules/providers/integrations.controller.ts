@@ -2,7 +2,8 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put } from '@
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
-import { AdminOnly, AuthUser, CurrentUser } from '../../common/decorators';
+import { Role } from '@prisma/client';
+import { AdminOnly, AuthUser, CurrentUser, Roles } from '../../common/decorators';
 import { apiError } from '../../common/filters/http-exception.filter';
 import { ProviderCode, ProviderConfigService } from './provider-config.service';
 
@@ -111,5 +112,34 @@ export class IntegrationsController {
   @Post('EBARIMT/merchant-request')
   requestMerchant(@CurrentUser() user: AuthUser) {
     return this.configs.requestEbarimtMerchant(user);
+  }
+}
+
+/**
+ * Байгууллага ӨӨРӨӨ (OWNER) ТЕГ-ийн бүртгэлээ урагшлуулах боломж — админ
+ * хүлээхгүйгээр онбордингоо өөрөө дуусгана. Хоёулаа user.tenantId дээр л
+ * ажилладаг тул cross-tenant эрсдэлгүй.
+ */
+@ApiTags('integrations')
+@ApiBearerAuth()
+@Roles(Role.OWNER)
+@Controller('tenant/ebarimt')
+export class TenantEbarimtController {
+  constructor(private readonly configs: ProviderConfigService) {}
+
+  /** ТЕГ рүү мерчант бүртгүүлэх хүсэлт (saveOprMerchants) — өөрийн tenant. */
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('merchant-request')
+  requestMerchant(@CurrentUser() user: AuthUser) {
+    return this.configs.requestEbarimtMerchant(user);
+  }
+
+  /** POS дугаараа /rest/info-оос татах — өөрийн tenant. */
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('sync')
+  sync(@CurrentUser() user: AuthUser) {
+    return this.configs.syncEbarimt(user);
   }
 }

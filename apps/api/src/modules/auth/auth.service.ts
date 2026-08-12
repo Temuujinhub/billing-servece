@@ -59,9 +59,14 @@ export class AuthService {
           invoiceSeq: { create: {} },
           modules: {
             create: [
-              { code: 'SMS', enabled: true },
+              // Үйлчилгээ 1 (Excel/дашбоард нэхэмжлэх + SMS) шууд нээлттэй.
+              { code: 'EXCEL_SMS', enabled: true },
+              // Үйлчилгээ 2–4 сонголтоор идэвхжинэ.
+              { code: 'API_SMS', enabled: false, quantity: 0 },
+              { code: 'EBARIMT_API', enabled: false, quantity: 0, tier: 1 },
+              { code: 'POS_EBARIMT', enabled: false, quantity: 0 },
+              // Туслах: eBarimt холболт (интеграц батлагдахад асна) + сануулга.
               { code: 'EBARIMT', enabled: false },
-              { code: 'POS', enabled: false, quantity: 0 },
               { code: 'REMINDER', enabled: false },
             ],
           },

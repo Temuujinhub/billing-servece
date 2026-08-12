@@ -26,7 +26,8 @@
 | Төлбөрийн orchestration: intent → callback → **payment-check** → ledger | ✅ идемпотент |
 | eBarimt: PENDING → CREATED/FAILED + retry, сугалааны дугаар | ✅ (mock) |
 | Хянах самбар: KPI, 30 хоногийн трэнд, төлөвийн задаргаа | ✅ |
-| Billing & Modules: хэрэглээний meter + сарын тооцооны урьдчилсан дүн | ✅ |
+| Billing v2: 4 үйлчилгээ (Excel+SMS 100₮/илгээлт · API+SMS гэрээт үнэ · eBarimt API шатлалтай · POS терминал 20к/сар), НӨАТ, сар хаалт + өөрийн нэхэмжлэх SMS-ээр | ✅ |
+| Partner API: нэхэмжлэх + standalone eBarimt + POS баримт, scope-той түлхүүр, тест горим (Postman) | ✅ |
 | Audit log (хэн/хэзээ/юу) | ✅ |
 
 ## Архитектур

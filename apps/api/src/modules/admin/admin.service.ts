@@ -9,14 +9,10 @@ import { QpayAdapter } from '../providers/qpay.adapter';
 import { MessagingService } from '../messaging/messaging.service';
 import { PaymentsService } from '../payments/payments.service';
 import { ReceiptsService } from '../receipts/receipts.service';
+import { PRICING as DEFAULT_PRICING, EbarimtTier } from '../billing/billing.service';
 
-/** Default pricing (PRD §4.1) — overridable from /admin/pricing. */
-export const DEFAULT_PRICING = {
-  BASE_FEE: 20_000,
-  SMS_PER_SEGMENT: 25,
-  EBARIMT_CONNECTION: 20_000,
-  POS_PER_DEVICE: 20_000,
-};
+/** Тарифын default — billing.service-ийн PRICING нэг эх сурвалж. */
+export { DEFAULT_PRICING };
 
 export const DEFAULT_FEATURES = {
   registrationOpen: true,
@@ -135,6 +131,21 @@ export class AdminService {
       create: { tenantId, code, enabled, quantity: quantity ?? (enabled ? 1 : 0) },
       update: { enabled, quantity: quantity ?? undefined },
     });
+    // Үйлчилгээ 3-ыг анх идэвхжүүлэхэд onboarding хураамж (нэг л удаа) бүртгэнэ.
+    if (code === 'EBARIMT_API' && enabled) {
+      const pricing = await this.getPricing();
+      const exists = await this.prisma.serviceCharge.findFirst({ where: { tenantId, code: 'EBARIMT_API_ONBOARDING' } });
+      if (!exists && pricing.EBARIMT_API_ONBOARDING > 0) {
+        await this.prisma.serviceCharge.create({
+          data: {
+            tenantId,
+            code: 'EBARIMT_API_ONBOARDING',
+            label: 'eBarimt API интеграцийн хураамж (нэг удаа)',
+            amount: pricing.EBARIMT_API_ONBOARDING,
+          },
+        });
+      }
+    }
     await this.audit(actor, enabled ? 'admin.module.enabled' : 'admin.module.disabled', 'module', `${tenantId}:${code}`);
     return module;
   }
@@ -414,10 +425,42 @@ export class AdminService {
 
   async setPricing(actor: AuthUser, value: Partial<typeof DEFAULT_PRICING>) {
     const merged = { ...(await this.getPricing()), ...value };
-    for (const v of Object.values(merged)) {
-      if (!Number.isInteger(v) || (v as number) < 0 || (v as number) > 10_000_000) {
-        throw apiError(HttpStatus.BAD_REQUEST, 'BAD_PRICE', 'Үнэ 0–10,000,000₮ бүхэл тоо байна.', 'Prices must be integers in range.');
+    const badPrice = () =>
+      apiError(HttpStatus.BAD_REQUEST, 'BAD_PRICE', 'Үнэ 0–10,000,000₮ бүхэл тоо байна.', 'Prices must be integers in range.');
+    const intPrice = (v: unknown) => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 10_000_000;
+    for (const key of ['INVOICE_MSG', 'API_INVOICE_MSG', 'EBARIMT_API_ONBOARDING', 'POS_PER_DEVICE'] as const) {
+      if (!intPrice(merged[key])) throw badPrice();
+    }
+    if (!Number.isInteger(merged.VAT_PERCENT) || merged.VAT_PERCENT < 0 || merged.VAT_PERCENT > 50) {
+      throw apiError(HttpStatus.BAD_REQUEST, 'BAD_VAT', 'НӨАТ 0–50% бүхэл тоо байна.', 'VAT percent must be 0–50.');
+    }
+    // 3 шатлал: хязгаар өсөх дараалалтай, сүүлийнх нь хязгааргүй (null) байж болно.
+    const tiers = merged.EBARIMT_API_TIERS as EbarimtTier[];
+    if (!Array.isArray(tiers) || tiers.length !== 3) {
+      throw apiError(HttpStatus.BAD_REQUEST, 'BAD_TIERS', 'eBarimt API 3 шатлалтай байна.', 'Exactly 3 tiers are required.');
+    }
+    for (let i = 0; i < tiers.length; i++) {
+      const t = tiers[i];
+      if (!intPrice(t?.fee)) throw badPrice();
+      const isLast = i === tiers.length - 1;
+      if (t.upTo != null && (!Number.isInteger(t.upTo) || t.upTo <= 0 || t.upTo > 1_000_000)) {
+        throw apiError(HttpStatus.BAD_REQUEST, 'BAD_TIERS', 'Шатлалын хязгаар 1–1,000,000 бүхэл тоо байна.', 'Tier limits must be positive integers.');
       }
+      if (!isLast && t.upTo == null) {
+        throw apiError(HttpStatus.BAD_REQUEST, 'BAD_TIERS', 'Зөвхөн сүүлийн шатлал хязгааргүй байж болно.', 'Only the last tier may be unlimited.');
+      }
+      if (i > 0 && t.upTo != null && tiers[i - 1].upTo != null && t.upTo <= (tiers[i - 1].upTo as number)) {
+        throw apiError(HttpStatus.BAD_REQUEST, 'BAD_TIERS', 'Шатлалын хязгаарууд өсөх дараалалтай байна.', 'Tier limits must be ascending.');
+      }
+    }
+    // Платформын нэхэмжлэх гаргагч tenant (Медиа Профессионал ХХК) — байвал шалгана.
+    if (merged.BILLER_TENANT_ID != null && merged.BILLER_TENANT_ID !== '') {
+      const biller = await this.prisma.tenant.findUnique({ where: { id: merged.BILLER_TENANT_ID } });
+      if (!biller) {
+        throw apiError(HttpStatus.BAD_REQUEST, 'BILLER_NOT_FOUND', 'Нэхэмжлэгч байгууллага (tenant) олдсонгүй.', 'Biller tenant not found.');
+      }
+    } else {
+      merged.BILLER_TENANT_ID = null;
     }
     await this.prisma.platformSetting.upsert({
       where: { key: 'pricing' },
@@ -426,6 +469,29 @@ export class AdminService {
     });
     await this.audit(actor, 'admin.pricing.updated', 'setting', 'pricing', merged);
     return merged;
+  }
+
+  /** Tenant-тэй тохиролцсон нэгж үнэ / шатлал — админ тохируулна (ж: 75₮/msg гэрээ). */
+  async setTenantPricing(actor: AuthUser, tenantId: string, code: string, unitPrice: number | null, tier?: number | null) {
+    if (!['EXCEL_SMS', 'API_SMS', 'EBARIMT_API'].includes(code)) {
+      throw apiError(HttpStatus.BAD_REQUEST, 'UNKNOWN_MODULE', 'Энэ үйлчилгээнд үнэ тохируулах боломжгүй.', `No per-tenant pricing for ${code}.`);
+    }
+    if (unitPrice != null && (!Number.isInteger(unitPrice) || unitPrice < 0 || unitPrice > 1_000_000)) {
+      throw apiError(HttpStatus.BAD_REQUEST, 'BAD_PRICE', 'Нэгж үнэ 0–1,000,000₮ бүхэл тоо байна.', 'Unit price must be an integer in range.');
+    }
+    if (tier != null && (tier < 1 || tier > 3)) {
+      throw apiError(HttpStatus.BAD_REQUEST, 'BAD_TIER', 'Шатлал 1–3 байна.', 'Tier must be 1..3.');
+    }
+    const module = await this.prisma.tenantModule.upsert({
+      where: { tenantId_code: { tenantId, code } },
+      create: { tenantId, code, enabled: false, quantity: 0, unitPrice, tier: tier ?? undefined },
+      update: { unitPrice, tier: tier ?? undefined },
+    });
+    await this.audit(actor, 'admin.tenant_pricing.updated', 'module', `${tenantId}:${code}`, {
+      unitPrice,
+      tier: module.tier,
+    });
+    return module;
   }
 
   getFeatures() {

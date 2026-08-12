@@ -55,9 +55,11 @@ export class BootstrapService implements OnApplicationBootstrap {
             invoiceSeq: { create: {} },
             modules: {
               create: [
-                { code: 'SMS', enabled: true },
+                { code: 'EXCEL_SMS', enabled: true },
+                { code: 'API_SMS', enabled: false, quantity: 0 },
+                { code: 'EBARIMT_API', enabled: false, quantity: 0, tier: 1 },
+                { code: 'POS_EBARIMT', enabled: false, quantity: 0 },
                 { code: 'EBARIMT', enabled: false },
-                { code: 'POS', enabled: false, quantity: 0 },
                 { code: 'REMINDER', enabled: false },
               ],
             },
