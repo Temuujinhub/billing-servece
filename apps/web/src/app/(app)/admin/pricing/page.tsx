@@ -22,8 +22,8 @@ interface CloseResult { cycle: string; created: number; invoiced: number; biller
 type NumericKey = 'INVOICE_MSG' | 'API_INVOICE_MSG' | 'EBARIMT_API_ONBOARDING' | 'POS_PER_DEVICE' | 'VAT_PERCENT';
 
 const PRICE_FIELDS: { key: NumericKey; label: string; unit: string }[] = [
-  { key: 'INVOICE_MSG', label: 'Нэхэмжлэх илгээлт (Үйлчилгээ 1)', unit: '₮/илгээлт' },
-  { key: 'API_INVOICE_MSG', label: 'API илгээлт — default (Үйлчилгээ 2)', unit: '₮/илгээлт' },
+  { key: 'INVOICE_MSG', label: 'Excel файл ашиглан лист үүсгэж нэхэмжлэл илгээх (Үйлчилгээ 1)', unit: '₮/илгээлт' },
+  { key: 'API_INVOICE_MSG', label: 'API ашиглан нэхэмжлэл илгээх үйлчилгээ (Үйлчилгээ 2, default — байгууллага бүр гэрээт үнэтэй байж болно)', unit: '₮/илгээлт' },
   { key: 'EBARIMT_API_ONBOARDING', label: 'eBarimt API интеграци — нэг удаа (Үйлчилгээ 3)', unit: '₮' },
   { key: 'POS_PER_DEVICE', label: 'POS терминал (Үйлчилгээ 4)', unit: '₮/сар·терминал' },
   { key: 'VAT_PERCENT', label: 'НӨАТ', unit: '%' },

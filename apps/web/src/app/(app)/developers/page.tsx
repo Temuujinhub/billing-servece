@@ -56,6 +56,7 @@ export default function DevelopersPage() {
   const [newHookSecret, setNewHookSecret] = useState<string | null>(null);
 
   const [busy, setBusy] = useState(false);
+  const [docsTab, setDocsTab] = useState<'invoice' | 'receipt' | 'pos'>('invoice');
 
   const load = useCallback(() => {
     api<DevelopersOverview>('/developers').then(setData).catch((e) => setError(e.message));
@@ -278,14 +279,49 @@ export default function DevelopersPage() {
         )}
       </div>
 
-      {/* Quick docs */}
+      {/* Quick docs — үйлчилгээ тус бүрээр таб */}
       <div className="card space-y-4 p-6">
-        <h2 className="font-bold text-slate-900">Partner API — түргэн заавар</h2>
-        <div className="rounded-xl bg-navy-900 p-4">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Нэхэмжлэх үүсгээд SMS илгээх</p>
-          <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://billing.mastrsys.com/api/v1/partner/invoices \\
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-bold text-slate-900">Partner API — түргэн заавар</h2>
+          <a
+            href="/billingservice-partner-api.postman_collection.json"
+            download
+            className="btn-secondary inline-flex items-center gap-2 px-4 py-2 text-[13px]"
+          >
+            ⬇ Postman collection
+          </a>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {([
+            { key: 'invoice', label: 'Үйлчилгээ 2 — API нэхэмжлэх + SMS' },
+            { key: 'receipt', label: 'Үйлчилгээ 3 — eBarimt API' },
+            { key: 'pos', label: 'Үйлчилгээ 4 — POS терминал' },
+          ] as const).map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setDocsTab(t.key)}
+              className={`rounded-full px-4 py-2 text-[13px] font-bold transition ${
+                docsTab === t.key ? 'bg-navy-900 text-white' : 'bg-navy-50 text-navy-700 hover:bg-navy-100'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {docsTab === 'invoice' && (
+          <div className="space-y-4">
+            <p className="text-[13.5px] leading-relaxed text-slate-600">
+              Өөрийн системээс нэхэмжлэх үүсгээд төлбөрийн линкийг SMS-ээр илгээнэ. Илгээлт бүр гэрээт үнээр
+              тоологдоно; төлбөр орж ирэхэд eBarimt автоматаар үүснэ. Шаардлагатай эрх: <b>invoice</b>.
+            </p>
+            <div className="rounded-xl bg-navy-900 p-4">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Нэхэмжлэх үүсгээд SMS илгээх</p>
+              <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://billing.mastrsys.com/api/v1/partner/invoices \\
   -H "X-Api-Key: bsk_ТАНЫ_ТҮЛХҮҮР" \\
   -H "Content-Type: application/json" \\
+  -H "Idempotency-Key: order-10041" \\
   -d '{
     "customerName": "Бат Болд",
     "customerPhone": "99112233",
@@ -294,23 +330,24 @@ export default function DevelopersPage() {
     "dueDate": "2026-09-01",
     "send": true
   }'`}</pre>
-        </div>
-        <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-slate-600">
-          <li>• <b>GET /api/v1/partner/invoices/:id</b> — төлөв шалгах (state, balance, paidAt).</li>
-          <li>• Webhook бүр <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">X-Billing-Signature</code> толгойтой — whsec_ нууцаар HMAC-SHA256 баталгаажуулна.</li>
-          <li>• Webhook хүлээн авсныг 2xx статусаар хариулна; амжилтгүй бол 1 удаа дахин оролдоно.</li>
-        </ul>
+            </div>
+            <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-slate-600">
+              <li>• <b>GET /api/v1/partner/invoices/:id</b> — төлөв шалгах (state, balance, paid_at, receipt).</li>
+              <li>• Төлбөр амжилттай болмогц <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">payment.succeeded</code>, баримт үүсмэгц <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">receipt.created</code> webhook ирнэ.</li>
+              <li>• Webhook бүр <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">X-Billing-Signature</code> толгойтой — whsec_ нууцаар HMAC-SHA256 баталгаажуулна; 2xx-ээр хариулна.</li>
+            </ul>
+          </div>
+        )}
 
-        <h2 className="pt-2 font-bold text-slate-900">eBarimt баримт үүсгэх (Үйлчилгээ 3 · 4)</h2>
-        <p className="text-[13.5px] leading-relaxed text-slate-600">
-          <b>POST /api/v1/partner/receipts</b> — өөрийн системээс НӨАТ-ын баримт шууд үүсгэнэ.{' '}
-          <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">device_id</code> дамжуулбал POS горим:
-          терминал автоматаар бүртгэгдэж, баримтын тоо хязгааргүй. <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">Idempotency-Key</code>{' '}
-          толгой давхар хүсэлтээс хамгаална.
-        </p>
-        <div className="rounded-xl bg-navy-900 p-4">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">eBarimt API — баримт үүсгэх (Үйлчилгээ 3)</p>
-          <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://billing.mastrsys.com/api/v1/partner/receipts \\
+        {docsTab === 'receipt' && (
+          <div className="space-y-4">
+            <p className="text-[13.5px] leading-relaxed text-slate-600">
+              Өөрийн системийн борлуулалтад НӨАТ-ын баримтыг шууд үүсгэнэ — нэхэмжлэх/төлбөрийн урсгал шаардлагагүй.
+              Сарын баримтын тоо сонгосон шатлалаар хязгаарлагдана (Billing хуудас). Шаардлагатай эрх: <b>receipt</b>.
+            </p>
+            <div className="rounded-xl bg-navy-900 p-4">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Баримт үүсгэх</p>
+              <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://billing.mastrsys.com/api/v1/partner/receipts \\
   -H "X-Api-Key: bsk_ТАНЫ_ТҮЛХҮҮР" \\
   -H "Content-Type: application/json" \\
   -H "Idempotency-Key: order-10041" \\
@@ -320,10 +357,38 @@ export default function DevelopersPage() {
     "receipt_type": "CITIZEN",
     "payment_method": "CARD"
   }'`}</pre>
-        </div>
-        <div className="rounded-xl bg-navy-900 p-4">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">POS терминал — device_id-тэй баримт (Үйлчилгээ 4)</p>
-          <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://billing.mastrsys.com/api/v1/partner/receipts \\
+            </div>
+            <div className="rounded-xl bg-navy-900 p-4">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Хариу (201)</p>
+              <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`{
+  "id": "rcp_7f3a…",
+  "state": "CREATED",
+  "receipt_no": "0000123456",
+  "lottery": "AB12345678",
+  "qr_data": "…",
+  "receipt_type": "CITIZEN",
+  "error": null
+}`}</pre>
+            </div>
+            <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-slate-600">
+              <li>• <b>GET /api/v1/partner/receipts/:id</b> — баримтын төлөв (state, receipt_no, lottery, qr_data).</li>
+              <li>• <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">receipt_type</code>: CITIZEN | ORGANIZATION — ААН-ийн баримтад <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">payer_reg_no</code> дамжуулна.</li>
+              <li>• <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">payment_method</code>: CASH | CARD | BANK_TRANSFER.</li>
+              <li>• Хязгаар дүүрвэл 429 <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">RECEIPT_QUOTA_EXCEEDED</code> — Billing хуудаснаас шатлалаа ахиулна.</li>
+            </ul>
+          </div>
+        )}
+
+        {docsTab === 'pos' && (
+          <div className="space-y-4">
+            <p className="text-[13.5px] leading-relaxed text-slate-600">
+              POS/кассын апп-аас баримт үүсгэнэ. <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">device_id</code>{' '}
+              дамжуулснаар терминал <b>автоматаар бүртгэгдэж</b> тоологдоно — баримтын тоон хязгааргүй, сарын хураамж
+              идэвхтэй терминалын тооноос бодогдоно. Шаардлагатай эрх: <b>pos</b>.
+            </p>
+            <div className="rounded-xl bg-navy-900 p-4">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">POS-оос баримт үүсгэх</p>
+              <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://billing.mastrsys.com/api/v1/partner/receipts \\
   -H "X-Api-Key: bsk_ТАНЫ_ТҮЛХҮҮР" \\
   -H "Content-Type: application/json" \\
   -H "Idempotency-Key: pos-7788-000123" \\
@@ -334,33 +399,19 @@ export default function DevelopersPage() {
     "device_id": "POS-7788",
     "device_name": "Салбар 1 касс"
   }'`}</pre>
-        </div>
-        <div className="rounded-xl bg-navy-900 p-4">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Хариу (201)</p>
-          <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`{
-  "id": "rcp_7f3a…",
-  "state": "CREATED",
-  "receipt_no": "0000123456",
-  "lottery": "AB12345678",
-  "qr_data": "…",
-  "receipt_type": "CITIZEN",
-  "device_id": "POS-7788",
-  "error": null
-}`}</pre>
-        </div>
-        <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-slate-600">
-          <li>• <b>GET /api/v1/partner/receipts/:id</b> — баримтын төлөв шалгах (state, amount, receipt_no, lottery, qr_data, created_at).</li>
-          <li>• <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">receipt_type</code>: CITIZEN | ORGANIZATION (ORGANIZATION үед <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">payer_reg_no</code> шаардлагатай).</li>
-          <li>• <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">payment_method</code>: CASH | CARD | BANK_TRANSFER.</li>
-          <li>• Тест түлхүүр (<code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">bsk_test_…</code>) юу ч бичихгүй — <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">test: true</code> тэмдэгтэй симуляц хариу буцаана.</li>
-        </ul>
-        <a
-          href="/billingservice-partner-api.postman_collection.json"
-          download
-          className="btn-secondary inline-flex items-center gap-2 px-4 py-2 text-[13.5px]"
-        >
-          ⬇ Postman collection татах
-        </a>
+            </div>
+            <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-slate-600">
+              <li>• <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">device_id</code> — төхөөрөмжийн давтагдашгүй дугаар (серийн №, IMEI г.м.); эхний баримтаар автоматаар бүртгэгдэнэ.</li>
+              <li>• Терминалуудыг Billing хуудасны «POS терминал» хэсэгт харж, блоклож болно — блоклогдсон терминалд 403 <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">TERMINAL_BLOCKED</code>.</li>
+              <li>• Баримтын бүтэц, хариу нь Үйлчилгээ 3-тай ижил (receipt_no, lottery, qr_data).</li>
+            </ul>
+          </div>
+        )}
+
+        <p className="rounded-xl bg-amber-50 px-4 py-3 text-[13px] font-medium text-amber-900">
+          💡 Туршилт: «Тест түлхүүр» (bsk_test_…) юу ч бичихгүй — симуляц хариу буцаана. Заавар:{' '}
+          <code className="rounded bg-white/60 px-1.5 py-0.5 font-mono text-[12px]">docs/API_TESTING.md</code>
+        </p>
       </div>
 
       {/* Create key modal */}

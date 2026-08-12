@@ -24,7 +24,7 @@ export interface CallproEffectiveConfig {
   baseUrl: string;
   apiKey: string;
   from: string;
-  source: 'db' | 'env' | 'none';
+  source: 'db' | 'global' | 'env' | 'none';
 }
 
 /**
@@ -171,10 +171,14 @@ export class ProviderConfigService {
     const cached = this.cacheGet<CallproEffectiveConfig>(cacheKey);
     if (cached) return cached;
 
-    const row = await this.prisma.providerConfig.findUnique({
-      where: { tenantId_code: { tenantId, code: 'CALLPRO' } },
-    });
+    const [row, globalRow] = await Promise.all([
+      this.prisma.providerConfig.findUnique({
+        where: { tenantId_code: { tenantId, code: 'CALLPRO' } },
+      }),
+      this.prisma.platformSetting.findUnique({ where: { key: 'callproGlobal' } }),
+    ]);
     let result: CallproEffectiveConfig;
+    const g = globalRow?.value as any;
     if (row) {
       const c = row.config as any;
       result = {
@@ -183,6 +187,16 @@ export class ProviderConfigService {
         apiKey: c.apiKey ? decryptString(c.apiKey) : '',
         from: c.from || '',
         source: 'db',
+      };
+    } else if (g?.apiKey) {
+      // Платформын нэгдсэн CallPro тохиргоо — админ «глобал болгох» товчоор
+      // хадгалсан НЭГ ажиллаж буй түлхүүр бүх байгууллагад хэрэглэгдэнэ.
+      result = {
+        enabled: g.enabled !== false,
+        baseUrl: g.baseUrl || 'https://api-text.callpro.mn/v1/sms',
+        apiKey: decryptString(g.apiKey),
+        from: g.from || '',
+        source: 'global',
       };
     } else if (this.config.get('SMS_PROVIDER') === 'callpro') {
       result = {
@@ -694,6 +708,44 @@ export class ProviderConfigService {
   }
 
   /** Live connectivity test — returns status only, never credentials. */
+  /**
+   * АЖИЛЛАЖ БУЙ CallPro тохиргоог платформ даяар НЭГ болгож хадгална:
+   * PlatformSetting('callproGlobal')-д бичээд бүх tenant-ийн хуучин CALLPRO
+   * мөрүүдийг устгана — «2 өөр түлхүүр» гэсэн зөрүү дахин үүсэхгүй.
+   */
+  async makeCallproGlobal(user: AuthUser, dto: SaveProviderDto) {
+    const current = await this.getCallpro(user.tenantId);
+    const apiKey = dto.apiKey?.trim() || current.apiKey;
+    const from = dto.from?.trim() || current.from;
+    const baseUrl = dto.baseUrl?.trim() || current.baseUrl;
+    if (!apiKey || !from) {
+      throw apiError(HttpStatus.BAD_REQUEST, 'INCOMPLETE_CONFIG', 'API key болон илгээгч дугаар шаардлагатай.', 'apiKey and from are required.');
+    }
+    const value = { baseUrl, apiKey: encryptString(apiKey), from, enabled: true };
+    const removed = await this.prisma.$transaction(async (tx) => {
+      await tx.platformSetting.upsert({
+        where: { key: 'callproGlobal' },
+        create: { key: 'callproGlobal', value },
+        update: { value },
+      });
+      const del = await tx.providerConfig.deleteMany({ where: { code: 'CALLPRO' } });
+      return del.count;
+    });
+    this.cache.clear();
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: user.tenantId,
+        actorId: user.userId,
+        actorEmail: user.email,
+        action: 'integration.callpro.made_global',
+        targetType: 'setting',
+        targetId: 'callproGlobal',
+        meta: { removedTenantConfigs: removed, from },
+      },
+    });
+    return { ok: true, removedTenantConfigs: removed, message_mn: `Глобал тохиргоо хадгалагдлаа — ${removed} байгууллагын тусдаа CallPro тохиргоо устаж, бүгд нэг түлхүүр хэрэглэнэ.` };
+  }
+
   async test(tenantId: string, code: ProviderCode): Promise<{ ok: boolean; httpStatus: number | null; message_mn: string }> {
     try {
       if (code === 'BONUM') {
@@ -764,7 +816,8 @@ export class ProviderConfigService {
       // амжилттай илгээлтээр баталгаажуулна — байвал холболт OK.
       const recentOk = await this.prisma.messageJob.findFirst({
         where: {
-          tenantId,
+          // Платформ даяар: аль ч байгууллагын бодит амжилттай илгээлт нь
+          // CallPro үйлчилгээ өөрөө ажиллаж байгаагийн нотолгоо.
           status: { in: ['DELIVERED', 'SUBMITTED'] },
           providerRef: { not: null, notIn: [''] },
           createdAt: { gte: new Date(Date.now() - 7 * 864e5) },
