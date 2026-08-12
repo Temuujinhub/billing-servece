@@ -181,10 +181,12 @@ export default function IntegrationsPage() {
   const [cForm, setCForm] = useState({ apiKey: '', from: '' });
   const [globalizing, setGlobalizing] = useState(false);
   const [globalMsg, setGlobalMsg] = useState<string | null>(null);
-  const [opr, setOpr] = useState<{ hasApiKey: boolean; posNo: string; baseUrl: string; envApiKeySet: boolean; envPosNoSet: boolean } | null>(null);
+  const [opr, setOpr] = useState<{ hasApiKey: boolean; posNo: string; baseUrl: string; tokenUrl: string; clientId: string; username: string; hasPassword: boolean; envApiKeySet: boolean; envPosNoSet: boolean } | null>(null);
   const [oprKey, setOprKey] = useState('');
+  const [oprPass, setOprPass] = useState('');
   const [oprSaving, setOprSaving] = useState(false);
   const [oprMsg, setOprMsg] = useState<string | null>(null);
+  const [oprTokenTesting, setOprTokenTesting] = useState(false);
 
   const load = useCallback(() => {
     api<Integrations>('/integrations')
@@ -210,7 +212,7 @@ export default function IntegrationsPage() {
       .then((d) => setDistricts(d.items ?? []))
       .catch(() => setDistricts([]));
     // ТЕГ операторын эрх (админ тохиргоо) — байхгүй бол env fallback.
-    api<{ hasApiKey: boolean; posNo: string; baseUrl: string; envApiKeySet: boolean; envPosNoSet: boolean }>('/admin/ebarimt-operator')
+    api<{ hasApiKey: boolean; posNo: string; baseUrl: string; tokenUrl: string; clientId: string; username: string; hasPassword: boolean; envApiKeySet: boolean; envPosNoSet: boolean }>('/admin/ebarimt-operator')
       .then(setOpr)
       .catch(() => setOpr(null));
   }, [load]);
@@ -221,17 +223,40 @@ export default function IntegrationsPage() {
     setOprSaving(true);
     setOprMsg(null);
     try {
-      const r = await api<{ ok: boolean; hasApiKey: boolean; posNo: string; baseUrl: string }>('/admin/ebarimt-operator', {
+      const r = await api<{ ok: boolean; hasApiKey: boolean; posNo: string; baseUrl: string; tokenUrl: string; clientId: string; username: string; hasPassword: boolean }>('/admin/ebarimt-operator', {
         method: 'PUT',
-        body: JSON.stringify({ apiKey: oprKey || undefined, posNo: opr.posNo, baseUrl: opr.baseUrl || undefined }),
+        body: JSON.stringify({
+          apiKey: oprKey || undefined,
+          posNo: opr.posNo,
+          baseUrl: opr.baseUrl || undefined,
+          tokenUrl: opr.tokenUrl,
+          clientId: opr.clientId,
+          username: opr.username,
+          password: oprPass || undefined,
+        }),
       });
-      setOpr((o) => (o ? { ...o, hasApiKey: r.hasApiKey, posNo: r.posNo, baseUrl: r.baseUrl } : o));
+      setOpr((o) => (o ? { ...o, ...r } : o));
       setOprKey('');
-      setOprMsg('Хадгалагдлаа — одоо «ТЕГ-т бүртгүүлэх хүсэлт» товч ажиллана.');
+      setOprPass('');
+      setOprMsg('Хадгалагдлаа — «Токен шалгах» товчоор нэвтрэлтээ баталгаажуулаад «ТЕГ-т бүртгүүлэх хүсэлт» дарна.');
     } catch (e) {
       setOprMsg(e instanceof ApiError ? e.message : 'Хадгалж чадсангүй');
     } finally {
       setOprSaving(false);
+    }
+  }
+
+  /** ТЕГ-ийн нэгдсэн нэвтрэлтээс токен бодитоор авч болж буйг шалгана. */
+  async function testOperatorToken() {
+    setOprTokenTesting(true);
+    setOprMsg(null);
+    try {
+      const r = await api<{ ok: boolean; message_mn: string }>('/admin/ebarimt-operator/test-token', { method: 'POST' });
+      setOprMsg(`${r.ok ? '✅' : '❌'} ${r.message_mn}`);
+    } catch (e) {
+      setOprMsg(e instanceof ApiError ? e.message : 'Шалгаж чадсангүй');
+    } finally {
+      setOprTokenTesting(false);
     }
   }
 
@@ -540,13 +565,13 @@ export default function IntegrationsPage() {
             </p>
             <div className="mt-2 grid gap-3 sm:grid-cols-3">
               <div>
-                <label className="label">API түлхүүр {opr.hasApiKey && <span className="text-teal-600">(хадгалагдсан ✓)</span>}</label>
+                <label className="label">API түлхүүр (X-API-KEY) {opr.hasApiKey && <span className="text-teal-600">(хадгалагдсан ✓)</span>}</label>
                 <input
                   type="password"
                   className="input"
                   value={oprKey}
                   onChange={(e) => setOprKey(e.target.value)}
-                  placeholder={opr.hasApiKey ? 'Солих бол шинээр бичнэ' : 'X-API-KEY'}
+                  placeholder={opr.hasApiKey ? 'Солих бол шинээр бичнэ' : 'Posapi@itc.gov.mn-ээс авна'}
                   autoComplete="new-password"
                 />
               </div>
@@ -559,11 +584,55 @@ export default function IntegrationsPage() {
                   placeholder={opr.envPosNoSet ? '(env утга бий)' : 'ж: 10025383'}
                 />
               </div>
-              <div className="flex items-end">
-                <button onClick={saveOperator} disabled={oprSaving} className="btn-primary w-full">
-                  {oprSaving ? <Spinner className="h-4 w-4 text-white" /> : 'Хадгалах'}
-                </button>
+              <div>
+                <label className="label">Client ID</label>
+                <input
+                  className="input"
+                  value={opr.clientId}
+                  onChange={(e) => setOpr((o) => (o ? { ...o, clientId: e.target.value } : o))}
+                  placeholder="vatps (default)"
+                />
               </div>
+              <div>
+                <label className="label">Нэвтрэх нэр (username)</label>
+                <input
+                  className="input"
+                  value={opr.username}
+                  onChange={(e) => setOpr((o) => (o ? { ...o, username: e.target.value } : o))}
+                  placeholder="ТЕГ-ээс олгосон"
+                />
+              </div>
+              <div>
+                <label className="label">Нууц үг {opr.hasPassword && <span className="text-teal-600">(хадгалагдсан ✓)</span>}</label>
+                <input
+                  type="password"
+                  className="input"
+                  value={oprPass}
+                  onChange={(e) => setOprPass(e.target.value)}
+                  placeholder={opr.hasPassword ? 'Солих бол шинээр бичнэ' : 'ТЕГ-ээс олгосон'}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div>
+                <label className="label">Token URL (сонголт)</label>
+                <input
+                  className="input"
+                  value={opr.tokenUrl}
+                  onChange={(e) => setOpr((o) => (o ? { ...o, tokenUrl: e.target.value } : o))}
+                  placeholder="default: auth.itc.gov.mn (production)"
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button onClick={saveOperator} disabled={oprSaving} className="btn-primary">
+                {oprSaving ? <Spinner className="h-4 w-4 text-white" /> : 'Хадгалах'}
+              </button>
+              <button onClick={testOperatorToken} disabled={oprTokenTesting} className="btn-secondary">
+                {oprTokenTesting ? <Spinner className="h-4 w-4" /> : '🔑 Токен шалгах'}
+              </button>
+              <p className="text-[12px] text-slate-500">
+                Staging орчинд туршихдаа Token URL-д st.auth.itc.gov.mn/auth/realms/Staging/... хаягийг бичнэ.
+              </p>
             </div>
             {!opr.hasApiKey && !opr.envApiKeySet && (
               <p className="mt-2 text-[12.5px] font-semibold text-amber-700">

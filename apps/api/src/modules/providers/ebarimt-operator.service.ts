@@ -45,6 +45,11 @@ interface OperatorSettings {
   apiKey?: string; // encrypted at rest
   posNo?: string;
   baseUrl?: string;
+  // OIDC password grant (ТЕГ-ийн нэгдсэн нэвтрэлт) — админ UI-аас тохируулна.
+  tokenUrl?: string;
+  clientId?: string;
+  username?: string;
+  password?: string; // encrypted at rest
 }
 
 @Injectable()
@@ -109,32 +114,98 @@ export class EbarimtOperatorService {
     const fixed = this.config.get<string>('EBARIMT_OPR_TOKEN');
     if (fixed) return fixed;
 
+    const now = Math.floor(Date.now() / 1000);
+    if (this.token && this.token.expiresAt - 60 > now) return this.token.token;
+
+    // 1) Админ UI-аас тохируулсан ТЕГ-ийн нэгдсэн нэвтрэлт (password grant,
+    //    гарын авлагын 21-р бүлэг: production realm = ITC, client_id = vatps).
+    const s = await this.settings();
+    if (s.username && s.password) {
+      let password = '';
+      try {
+        password = decryptString(s.password);
+      } catch {
+        this.logger.warn('ebarimtOperator.password тайлагдсангүй (ENCRYPTION_KEY солигдсон?)');
+      }
+      if (password) {
+        const result = await this.fetchToken({
+          url: s.tokenUrl || 'https://auth.itc.gov.mn/auth/realms/ITC/protocol/openid-connect/token',
+          form: {
+            grant_type: 'password',
+            client_id: s.clientId || 'vatps',
+            username: s.username,
+            password,
+          },
+        });
+        if (result.ok) return this.token!.token;
+        this.logger.warn(`ebarimt password-grant token failed: ${result.message}`);
+      }
+    }
+
+    // 2) env-ийн client_credentials (хуучин зам — хэвээр дэмжинэ).
     const url = this.config.get<string>('EBARIMT_OIDC_TOKEN_URL');
     const clientId = this.config.get<string>('EBARIMT_OIDC_CLIENT_ID');
     const clientSecret = this.config.get<string>('EBARIMT_OIDC_CLIENT_SECRET');
     if (!url || !clientId || !clientSecret) return null;
+    const result = await this.fetchToken({
+      url,
+      form: { grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret },
+    });
+    return result.ok ? this.token!.token : null;
+  }
 
+  /** Токен татаж кэшлэнэ — амжилт/алдааг бүтэцтэй буцаана (тест товчинд ч ашиглана). */
+  private async fetchToken(args: { url: string; form: Record<string, string> }): Promise<{ ok: boolean; message: string; expiresIn?: number }> {
     const now = Math.floor(Date.now() / 1000);
-    if (this.token && this.token.expiresAt - 60 > now) return this.token.token;
     try {
-      const res = await fetch(url, {
+      const res = await fetch(args.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret }),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+        body: new URLSearchParams(args.form),
         signal: AbortSignal.timeout(15_000),
       });
-      if (!res.ok) {
-        this.logger.warn(`ebarimt OIDC token failed (${res.status})`);
-        return null;
+      const text = await res.text();
+      let body: any = {};
+      try {
+        body = text ? JSON.parse(text) : {};
+      } catch {
+        /* non-JSON */
       }
-      const body: any = await res.json();
-      if (!body?.access_token) return null;
-      this.token = { token: String(body.access_token), expiresAt: now + (Number(body.expires_in) || 300) };
-      return this.token.token;
+      if (!res.ok || !body?.access_token) {
+        const reason = body?.error_description || body?.error || text.slice(0, 150) || `HTTP ${res.status}`;
+        return { ok: false, message: `${res.status}: ${reason}` };
+      }
+      const expiresIn = Number(body.expires_in) || 300;
+      this.token = { token: String(body.access_token), expiresAt: now + expiresIn };
+      return { ok: true, message: 'OK', expiresIn };
     } catch (e: any) {
-      this.logger.warn(`ebarimt OIDC token error: ${e?.message}`);
-      return null;
+      return { ok: false, message: String(e?.message ?? e).slice(0, 150) };
     }
+  }
+
+  /** Админы «Токен шалгах» товч: кэш үл харгалзан шинээр токен авч үзнэ. */
+  async testToken(): Promise<{ ok: boolean; message_mn: string; expiresIn?: number }> {
+    const s = await this.settings();
+    if (s.username && s.password) {
+      let password = '';
+      try {
+        password = decryptString(s.password);
+      } catch {
+        return { ok: false, message_mn: 'Нууц үг тайлагдсангүй (ENCRYPTION_KEY солигдсон байж магадгүй) — дахин оруулна уу.' };
+      }
+      this.token = null;
+      const r = await this.fetchToken({
+        url: s.tokenUrl || 'https://auth.itc.gov.mn/auth/realms/ITC/protocol/openid-connect/token',
+        form: { grant_type: 'password', client_id: s.clientId || 'vatps', username: s.username, password },
+      });
+      return r.ok
+        ? { ok: true, message_mn: `Токен амжилттай авлаа (хүчинтэй ${r.expiresIn} сек).`, expiresIn: r.expiresIn }
+        : { ok: false, message_mn: `Токен авч чадсангүй — ${r.message}. Username/password болон орчноо (production = auth.itc.gov.mn) шалгана уу.` };
+    }
+    if (this.config.get<string>('EBARIMT_OPR_TOKEN')) {
+      return { ok: true, message_mn: 'Тогтмол токен (EBARIMT_OPR_TOKEN) env-д тохируулагдсан байна.' };
+    }
+    return { ok: false, message_mn: 'Нэвтрэх нэр/нууц үг тохируулаагүй байна — доорх талбаруудад оруулаад хадгална уу.' };
   }
 
   private async post(path: string, body: unknown): Promise<OperatorRequestResult> {
