@@ -13,7 +13,7 @@ interface Merchant360 {
   tenant: {
     id: string; name: string; regNo: string | null; status: string; kybStatus: string;
     contactEmail: string | null; contactPhone: string | null; createdAt: string;
-    modules: { code: string; enabled: boolean; quantity: number }[];
+    modules: { code: string; enabled: boolean; quantity: number; unitPrice: number | null; tier: number | null }[];
     memberships: { id: string; role: string; user: { id: string; name: string; email: string; platformAdmin: boolean } }[];
     _count: { invoices: number; customers: number; batches: number };
   };
@@ -30,7 +30,17 @@ const KYB_ACTIONS: { action: string; label: string; needsReason: boolean; cls: s
   { action: 'REJECT', label: '❌ Татгалзах', needsReason: true, cls: 'btn-danger' },
 ];
 
-const MODULE_LABEL: Record<string, string> = { SMS: 'SMS', EBARIMT: 'eBarimt', POS: 'POS', REMINDER: 'Сануулга' };
+const MODULE_LABEL: Record<string, string> = {
+  EXCEL_SMS: 'Excel/UI нэхэмжлэх+SMS',
+  API_SMS: 'API нэхэмжлэх+SMS',
+  EBARIMT_API: 'eBarimt API',
+  POS_EBARIMT: 'POS терминал',
+  EBARIMT: 'eBarimt холболт (дотоод)',
+  REMINDER: 'Сануулга',
+};
+
+/** Гэрээт нэгж үнэтэй байж болох үйлчилгээнүүд. */
+const UNIT_PRICE_CODES = ['EXCEL_SMS', 'API_SMS'] as const;
 
 export default function AdminMerchantDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -39,6 +49,7 @@ export default function AdminMerchantDetailPage() {
   const [busy, setBusy] = useState(false);
   const [reasonModal, setReasonModal] = useState<{ action: string; label: string } | null>(null);
   const [reason, setReason] = useState('');
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
 
   const load = useCallback(() => {
     api<Merchant360>(`/admin/merchants/${id}`).then(setData).catch((e) => setError(e.message));
@@ -65,6 +76,25 @@ export default function AdminMerchantDetailPage() {
     setBusy(true);
     try {
       await api(`/admin/merchants/${id}/modules/${code}`, { method: 'POST', body: JSON.stringify({ enabled }) });
+      load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Гэрээт үнэ / шатлал хадгалах — PUT /admin/merchants/:id/pricing/:code. */
+  async function savePricing(code: string, body: { unitPrice?: number | null; tier?: number | null }) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api(`/admin/merchants/${id}/pricing/${code}`, { method: 'PUT', body: JSON.stringify(body) });
+      setPriceDrafts((d) => {
+        const next = { ...d };
+        delete next[code];
+        return next;
+      });
       load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
@@ -132,20 +162,64 @@ export default function AdminMerchantDetailPage() {
             <div className="card p-6">
               <h2 className="font-bold text-slate-900">Модуль & Provider</h2>
               <div className="mt-4 space-y-3">
-                {data.tenant.modules.map((m) => (
-                  <div key={m.code} className="flex items-center justify-between rounded-2xl border border-white/80 bg-white/50 px-4 py-3">
-                    <span className="text-sm font-semibold text-slate-800">{MODULE_LABEL[m.code] ?? m.code}{m.quantity > 1 ? ` × ${m.quantity}` : ''}</span>
-                    <button
-                      role="switch"
-                      aria-checked={m.enabled}
-                      disabled={busy}
-                      onClick={() => toggleModule(m.code, !m.enabled)}
-                      className={`relative h-6 w-11 rounded-full transition ${m.enabled ? 'bg-indigo-600' : 'bg-slate-300'}`}
-                    >
-                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${m.enabled ? 'left-[22px]' : 'left-0.5'}`} />
-                    </button>
-                  </div>
-                ))}
+                {data.tenant.modules.map((m) => {
+                  const editableUnit = (UNIT_PRICE_CODES as readonly string[]).includes(m.code);
+                  const draft = priceDrafts[m.code] ?? (m.unitPrice != null ? String(m.unitPrice) : '');
+                  return (
+                    <div key={m.code} className="rounded-2xl border border-white/80 bg-white/50 px-4 py-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-slate-800">{MODULE_LABEL[m.code] ?? m.code}{m.quantity > 1 ? ` × ${m.quantity}` : ''}</span>
+                        <button
+                          role="switch"
+                          aria-checked={m.enabled}
+                          disabled={busy}
+                          onClick={() => toggleModule(m.code, !m.enabled)}
+                          className={`relative h-6 w-11 rounded-full transition ${m.enabled ? 'bg-indigo-600' : 'bg-slate-300'}`}
+                        >
+                          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${m.enabled ? 'left-[22px]' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                      {editableUnit && (
+                        <div className="mt-2.5 flex items-end gap-2 border-t border-slate-200/60 pt-2.5">
+                          <div className="flex-1">
+                            <label className="label" htmlFor={`price-${m.code}`}>Гэрээт үнэ ₮/илгээлт <span className="text-slate-400">(хоосон = глобал үнэ)</span></label>
+                            <input
+                              id={`price-${m.code}`}
+                              className="input"
+                              inputMode="numeric"
+                              value={draft}
+                              placeholder="глобал тариф"
+                              onChange={(e) => setPriceDrafts((d) => ({ ...d, [m.code]: e.target.value.replace(/\D/g, '') }))}
+                            />
+                          </div>
+                          <button
+                            className="btn-secondary px-3.5 py-2 text-[13px]"
+                            disabled={busy}
+                            onClick={() => savePricing(m.code, { unitPrice: draft === '' ? null : Number(draft) })}
+                          >
+                            Хадгалах
+                          </button>
+                        </div>
+                      )}
+                      {m.code === 'EBARIMT_API' && (
+                        <div className="mt-2.5 border-t border-slate-200/60 pt-2.5">
+                          <label className="label" htmlFor="ebarimt-api-tier">eBarimt API шатлал</label>
+                          <select
+                            id="ebarimt-api-tier"
+                            className="input"
+                            disabled={busy}
+                            value={m.tier ?? 1}
+                            onChange={(e) => savePricing(m.code, { tier: Number(e.target.value) })}
+                          >
+                            <option value={1}>Шатлал 1 (сард ≤500 баримт)</option>
+                            <option value={2}>Шатлал 2 (сард ≤2000 баримт)</option>
+                            <option value={3}>Шатлал 3 (хязгааргүй)</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <div className="mt-4 flex gap-4 border-t border-slate-200/60 pt-4 text-[13px]">
                 <span className={data.providers.qpay.enabled ? 'font-bold text-emerald-600' : 'text-slate-400'}>

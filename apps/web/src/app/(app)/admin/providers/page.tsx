@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 
 interface Health {
   qpay: { failed24h: number; succeeded24h: number };
+  bonum: { succeeded24h: number; pending24h: number; tenantsWithTerminal: number };
   callpro: { failed24h: number; total24h: number };
   ebarimt: { stuck: number };
   tenants: number;
@@ -54,7 +55,7 @@ export default function AdminProvidersPage() {
     api<Health>('/admin/providers/health').then(setHealth).catch((e) => setError(e.message));
   }, []);
 
-  async function test(code: 'QPAY' | 'CALLPRO') {
+  async function test(code: 'QPAY' | 'CALLPRO' | 'BONUM' | 'EBARIMT') {
     setTests((t) => ({ ...t, [code]: 'loading' }));
     try {
       const r = await api<TestResult>(`/integrations/${code}/test`, { method: 'POST' });
@@ -83,7 +84,7 @@ export default function AdminProvidersPage() {
         {!health ? (
           <PageLoader />
         ) : (
-          <div className="grid gap-5 lg:grid-cols-3">
+          <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-4">
             <HealthCard
               title="QPay Merchant V2"
               sub="Төлбөрийн QR / callback / payment-check"
@@ -93,6 +94,17 @@ export default function AdminProvidersPage() {
                 { label: 'Intent алдаа (24ц)', value: health.qpay.failed24h, bad: health.qpay.failed24h > 0 },
               ]}
               action={<div className="flex items-center gap-3"><button className="btn-secondary px-3 py-1.5 text-[13px]" onClick={() => test('QPAY')}>Тест</button>{testView('QPAY')}</div>}
+            />
+            <HealthCard
+              title="Bonum Gateway"
+              sub="Төлбөрийн линк / картын гарц"
+              ok
+              stats={[
+                { label: 'Амжилттай (24ц)', value: health.bonum?.succeeded24h ?? 0 },
+                { label: 'Хүлээгдэж буй (24ц)', value: health.bonum?.pending24h ?? 0 },
+                { label: 'Терминалтай байгууллага', value: health.bonum?.tenantsWithTerminal ?? 0 },
+              ]}
+              action={<div className="flex items-center gap-3"><button className="btn-secondary px-3 py-1.5 text-[13px]" onClick={() => test('BONUM')}>Тест</button>{testView('BONUM')}</div>}
             />
             <HealthCard
               title="CallPro SMS"
@@ -106,13 +118,13 @@ export default function AdminProvidersPage() {
             />
             <HealthCard
               title="eBarimt"
-              sub="Татварын баримт үүсгэлт (QPay-ээр)"
+              sub="Татварын баримт үүсгэлт (POS API / LIME)"
               ok={health.ebarimt.stuck === 0}
               stats={[
                 { label: 'Гацсан баримт', value: health.ebarimt.stuck, bad: health.ebarimt.stuck > 0 },
                 { label: 'Байгууллага', value: health.tenants },
               ]}
-              action={<Link href="/admin/ops" className="btn-secondary px-3 py-1.5 text-[13px]">Ops дараалал →</Link>}
+              action={<div className="flex items-center gap-3"><button className="btn-secondary px-3 py-1.5 text-[13px]" onClick={() => test('EBARIMT')}>Тест</button>{testView('EBARIMT')}<Link href="/admin/ops" className="btn-secondary px-3 py-1.5 text-[13px]">Ops →</Link></div>}
             />
           </div>
         )}

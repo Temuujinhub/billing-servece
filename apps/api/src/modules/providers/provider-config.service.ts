@@ -759,6 +759,26 @@ export class ProviderConfigService {
           return { ok: false, httpStatus: 401, message_mn: 'CallPro API key буруу байна.' };
         }
       }
+      // Квотын endpoint бүх оператор дээр 404 өгсөн ч ИЛГЭЭЛТ бодитоор ажиллаж
+      // байж болно (даталогийн эрх нээгдээгүй акаунт). Сүүлийн 7 хоногийн
+      // амжилттай илгээлтээр баталгаажуулна — байвал холболт OK.
+      const recentOk = await this.prisma.messageJob.findFirst({
+        where: {
+          tenantId,
+          status: { in: ['DELIVERED', 'SUBMITTED'] },
+          providerRef: { not: null, notIn: [''] },
+          createdAt: { gte: new Date(Date.now() - 7 * 864e5) },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true, status: true, providerRef: true },
+      });
+      if (recentOk && !recentOk.providerRef?.startsWith('MOCK')) {
+        return {
+          ok: true,
+          httpStatus: last,
+          message_mn: `CallPro илгээлт хэвийн ажиллаж байна (сүүлийн амжилттай илгээлт ${recentOk.createdAt.toISOString().slice(0, 10)}). Квотын лавлагааны endpoint ${last} буцааж байгаа нь илгээлтэд саадгүй.`,
+        };
+      }
       return {
         ok: false,
         httpStatus: last,

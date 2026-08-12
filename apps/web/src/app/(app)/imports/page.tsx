@@ -295,7 +295,9 @@ export default function ImportsPage() {
               <div className="flex items-center gap-4">
                 <div className="text-right text-[13px]">
                   <p className="font-bold text-slate-900">{mnt(preview.batch.totalAmount)}</p>
-                  <p className="text-slate-500">SMS ~{preview.estimate.smsSegments} segment ≈ {mnt(preview.estimate.smsCost)}</p>
+                  <p className="text-slate-500">
+                    {preview.estimate.invoiceMsgs.toLocaleString()} илгээлт × {preview.estimate.msgUnitPrice}₮ = {mnt(preview.estimate.smsCost)} (eBarimt багтсан)
+                  </p>
                 </div>
                 <button onClick={approve} disabled={approving || preview.batch.validCount === 0} className="btn-primary">
                   {approving ? <Spinner className="h-5 w-5 text-white" /> : `Баталгаажуулж илгээх (${preview.batch.validCount})`}

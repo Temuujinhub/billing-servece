@@ -302,7 +302,7 @@ export default function OnboardingPage() {
               onChange={(e) => setEbarimtWanted(e.target.checked)}
             />
             <span className="text-[13.5px] leading-relaxed text-navy-800">
-              <b>eBarimt үүсгүүлэх хүсэлт илгээх</b> — модуль идэвхжиж, амжилттай төлбөр бүрд НӨАТ-ын баримт автоматаар үүснэ (20,000₮/сар).
+              <b>eBarimt үүсгүүлэх хүсэлт илгээх</b> — амжилттай төлбөр бүрд НӨАТ-ын баримт автоматаар үүснэ (илгээлтийн үнэд багтсан).
             </span>
           </label>
           <div className="flex justify-between">

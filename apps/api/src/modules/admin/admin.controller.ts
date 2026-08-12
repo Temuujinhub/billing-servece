@@ -58,9 +58,10 @@ export class AdminController {
       ]);
     const dbLatencyMs = Date.now() - dbT0;
 
-    const [qpay, callpro, ebarimtTin, ebarimtInfo] = await Promise.all([
+    const [qpay, callpro, bonum, ebarimtTin, ebarimtInfo] = await Promise.all([
       this.providerConfigs.test(user.tenantId, 'QPAY').catch((e) => ({ ok: false, httpStatus: null, message_mn: String(e?.message ?? e) })),
       this.providerConfigs.test(user.tenantId, 'CALLPRO').catch((e) => ({ ok: false, httpStatus: null, message_mn: String(e?.message ?? e) })),
+      this.providerConfigs.test(user.tenantId, 'BONUM').catch((e) => ({ ok: false, httpStatus: null, message_mn: String(e?.message ?? e) })),
       probe('https://api.ebarimt.mn/api/info/check/getTinInfo?regNo=2657457'),
       probe('https://api.ebarimt.mn/api/info/check/getInfo?regNo=2657457'),
     ]);
@@ -69,7 +70,7 @@ export class AdminController {
       checkedAt: new Date(),
       db: { ok: true, latencyMs: dbLatencyMs, tenants, users, invoices },
       queues: { smsQueued, smsFailed24h, receiptsPending, intentsProcessing, reminderTenants },
-      providers: { qpay, callpro },
+      providers: { qpay, callpro, bonum },
       ebarimt: { tinLookup: ebarimtTin, infoLookup: ebarimtInfo },
       admins,
     };
@@ -258,6 +259,40 @@ export class AdminController {
       data: { actorId: user.userId, actorEmail: user.email, action: 'admin.month_close', targetType: 'cycle', targetId: cycle, meta: result as any },
     });
     return result;
+  }
+
+  // ---------------------------- онбординг имэйл хүлээн авагчид (Bonum/LIME)
+
+  @Get('onboarding-emails')
+  async onboardingEmails() {
+    const row = await this.prisma.platformSetting.findUnique({ where: { key: 'onboardingEmails' } });
+    const cfg = (row?.value as { bonumEmail?: string; limeEmail?: string } | null) ?? {};
+    return {
+      bonumEmail: cfg.bonumEmail ?? '',
+      limeEmail: cfg.limeEmail ?? '',
+      envBonumSet: Boolean(process.env.ONBOARDING_BONUM_EMAIL),
+      envLimeSet: Boolean(process.env.ONBOARDING_LIME_EMAIL),
+    };
+  }
+
+  @Put('onboarding-emails')
+  async setOnboardingEmails(@CurrentUser() user: AuthUser, @Body() body: { bonumEmail?: string; limeEmail?: string }) {
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const clean = (v?: string) => {
+      const t = (v ?? '').trim();
+      if (t && !emailRe.test(t)) throw new Error(`Имэйл буруу форматтай: ${t}`);
+      return t;
+    };
+    const value = { bonumEmail: clean(body.bonumEmail), limeEmail: clean(body.limeEmail) };
+    await this.prisma.platformSetting.upsert({
+      where: { key: 'onboardingEmails' },
+      create: { key: 'onboardingEmails', value },
+      update: { value },
+    });
+    await this.prisma.auditLog.create({
+      data: { actorId: user.userId, actorEmail: user.email, action: 'admin.onboarding_emails.updated', targetType: 'setting', targetId: 'onboardingEmails', meta: value },
+    });
+    return value;
   }
 
   @Get('billing/bills')

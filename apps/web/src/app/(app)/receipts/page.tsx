@@ -80,12 +80,32 @@ export default function ReceiptsPage() {
                     <tr className="transition hover:bg-white/60">
                       <td className="td text-slate-500">{dateTime(r.createdAt)}</td>
                       <td className="td">
-                        <Link href={`/invoices/${r.transaction.intent.invoice.id}`} className="font-semibold text-indigo-700 hover:underline">
-                          {r.transaction.intent.invoice.number}
-                        </Link>
+                        {r.transaction ? (
+                          <Link href={`/invoices/${r.transaction.intent.invoice.id}`} className="font-semibold text-indigo-700 hover:underline">
+                            {r.transaction.intent.invoice.number}
+                          </Link>
+                        ) : (
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-slate-600">{r.description ?? '—'}</span>
+                            {r.source === 'api' && (
+                              <span className="rounded-full bg-navy-50 px-2 py-0.5 text-[11px] font-bold text-navy-700">API</span>
+                            )}
+                            {r.source === 'pos' && (
+                              <span className="rounded-full bg-navy-50 px-2 py-0.5 text-[11px] font-bold text-navy-700">POS</span>
+                            )}
+                          </span>
+                        )}
                       </td>
-                      <td className="td">{r.transaction.intent.invoice.customer.name}</td>
-                      <td className="td text-right font-semibold">{mnt(r.transaction.gross)}</td>
+                      <td className="td">
+                        {r.transaction
+                          ? r.transaction.intent.invoice.customer.name
+                          : r.source === 'pos'
+                            ? <span className="font-mono text-[12.5px] text-slate-500">{r.deviceId ?? '—'}</span>
+                            : '—'}
+                      </td>
+                      <td className="td text-right font-semibold">
+                        {r.transaction ? mnt(r.transaction.gross) : r.amount != null ? mnt(r.amount) : '—'}
+                      </td>
                       <td className="td max-w-[150px] truncate font-mono text-[12px]">{r.receiptNo ?? '—'}</td>
                       <td className="td font-mono text-[13px] tracking-wider">{r.lottery ?? '—'}</td>
                       <td className="td">

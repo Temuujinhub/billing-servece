@@ -396,16 +396,21 @@ export class AdminService {
 
   async providerHealth() {
     const since = new Date(Date.now() - 24 * 3600 * 1000);
-    const [failedIntents24h, succeeded24h, failedSms24h, sms24h, failedReceipts, tenants] = await Promise.all([
-      this.prisma.paymentEvent.count({ where: { type: 'provider.create_failed', createdAt: { gte: since } } }),
-      this.prisma.paymentTransaction.count({ where: { createdAt: { gte: since } } }),
-      this.prisma.messageJob.count({ where: { status: 'FAILED', updatedAt: { gte: since } } }),
-      this.prisma.messageJob.count({ where: { createdAt: { gte: since } } }),
-      this.prisma.ebarimtReceipt.count({ where: { state: { in: ['FAILED', 'CANCEL_PENDING'] } } }),
-      this.prisma.tenant.count(),
-    ]);
+    const [failedIntents24h, succeeded24h, failedSms24h, sms24h, failedReceipts, tenants, bonumSucceeded24h, bonumPending, bonumTenants] =
+      await Promise.all([
+        this.prisma.paymentEvent.count({ where: { type: 'provider.create_failed', createdAt: { gte: since } } }),
+        this.prisma.paymentTransaction.count({ where: { createdAt: { gte: since } } }),
+        this.prisma.messageJob.count({ where: { status: 'FAILED', updatedAt: { gte: since } } }),
+        this.prisma.messageJob.count({ where: { createdAt: { gte: since } } }),
+        this.prisma.ebarimtReceipt.count({ where: { state: { in: ['FAILED', 'CANCEL_PENDING'] } } }),
+        this.prisma.tenant.count(),
+        this.prisma.paymentTransaction.count({ where: { provider: 'bonum', createdAt: { gte: since } } }),
+        this.prisma.paymentIntent.count({ where: { provider: 'bonum', state: { in: ['CREATED', 'PENDING', 'PROCESSING'] }, createdAt: { gte: since } } }),
+        this.prisma.tenant.count({ where: { bonumTerminalId: { not: null } } }),
+      ]);
     return {
       qpay: { failed24h: failedIntents24h, succeeded24h },
+      bonum: { succeeded24h: bonumSucceeded24h, pending24h: bonumPending, tenantsWithTerminal: bonumTenants },
       callpro: { failed24h: failedSms24h, total24h: sms24h },
       ebarimt: { stuck: failedReceipts },
       tenants,

@@ -37,7 +37,7 @@ const FEATURES = [
   { title: 'Төлбөрийн orchestration', text: 'Карт хадгалахгүй. Лицензтэй банк/PSP-ийн QR, deeplink, callback + payment-check давхар баталгаажуулалт.' },
   { title: 'eBarimt автоматжуулалт', text: 'Төлбөр амжилттай болмогц баримт үүснэ. Provider унтарсан ч төлбөр алдагдахгүй — дараалалд орж дахина.' },
   { title: 'Идемпотент санхүү', text: 'Давхар төлөлт, давхар callback санхүүгийн үр дүн үүсгэхгүй. Ledger-д суурилсан үлдэгдэл.' },
-  { title: 'Модульчилсан үнэ', text: 'SMS, eBarimt, POS, API — хэрэгтэйгээ л асаана. Хэрэглээ бүр ил тод хэмжигдэнэ.' },
+  { title: '4 үйлчилгээ', text: 'Excel+SMS, API+SMS, eBarimt API, POS — хэрэгтэйгээ л асаана. Хэрэглээ бүр ил тод хэмжигдэнэ.' },
   { title: 'Audit + эрхийн хяналт', text: 'Үйлдэл бүр хэн/хэзээ/юу гэдгээр бүртгэгдэнэ. Owner, Operator, Accountant, Viewer эрхүүд.' },
 ];
 
@@ -181,7 +181,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-content px-5">
           <h2 className="text-center text-3xl font-extrabold tracking-tight text-navy-900">Хэрэглээндээ тохирсон үнэ</h2>
           <p className="mx-auto mt-3 max-w-lg text-center text-[15.5px] text-slate-500">
-            Суурь 20,000₮/сар + хэрэглэсэн хэмжээгээрээ. Модулиа өөрөө сонго.
+            Суурь хураамжгүй — илгээлт бүр 100₮, eBarimt багтсан.
           </p>
           <div className="mt-10">
             <PricingCalculator />

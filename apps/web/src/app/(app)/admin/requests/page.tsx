@@ -70,6 +70,10 @@ export default function AdminRequestsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [approveId, setApproveId] = useState<string | null>(null);
   const [resp, setResp] = useState<ResponseForm>(EMPTY_RESPONSE);
+  const [kindFilter, setKindFilter] = useState<'ALL' | 'BONUM' | 'EBARIMT'>('ALL');
+  const [emails, setEmails] = useState<{ bonumEmail: string; limeEmail: string; envBonumSet: boolean; envLimeSet: boolean } | null>(null);
+  const [emailsSaving, setEmailsSaving] = useState(false);
+  const [emailsMsg, setEmailsMsg] = useState<string | null>(null);
   const isAdmin = getSessionUser()?.isAdmin === true;
 
   const setR = (key: keyof ResponseForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -83,7 +87,27 @@ export default function AdminRequestsPage() {
 
   useEffect(() => {
     load();
+    api<{ bonumEmail: string; limeEmail: string; envBonumSet: boolean; envLimeSet: boolean }>('/admin/onboarding-emails')
+      .then(setEmails)
+      .catch(() => setEmails(null));
   }, [load]);
+
+  async function saveEmails() {
+    if (!emails) return;
+    setEmailsSaving(true);
+    setEmailsMsg(null);
+    try {
+      await api('/admin/onboarding-emails', {
+        method: 'PUT',
+        body: JSON.stringify({ bonumEmail: emails.bonumEmail, limeEmail: emails.limeEmail }),
+      });
+      setEmailsMsg('Хадгалагдлаа — дараагийн хүсэлтээс эхлэн энэ хаягууд руу илгээгдэнэ.');
+    } catch (e) {
+      setEmailsMsg(e instanceof ApiError ? e.message : 'Хадгалж чадсангүй');
+    } finally {
+      setEmailsSaving(false);
+    }
+  }
 
   async function act(id: string, path: string, body?: unknown) {
     setBusyId(id);
@@ -122,6 +146,62 @@ export default function AdminRequestsPage() {
 
       {error && <ErrorNote message={error} />}
 
+      {emails && (
+        <div className="card p-5">
+          <h2 className="font-bold text-navy-900">Хүсэлт хүлээн авагчид</h2>
+          <p className="mt-1 text-[13px] text-muted">
+            Шинэ мерчант бүртгэлийн хүсэлт эдгээр имэйл рүү илгээгдэнэ. Хоосон орхивол серверийн env
+            (ONBOARDING_BONUM_EMAIL / ONBOARDING_LIME_EMAIL) ашиглагдана.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-[12.5px] font-semibold text-slate-600">Bonum хүсэлт хүлээн авагч</span>
+              <input
+                className="input mt-1 w-full"
+                type="email"
+                placeholder={emails.envBonumSet ? '(env утга ашиглагдаж байна)' : 'sales@bonum.mn'}
+                value={emails.bonumEmail}
+                onChange={(e) => setEmails({ ...emails, bonumEmail: e.target.value })}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[12.5px] font-semibold text-slate-600">LIME / eBarimt хүсэлт хүлээн авагч</span>
+              <input
+                className="input mt-1 w-full"
+                type="email"
+                placeholder={emails.envLimeSet ? '(env утга ашиглагдаж байна)' : 'support@onlime.mn'}
+                value={emails.limeEmail}
+                onChange={(e) => setEmails({ ...emails, limeEmail: e.target.value })}
+              />
+            </label>
+          </div>
+          {!emails.bonumEmail && !emails.envBonumSet && (
+            <p className="mt-2 text-[12.5px] font-semibold text-amber-700">⚠ Bonum хүлээн авагч тохируулаагүй — Bonum хүсэлтийн имэйл илгээгдэхгүй.</p>
+          )}
+          {!emails.limeEmail && !emails.envLimeSet && (
+            <p className="mt-1 text-[12.5px] font-semibold text-amber-700">⚠ LIME хүлээн авагч тохируулаагүй — eBarimt хүсэлтийн имэйл илгээгдэхгүй.</p>
+          )}
+          <div className="mt-3 flex items-center gap-3">
+            <button className="btn-primary px-4 py-2 text-[13px]" onClick={saveEmails} disabled={emailsSaving}>
+              {emailsSaving ? 'Хадгалж байна…' : 'Хадгалах'}
+            </button>
+            {emailsMsg && <span className="text-[12.5px] font-semibold text-slate-600">{emailsMsg}</span>}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        {(['ALL', 'BONUM', 'EBARIMT'] as const).map((k) => (
+          <button
+            key={k}
+            className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-bold ${kindFilter === k ? 'bg-navy-900 text-white' : 'bg-navy-50 text-navy-700 hover:bg-navy-100'}`}
+            onClick={() => setKindFilter(k)}
+          >
+            {k === 'ALL' ? 'Бүгд' : KIND_MN[k]}
+          </button>
+        ))}
+      </div>
+
       <div className="card overflow-hidden">
         <table className="w-full">
           <thead className="bg-navy-50/60">
@@ -134,14 +214,14 @@ export default function AdminRequestsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
-            {items.length === 0 && (
+            {items.filter((r) => kindFilter === 'ALL' || r.kind === kindFilter).length === 0 && (
               <tr>
                 <td className="td py-8 text-center text-muted" colSpan={5}>
                   Хүсэлт алга
                 </td>
               </tr>
             )}
-            {items.map((r) => {
+            {items.filter((r) => kindFilter === 'ALL' || r.kind === kindFilter).map((r) => {
               const st = STATUS_MN[r.status] ?? { label: r.status, cls: 'bg-navy-50 text-navy-700' };
               const open = !['APPROVED', 'REJECTED'].includes(r.status);
               return (

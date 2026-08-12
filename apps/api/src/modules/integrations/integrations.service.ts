@@ -140,25 +140,41 @@ export class IntegrationsService {
     }
     lines.push('', 'Баярлалаа.', '', 'billingservice.mn — Media Professional LLC');
 
-    const to =
-      kind === 'BONUM'
-        ? (this.config.get<string>('ONBOARDING_BONUM_EMAIL') ?? '')
-        : (this.config.get<string>('ONBOARDING_LIME_EMAIL') ?? '');
-    if (!to) {
-      throw new Error(`Onboarding email recipient is not configured (${kind === 'BONUM' ? 'ONBOARDING_BONUM_EMAIL' : 'ONBOARDING_LIME_EMAIL'})`);
-    }
     return {
-      to,
+      to: '', // dispatchEmail резолв хийнэ (админ тохиргоо → env fallback)
       subject: `[billingservice.mn] Шинэ мерчант бүртгүүлэх хүсэлт — ${payload.name}`,
       text: lines.join('\n'),
     };
+  }
+
+  /**
+   * Хүлээн авагчийн имэйл: админ тохиргоо (PlatformSetting 'onboardingEmails')
+   * тэргүүлж, байхгүй бол env (ONBOARDING_BONUM_EMAIL / ONBOARDING_LIME_EMAIL).
+   */
+  async recipientFor(kind: IntegrationKind): Promise<string> {
+    const row = await this.prisma.platformSetting.findUnique({ where: { key: 'onboardingEmails' } });
+    const cfg = (row?.value as { bonumEmail?: string; limeEmail?: string } | null) ?? null;
+    const fromSetting = kind === 'BONUM' ? cfg?.bonumEmail : cfg?.limeEmail;
+    const fromEnv =
+      kind === 'BONUM'
+        ? this.config.get<string>('ONBOARDING_BONUM_EMAIL')
+        : this.config.get<string>('ONBOARDING_LIME_EMAIL');
+    return (fromSetting || fromEnv || '').trim();
   }
 
   /** Имэйлийг илгээж, үр дүнг хүсэлт дээр тэмдэглэнэ. Never throws. */
   private async dispatchEmail(requestId: string): Promise<void> {
     const request = await this.prisma.integrationRequest.findUniqueOrThrow({ where: { id: requestId } });
     try {
-      const mail = this.buildEmail(request.kind, request.payload as any);
+      const to = await this.recipientFor(request.kind);
+      if (!to) {
+        throw new Error(
+          request.kind === 'BONUM'
+            ? 'Bonum хүсэлт хүлээн авагчийн имэйл тохируулаагүй — Админ → Бүртгэлийн хүсэлт хуудасны «Хүлээн авагчид» хэсэгт оруулна уу.'
+            : 'LIME хүсэлт хүлээн авагчийн имэйл тохируулаагүй — Админ → Бүртгэлийн хүсэлт хуудасны «Хүлээн авагчид» хэсэгт оруулна уу.',
+        );
+      }
+      const mail = { ...this.buildEmail(request.kind, request.payload as any), to };
       await this.email.send(mail);
       await this.prisma.integrationRequest.update({
         where: { id: requestId },

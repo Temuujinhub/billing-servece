@@ -9,7 +9,9 @@ import { dateTime, mnt, MESSAGE_STATE_MN } from '@/lib/format';
 
 interface ReceiptRow {
   id: string; state: string; error: string | null; retries: number; createdAt: string;
-  transaction: { gross: number; providerPaymentId: string; intent: { tenantId: string; invoice: { number: string; tenant: { name: string } } } };
+  source: 'payment' | 'api' | 'pos'; amount: number | null; description: string | null; deviceId: string | null;
+  /** Standalone (api/pos) баримтад NULL. */
+  transaction: { gross: number; providerPaymentId: string; intent: { tenantId: string; invoice: { number: string; tenant: { name: string } } } } | null;
 }
 
 interface MessageRow {
@@ -90,9 +92,18 @@ export default function AdminOpsPage() {
                     {receipts.map((r) => (
                       <tr key={r.id}>
                         <td className="td whitespace-nowrap text-slate-500">{dateTime(r.createdAt)}</td>
-                        <td className="td">{r.transaction.intent.invoice.tenant.name}</td>
-                        <td className="td font-mono text-[12.5px]">{r.transaction.intent.invoice.number}</td>
-                        <td className="td text-right font-semibold">{mnt(r.transaction.gross)}</td>
+                        <td className="td">{r.transaction?.intent.invoice.tenant.name ?? '—'}</td>
+                        <td className="td">
+                          {r.transaction ? (
+                            <span className="font-mono text-[12.5px]">{r.transaction.intent.invoice.number}</span>
+                          ) : (
+                            <span className="flex items-center gap-1.5 text-[12.5px] text-slate-600">
+                              {r.description ?? r.deviceId ?? '—'}
+                              <span className="rounded-full bg-navy-50 px-2 py-0.5 text-[11px] font-bold text-navy-700">{r.source === 'pos' ? 'POS' : 'API'}</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="td text-right font-semibold">{r.transaction ? mnt(r.transaction.gross) : r.amount != null ? mnt(r.amount) : '—'}</td>
                         <td className="td"><ReceiptBadge state={r.state} /><p className="text-[11px] text-slate-400">retry: {r.retries}</p></td>
                         <td className="td max-w-[220px] truncate text-[12px] text-red-500" title={r.error ?? ''}>{r.error ?? '—'}</td>
                         <td className="td">

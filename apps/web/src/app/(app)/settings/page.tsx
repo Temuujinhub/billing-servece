@@ -401,8 +401,8 @@ export default function SettingsPage() {
               <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Урьдчилсан харагдац {smsLatin && '· латин'}</p>
               <p className="mt-2 rounded-lg bg-white/10 px-3.5 py-3 text-[13.5px] leading-relaxed text-white">{shown}</p>
               <p className="mt-2 text-right text-[12px] text-navy-300">
-                {shown.length} тэмдэгт ≈ <b className="text-teal-300">{seg} segment</b> ({seg * 25}₮)
-                {smsLatin && segCyr > seg && <span className="ml-1.5 rounded-full bg-teal-500/20 px-2 py-0.5 font-bold text-teal-300">−{(segCyr - seg) * 25}₮ хэмнэлт</span>}
+                {shown.length} тэмдэгт ≈ <b className="text-teal-300">{seg} segment</b> — нэг илгээлт нэг үнэтэй (Billing хуудас)
+                {smsLatin && segCyr > seg && <span className="ml-1.5 rounded-full bg-teal-500/20 px-2 py-0.5 font-bold text-teal-300">−{segCyr - seg} segment хэмнэлт</span>}
               </p>
             </div>
           );
