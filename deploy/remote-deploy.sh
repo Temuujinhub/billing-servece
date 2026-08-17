@@ -162,6 +162,20 @@ if [ -f images.tar.gz ]; then
 fi
 docker compose -f "$COMPOSE_FILE" --env-file .env up -d $UP_FLAGS --remove-orphans
 
+# --- 5b. Caddy тохиргоог ЗААВАЛ дахин ачаалах. Caddyfile нь bind-mount тул
+#         `up -d` нь агуулга нь өөрчлөгдсөнийг мэдэхгүй, caddy контейнерийг
+#         хөндөхгүй орхидог — 2026-08-17-нд домэйн сольсон Caddyfile сервер
+#         дээр очсон ч caddy 9 хоногийн өмнөх тохиргоогоороо үйлчилсээр л
+#         байсан. `caddy reload` нь graceful (нэг ч хүсэлт тасрахгүй);
+#         бүтэлгүйтвэл restart-аар (1-2 сек тасалдал) нөхнө.
+log "Reloading Caddy config"
+if docker compose -f "$COMPOSE_FILE" exec -T caddy caddy reload --config /etc/caddy/Caddyfile 2>&1; then
+  echo "✅ Caddy config reloaded."
+else
+  echo "⚠ caddy reload амжилтгүй (хуучин image дээр admin off байж магадгүй) — restart хийж байна."
+  docker compose -f "$COMPOSE_FILE" restart caddy
+fi
+
 # --- 6. After a successful first run, stop re-seeding on later deploys
 if [ "$FIRST_RUN" = "1" ]; then
   sed -i 's/^SEED_ON_START=true/SEED_ON_START=false/' .env

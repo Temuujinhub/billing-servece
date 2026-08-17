@@ -9,7 +9,7 @@
 |---|---|---|
 | `msgbill.mn` | Канон хаяг: landing, dashboard, admin, `/api/*` | A → 202.37.235.16 |
 | `*.msgbill.mn` | `www` болон дараагийн subdomain-ууд | A → 202.37.235.16 |
-| `bil.mn` | SMS-д явах богино төлбөрийн линк (`/p/<token>`) | A → 202.37.235.16 |
+| `bil.mn`, `www.bil.mn` | SMS-д явах богино төлбөрийн линк (`/p/<token>`) | A → 202.37.235.16 |
 
 Nameserver: `ns1/ns2/ns3.digitalocean.com` (MagicNet-ийн бүртгэлээс DO рүү
 заасан). Хуучин `billing.mastrsys.com` хаягийг **цаашид ашиглахгүй** —
@@ -18,12 +18,14 @@ redirect блок нь тэр файлд байна.
 
 ### SSL/TLS
 
-Гараар юу ч хийхгүй: Caddy `msgbill.mn`, `www.msgbill.mn`, `bil.mn` гурван
-хаягт Let's Encrypt сертификат **автоматаар** авч, дуусахаас 30 хоногийн өмнө
-сунгана. `www.bil.mn` нь DNS-д байхгүй тул Caddyfile-д ЗӨРИУД оруулаагүй (DNS-д
-`www` A record нэмсний дараа л нэмнэ). Шаардлага:
+Гараар юу ч хийхгүй: Caddy `msgbill.mn`, `www.msgbill.mn`, `bil.mn`,
+`www.bil.mn` дөрвөн хаягт Let's Encrypt сертификат **автоматаар** авч,
+дуусахаас 30 хоногийн өмнө сунгана. Шаардлага:
 
 - 80 ба 443 порт гаднаас нээлттэй (ACME HTTP-01 challenge 80-аар явна);
+- Caddyfile өөрчлөгдсөн deploy бүрд `remote-deploy.sh` нь caddy-г
+  `caddy reload`-оор (боломжгүй бол restart) дахин ачаална — bind-mount файл
+  тул `up -d` дангаараа хуучин тохиргоог сольдоггүй;
 - DNS нь ЭНЭ сервер рүү заасан байх (заагаагүй бол challenge бүтэлгүйтнэ);
 - сертификатууд `caddy_data` volume-д хадгалагдана — стекийг `down -v`-гүйгээр
   дахин асаахад дахин авах шаардлагагүй.
