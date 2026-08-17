@@ -18,6 +18,9 @@ const LOCK_MINUTES = 15;
 // SMS сэргээх код: амьдрах хугацаа ба оролдлогын дээд хязгаар.
 const RESET_CODE_TTL_MINUTES = 10;
 const RESET_CODE_MAX_ATTEMPTS = 5;
+// Админ SMS 2FA (SCA): нэвтрэлтийн 2-р алхмын кодын тохиргоо.
+const TWO_FACTOR_TTL_MINUTES = 5;
+const TWO_FACTOR_MAX_ATTEMPTS = 5;
 
 @Injectable()
 export class AuthService {
@@ -122,7 +125,8 @@ export class AuthService {
       | 'auth.password_changed'
       | 'auth.password_reset_requested'
       | 'auth.password_reset_completed'
-      | 'auth.password_reset_failed',
+      | 'auth.password_reset_failed'
+      | 'auth.2fa_challenge_sent',
     email: string,
     ip?: string,
     tenantId?: string,
@@ -186,6 +190,83 @@ export class AuthService {
       throw apiError(HttpStatus.FORBIDDEN, 'TENANT_INACTIVE', 'Байгууллагын бүртгэл идэвхгүй байна.', 'Tenant is not active.');
     }
 
+    // SCA (B-56): ADMIN_2FA=true үед платформын админ нэвтрэхдээ утсандаа
+    // ирсэн 6 оронтой кодоор давхар баталгаажна. Утасгүй админд алхам алгасна
+    // (SMS явахгүй нөхцөлд өөрийгөө түгжихээс сэргийлсэн зориудын сонголт).
+    const isAdmin = this.isAdminUser(user.email, user.platformAdmin);
+    if (this.config.get('ADMIN_2FA') === 'true' && isAdmin && user.phone) {
+      const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          twoFactorCodeHash: sha256(code),
+          twoFactorExpiresAt: new Date(Date.now() + TWO_FACTOR_TTL_MINUTES * 60_000),
+          twoFactorAttempts: 0,
+        },
+      });
+      try {
+        const port = await this.providers.getSmsPort(membership.tenantId);
+        await port.send({
+          tenantId: membership.tenantId,
+          to: user.phone,
+          text: `msgbill.mn admin: Nevtreh batalgaajuulah kod: ${code} (${TWO_FACTOR_TTL_MINUTES} minut huchintei).`,
+        });
+      } catch (e: any) {
+        this.logger.warn(`2FA SMS send failed for ${user.email}: ${e?.message}`);
+      }
+      this.logAuthEvent('auth.2fa_challenge_sent', user.email, ip, membership.tenantId);
+      return {
+        twoFactorRequired: true as const,
+        message: `Бүртгэлтэй утас руу ${TWO_FACTOR_TTL_MINUTES} минут хүчинтэй 6 оронтой код илгээлээ.`,
+      };
+    }
+
+    this.logAuthEvent('auth.login_succeeded', user.email, ip, membership.tenantId);
+    return this.issueTokens(
+      {
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        tenantId: membership.tenantId,
+        role: membership.role,
+        isAdmin,
+        partnerKind: this.partnerKindFor(user.email),
+      },
+      { mustChangePassword: user.mustChangePassword },
+    );
+  }
+
+  /** SCA 2-р алхам: SMS кодыг тулгаад токен олгоно. */
+  async verifyTwoFactor(email: string, code: string, ip?: string) {
+    const normalized = email.trim().toLowerCase();
+    const invalid = apiError(HttpStatus.UNAUTHORIZED, 'INVALID_2FA_CODE', 'Код буруу эсвэл хугацаа нь дууссан байна.', 'Invalid or expired verification code.');
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalized },
+      include: { memberships: { include: { tenant: true }, orderBy: { createdAt: 'asc' } } },
+    });
+    if (!user?.twoFactorCodeHash || !user.twoFactorExpiresAt || user.twoFactorExpiresAt < new Date()) {
+      throw invalid;
+    }
+    if (user.twoFactorAttempts >= TWO_FACTOR_MAX_ATTEMPTS) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { twoFactorCodeHash: null, twoFactorExpiresAt: null, twoFactorAttempts: 0 },
+      });
+      throw invalid;
+    }
+    if (sha256(code) !== user.twoFactorCodeHash) {
+      await this.prisma.user.update({ where: { id: user.id }, data: { twoFactorAttempts: { increment: 1 } } });
+      this.logAuthEvent('auth.login_failed', normalized, ip);
+      throw invalid;
+    }
+    const membership = user.memberships[0];
+    if (!membership || membership.tenant.status !== 'ACTIVE') {
+      throw apiError(HttpStatus.FORBIDDEN, 'TENANT_INACTIVE', 'Байгууллагын бүртгэл идэвхгүй байна.', 'Tenant is not active.');
+    }
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { twoFactorCodeHash: null, twoFactorExpiresAt: null, twoFactorAttempts: 0 },
+    });
     this.logAuthEvent('auth.login_succeeded', user.email, ip, membership.tenantId);
     return this.issueTokens(
       {
@@ -204,7 +285,28 @@ export class AuthService {
   async refresh(refreshToken: string) {
     const tokenHash = sha256(refreshToken);
     const stored = await this.prisma.refreshToken.findUnique({ where: { tokenHash }, include: { user: true } });
-    if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+    // Zero Trust / reuse detection (B-50): НЭГЭНТ солигдсон token дахин ирж
+    // байна = token хулгайлагдсаны дохио (жинхэнэ клиент шинэ token-оо аль
+    // хэдийн авсан). Тухайн хэрэглэгчийн БҮХ идэвхтэй session-ыг унтрааж,
+    // хоёр тал (хулгайч + эзэн) дахин нэвтрэхийг шаардана.
+    if (stored?.revokedAt) {
+      await this.prisma.refreshToken.updateMany({
+        where: { userId: stored.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      void this.prisma.auditLog
+        .create({
+          data: {
+            action: 'auth.refresh_reuse_detected',
+            targetType: 'auth',
+            actorEmail: stored.user.email,
+            meta: { tokenId: stored.id },
+          },
+        })
+        .catch(() => undefined);
+      throw apiError(HttpStatus.UNAUTHORIZED, 'INVALID_REFRESH', 'Дахин нэвтэрнэ үү.', 'Refresh token is invalid or expired.');
+    }
+    if (!stored || stored.expiresAt < new Date()) {
       throw apiError(HttpStatus.UNAUTHORIZED, 'INVALID_REFRESH', 'Дахин нэвтэрнэ үү.', 'Refresh token is invalid or expired.');
     }
     // Rotation: a refresh token is single-use.

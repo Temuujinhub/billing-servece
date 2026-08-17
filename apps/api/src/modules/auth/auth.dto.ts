@@ -73,6 +73,16 @@ export class RefreshDto {
   refreshToken!: string;
 }
 
+export class VerifyTwoFactorDto {
+  @IsEmail({}, { message: 'Имэйл хаяг буруу байна' })
+  email!: string;
+
+  @IsString()
+  @Length(6, 6, { message: 'Код 6 оронтой байна' })
+  @Matches(/^\d{6}$/, { message: 'Код зөвхөн тооноос бүрдэнэ' })
+  code!: string;
+}
+
 export class ChangePasswordDto {
   @IsString()
   @IsNotEmpty({ message: 'Одоогийн нууц үгээ оруулна уу' })

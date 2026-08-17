@@ -143,10 +143,25 @@ export function apiPublic<T>(path: string, init: RequestInit = {}): Promise<T> {
   return rawRequest<T>(path, init);
 }
 
-export async function login(email: string, password: string): Promise<AuthResponse> {
-  const auth = await rawRequest<AuthResponse>('/auth/login', {
+/** ADMIN_2FA=true үед админ нэвтрэлт токены оронд 2FA шаардлага буцаана. */
+export interface TwoFactorChallenge {
+  twoFactorRequired: true;
+  message: string;
+}
+
+export async function login(email: string, password: string): Promise<AuthResponse | TwoFactorChallenge> {
+  const auth = await rawRequest<AuthResponse | TwoFactorChallenge>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  });
+  if ('accessToken' in auth) storeSession(auth);
+  return auth;
+}
+
+export async function verifyTwoFactor(email: string, code: string): Promise<AuthResponse> {
+  const auth = await rawRequest<AuthResponse>('/auth/verify-2fa', {
+    method: 'POST',
+    body: JSON.stringify({ email, code }),
   });
   storeSession(auth);
   return auth;

@@ -10,8 +10,8 @@
 # the database is never exposed to the public internet.
 #
 #   Public site : https://msgbill.mn/
-#   API docs    : https://msgbill.mn/api/docs
 #   SMS линк    : https://bil.mn/p/<token>  (богино домэйн, ижил web контейнер)
+#   API docs    : хаалттай (SWAGGER_ENABLED=true үед л /api/docs нээгдэнэ)
 # =============================================================================
 name: billingservice
 
@@ -19,6 +19,7 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-billing}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
@@ -35,6 +36,7 @@ services:
     build:
       context: ./apps/api
     restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,6 +115,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
     restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
     depends_on:
       - api
     environment:
@@ -123,6 +126,7 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
     depends_on:
       - web
       - api

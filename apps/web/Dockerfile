@@ -20,5 +20,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+# Least privilege: root эрхгүй ажиллана; Next-ийн runtime cache-д л бичих эрхтэй.
+RUN mkdir -p .next/cache && chown -R node:node .next/cache
+USER node
 EXPOSE 3000
 CMD ["node", "server.js"]

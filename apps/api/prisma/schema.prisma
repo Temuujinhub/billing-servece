@@ -138,6 +138,10 @@ model User {
   resetCodeHash      String?
   resetCodeExpiresAt DateTime?
   resetCodeAttempts  Int       @default(0)
+  // Админ SMS 2FA (SCA, B-56): ADMIN_2FA=true үед нэвтрэлтийн 2-р алхам.
+  twoFactorCodeHash  String?
+  twoFactorExpiresAt DateTime?
+  twoFactorAttempts  Int       @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

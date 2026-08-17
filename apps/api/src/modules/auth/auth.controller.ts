@@ -4,7 +4,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthUser, CurrentUser, Public } from '../../common/decorators';
 import { AuthService } from './auth.service';
-import { ChangePasswordDto, ForgotPasswordDto, LoginDto, RefreshDto, RegisterDto, ResetPasswordDto } from './auth.dto';
+import { ChangePasswordDto, ForgotPasswordDto, LoginDto, RefreshDto, RegisterDto, ResetPasswordDto, VerifyTwoFactorDto } from './auth.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -25,6 +25,15 @@ export class AuthController {
   login(@Body() dto: LoginDto, @Req() req: Request) {
     // trust proxy=1 (main.ts) тул req.ip нь Caddy-гийн цаадах бодит IP.
     return this.auth.login(dto, req.ip);
+  }
+
+  // Админ SMS 2FA-ийн 2-р алхам (ADMIN_2FA=true үед login энэ руу чиглүүлнэ).
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 900_000 } })
+  @HttpCode(200)
+  @Post('verify-2fa')
+  verifyTwoFactor(@Body() dto: VerifyTwoFactorDto, @Req() req: Request) {
+    return this.auth.verifyTwoFactor(dto.email, dto.code, req.ip);
   }
 
   @Public()
