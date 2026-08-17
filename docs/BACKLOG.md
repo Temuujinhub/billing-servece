@@ -69,6 +69,12 @@
 
 | B-39 | ТЕГ-ийн нэгдсэн нэвтрэлт (OIDC password grant, client_id=vatps): нэвтрэх нэр/нууц үг админаас тохируулж «🔑 Токен шалгах» товчоор сервер бодит токен авч буйг шалгана | ✅ |
 
+## Дууссан (2026-08-17, OWASP Top 10 аудит — PR #30)
+
+| ID | Ажил | Статус |
+|---|---|---|
+| B-52 | OWASP Top 10 аудит (тайлан: `docs/SECURITY_OWASP.md`) + шууд засварууд: CSV formula injection саармагжуулалт; нэвтрэлтийн амжилт/бүтэлгүйтлийн audit log (IP-тай); tenant webhook-ийн SSRF хамгаалалт (private IP хориг + redirect manual + TLD шаардлага); legacy webhook HMAC + timingSafeEqual + throttle; цуцалсан/хугацаа дууссан pay линк status/simulate-д ажиллахгүй болов; reports export VIEWER-т хаагдав; API түлхүүрийн scope ил тод болов; CORS fail-closed; JWT HS256 pin; Caddy clickjacking/Permissions-Policy header; login хуудасны демо нууц үг prod-д нуугдав; SWAGGER_ENABLED унтраалга | ✅ |
+
 ## Дууссан (2026-08-17, домэйн + брэнд шилжилт)
 
 | ID | Ажил | Статус |
@@ -91,6 +97,15 @@
 | B-28 | Reconciliation (settlement тулгалт), PII field-level encryption | P2 | RISKS.md Phase 2 |
 | B-41 | `bil.mn`-ийг CallPro-д баталгаажсан домэйн болгож бүртгүүлэх | P0 | Гар ажил. Бүртгэгдэх хүртэл `SHORT_URL_BASE`-ийг хоосон болговол msgbill.mn-ээр илгээгдэнэ (B-40) |
 | B-42 | Bonum webhook/callback URL-ийг `https://msgbill.mn/...` болгож шинэчлүүлэх | P0 | Гар ажил — Bonum-той имэйлээр |
+| B-53 | **P0 гар ажил:** production-ы seed данснууд (`admin@billingservice.mn/Admin123$` platform admin, `demo@…/Demo123$`) — нууц үг солих/эрх буулгах (`docs/SECURITY_OWASP.md` §Яаралтай) | P0 | Анхны deploy SEED_ON_START=true-тэй явсан |
+| B-44 | Нэвтрэлтийн lockout (failedLoginCount/lockedUntil + backoff) | P1 | OWASP A07 |
+| B-45 | Нууц үг солих + имэйлээр сэргээх урсгал | P1 | Одоо endpoint огт алга |
+| B-46 | `GET /tenant`-ийн банк/регистр талбаруудыг роль-аар шүүх; админ provider baseUrl-д `@IsUrl` | P2 | |
+| B-47 | Гарах webhook secret-ийг шифрлэж хадгалах | P2 | |
+| B-48 | JWT-ийг localStorage → httpOnly cookie | P2 | XSS үед session хулгайг таслана |
+| B-49 | NestJS 11 + Next 15 major upgrade (npm audit цэвэрлэгээ, multer 2.x) | P1 | Production audit: API 4 high, web 3 high |
+| B-50 | Refresh token reuse detection + гишүүн хасагдахад bulk revoke | P2 | |
+| B-51 | Alerting (алдаа/health-ийн идэвхтэй дохио) | P2 | Одоо зөвхөн stdout log |
 
 ## Хойшлуулсан / санаанууд
 

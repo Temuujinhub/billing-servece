@@ -20,6 +20,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       secretOrKey: config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      // Defense-in-depth: зөвхөн бидний гарын үсэг зурдаг алгоритмыг хүлээн авна.
+      algorithms: ['HS256'],
       ignoreExpiration: false,
     });
   }

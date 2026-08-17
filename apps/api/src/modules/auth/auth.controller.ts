@@ -1,6 +1,7 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
+import { Request } from 'express';
 import { Public } from '../../common/decorators';
 import { AuthService } from './auth.service';
 import { LoginDto, RefreshDto, RegisterDto } from './auth.dto';
@@ -21,8 +22,9 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(200)
   @Post('login')
-  login(@Body() dto: LoginDto) {
-    return this.auth.login(dto);
+  login(@Body() dto: LoginDto, @Req() req: Request) {
+    // trust proxy=1 (main.ts) тул req.ip нь Caddy-гийн цаадах бодит IP.
+    return this.auth.login(dto, req.ip);
   }
 
   @Public()

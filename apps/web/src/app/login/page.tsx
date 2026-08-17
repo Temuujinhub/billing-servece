@@ -36,7 +36,9 @@ export default function LoginPage() {
       <div className="flex flex-1 items-center justify-center px-4 pb-16">
         <div className="card w-full max-w-md animate-fade-up p-8">
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Нэвтрэх</h1>
-          <p className="mt-1.5 text-sm text-slate-500">Демо: demo@billingservice.mn / Demo123$</p>
+          {process.env.NODE_ENV !== 'production' && (
+            <p className="mt-1.5 text-sm text-slate-500">Демо: demo@billingservice.mn / Demo123$</p>
+          )}
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
             <div>

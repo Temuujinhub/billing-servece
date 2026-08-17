@@ -30,7 +30,9 @@ class CreateKeyDto {
 }
 
 class CreateWebhookDto {
-  @IsUrl({ require_tld: false, protocols: ['https', 'http'] })
+  // SSRF (A10): TLD-гүй дотоод хостнэйм (localhost, postgres г.м.) хориотой;
+  // илгээх үед мөн IP-г нь resolve хийж дахин шалгадаг (webhooks.service.ts).
+  @IsUrl({ require_tld: true, require_protocol: true, protocols: ['https', 'http'] })
   @MaxLength(300)
   url!: string;
 
@@ -79,7 +81,10 @@ export class DevelopersController {
         prefix: raw.slice(0, dto.mode === 'test' ? 13 : 8),
         keyHash: sha256(raw),
         last4: raw.slice(-4),
-        scopes: (dto.scopes ?? []) as any,
+        // Хоосон scope нь runtime-д "бүх эрх" гэж тайлбарлагддаг (хуучин
+        // түлхүүрүүдийн нийцтэй байдал) тул ШИНЭ түлхүүрт эрхийг нь ил тодоор
+        // бичиж өгнө — ирээдүйд fail-closed болгох замыг нээнэ.
+        scopes: (dto.scopes && dto.scopes.length ? dto.scopes : ['invoice', 'receipt', 'pos']) as any,
         mode: dto.mode ?? 'live',
       },
       select: { id: true, name: true, prefix: true, last4: true, scopes: true, mode: true, createdAt: true, revokedAt: true },

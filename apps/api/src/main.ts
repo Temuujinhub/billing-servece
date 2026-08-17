@@ -19,7 +19,8 @@ async function bootstrap() {
     .map((o) => o.trim())
     .filter(Boolean);
   app.enableCors({
-    origin: origins.length ? origins : true,
+    // CORS_ORIGINS хоосон үед БҮХ origin-д нээгдэж байсныг хаав (fail closed).
+    origin: origins.length ? origins : ['http://localhost:3000'],
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   });
@@ -37,13 +38,17 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  const swagger = new DocumentBuilder()
-    .setTitle('msgbill.mn API — Message Billing Service')
-    .setDescription('Нэхэмжлэхээс eBarimt хүртэлх авлага хураалтын автоматжуулалт — REST API')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, swagger));
+  // /api/docs нь партнёруудад зориулсан НИЙТИЙН баримт (landing-аас холбоотой).
+  // Хаах шаардлага гарвал .env-д SWAGGER_ENABLED=false тавиад restart хийнэ.
+  if ((process.env.SWAGGER_ENABLED ?? 'true') !== 'false') {
+    const swagger = new DocumentBuilder()
+      .setTitle('msgbill.mn API — Message Billing Service')
+      .setDescription('Нэхэмжлэхээс eBarimt хүртэлх авлага хураалтын автоматжуулалт — REST API')
+      .setVersion('0.1.0')
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, swagger));
+  }
 
   const port = Number(process.env.API_PORT ?? 4000);
   await app.listen(port, '0.0.0.0');

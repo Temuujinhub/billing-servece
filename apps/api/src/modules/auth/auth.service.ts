@@ -99,7 +99,18 @@ export class AuthService {
     });
   }
 
-  async login(dto: LoginDto) {
+  /**
+   * OWASP A09: нэвтрэлтийн амжилт/бүтэлгүйтэл хоёуланг нь audit log-д бичнэ —
+   * credential stuffing/brute force-ийг Admin → Audit хуудаснаас мөшгих
+   * боломжтой. Бичилт нь нэвтрэлтийг хэзээ ч унагахгүй (catch → үл тоомсорлоно).
+   */
+  private logAuthEvent(action: 'auth.login_failed' | 'auth.login_succeeded', email: string, ip?: string, tenantId?: string) {
+    void this.prisma.auditLog
+      .create({ data: { action, targetType: 'auth', tenantId, actorEmail: email, meta: { ip: ip ?? null } } })
+      .catch(() => undefined);
+  }
+
+  async login(dto: LoginDto, ip?: string) {
     const email = dto.email.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({
       where: { email },
@@ -107,15 +118,22 @@ export class AuthService {
     });
     // Same error for unknown email vs wrong password — no account enumeration.
     const invalid = apiError(HttpStatus.UNAUTHORIZED, 'INVALID_CREDENTIALS', 'Имэйл эсвэл нууц үг буруу байна.', 'Invalid email or password.');
-    if (!user) throw invalid;
+    if (!user) {
+      this.logAuthEvent('auth.login_failed', email, ip);
+      throw invalid;
+    }
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!ok) throw invalid;
+    if (!ok) {
+      this.logAuthEvent('auth.login_failed', email, ip);
+      throw invalid;
+    }
 
     const membership = user.memberships[0];
     if (!membership || membership.tenant.status !== 'ACTIVE') {
       throw apiError(HttpStatus.FORBIDDEN, 'TENANT_INACTIVE', 'Байгууллагын бүртгэл идэвхгүй байна.', 'Tenant is not active.');
     }
 
+    this.logAuthEvent('auth.login_succeeded', user.email, ip, membership.tenantId);
     return this.issueTokens({
       userId: user.id,
       email: user.email,

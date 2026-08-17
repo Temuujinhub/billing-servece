@@ -1,9 +1,9 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
-import { randomUUID } from 'crypto';
+import { randomUUID, timingSafeEqual } from 'crypto';
 import { apiError } from '../../common/filters/http-exception.filter';
-import { sha256 } from '../../common/utils';
+import { hmacSign, sha256 } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WebhooksService } from '../developers/webhooks.service';
 import { BonumAdapter } from '../providers/bonum.adapter';
@@ -233,7 +233,9 @@ export class PaymentsService {
       where: { tokenHash: sha256(token) },
       include: { invoice: true },
     });
-    if (!link) throw apiError(HttpStatus.NOT_FOUND, 'LINK_INVALID', 'Холбоос хүчингүй байна.', 'Invalid link.');
+    if (!link || link.revokedAt || (link.expiresAt && link.expiresAt < new Date())) {
+      throw apiError(HttpStatus.NOT_FOUND, 'LINK_INVALID', 'Холбоос хүчингүй байна.', 'Invalid link.');
+    }
     if (!(await this.isSandbox(link.invoice.tenantId))) {
       throw apiError(HttpStatus.FORBIDDEN, 'SANDBOX_ONLY', 'Туршилтын горим идэвхгүй байна.', 'Sandbox mode is disabled.');
     }
@@ -473,9 +475,13 @@ export class PaymentsService {
   async checkToken(token: string) {
     const link = await this.prisma.shortLink.findUnique({
       where: { tokenHash: sha256(token) },
-      select: { invoiceId: true },
+      select: { invoiceId: true, revokedAt: true, expiresAt: true },
     });
-    if (!link) throw apiError(HttpStatus.NOT_FOUND, 'LINK_INVALID', 'Холбоос хүчингүй байна.', 'Invalid link.');
+    // Цуцалсан нэхэмжлэхийн (revoke хийсэн) болон хугацаа дууссан линк төлөв,
+    // eBarimt зэрэг мэдээлэл буцаахгүй — resolveToken-той ижил дүрэм.
+    if (!link || link.revokedAt || (link.expiresAt && link.expiresAt < new Date())) {
+      throw apiError(HttpStatus.NOT_FOUND, 'LINK_INVALID', 'Холбоос хүчингүй байна.', 'Invalid link.');
+    }
     let intent = await this.prisma.paymentIntent.findFirst({
       where: { invoiceId: link.invoiceId },
       orderBy: { createdAt: 'desc' },
@@ -541,8 +547,16 @@ export class PaymentsService {
   async webhook(rawBody: Buffer | undefined, signature: string | undefined, payload: { providerInvoiceId?: string }) {
     const secret = this.config.getOrThrow<string>('WEBHOOK_SIGNING_SECRET');
     const body = rawBody?.toString('utf8') ?? JSON.stringify(payload ?? {});
-    const expected = sha256(`${secret}.${body}`);
-    if (!signature || signature !== expected) {
+    // OWASP A02/A08: жинхэнэ HMAC (length-extension-д тэсвэртэй) + хуучин
+    // sha256(secret.body) хэлбэрийг хоёуланг нь хүлээн авна (илгээгчид эвдрэхгүй),
+    // харьцуулалт нь timing-safe.
+    const accepted = [hmacSign(secret, body), sha256(`${secret}.${body}`)];
+    const sigBuf = Buffer.from(signature ?? '', 'utf8');
+    const valid = accepted.some((exp) => {
+      const expBuf = Buffer.from(exp, 'utf8');
+      return sigBuf.length === expBuf.length && timingSafeEqual(sigBuf, expBuf);
+    });
+    if (!valid) {
       await this.prisma.auditLog.create({
         data: { action: 'webhook.rejected', targetType: 'webhook', meta: { reason: 'bad_signature' } },
       });

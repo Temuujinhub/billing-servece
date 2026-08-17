@@ -1,11 +1,16 @@
 import { Controller, Get, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
-import { AuthUser, CurrentUser } from '../../common/decorators';
+import { Role } from '@prisma/client';
+import { AuthUser, CurrentUser, Roles } from '../../common/decorators';
 import { PrismaService } from '../../prisma/prisma.service';
 
 function csvCell(v: unknown): string {
-  const s = v === null || v === undefined ? '' : String(v);
+  let s = v === null || v === undefined ? '' : String(v);
+  // Formula injection (OWASP A03): хэрэглэгчийн оруулсан нэр/тайлбар зэрэг нь
+  // =, +, -, @, tab, CR-ээр эхэлбэл Excel томьёо гэж үзэн ажиллуулдаг.
+  // Тоон утгыг хөндөхгүй (сөрөг дүн хэвээр), текстэд ' угтвар залгана.
+  if (typeof v !== 'number' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
 }
 
@@ -75,6 +80,8 @@ export class ReportsController {
   }
 
   /** CSV export with UTF-8 BOM so Excel opens Cyrillic correctly. */
+  // PII их хэмжээгээр экспортлодог тул VIEWER-т нээлттэй байсныг хаав.
+  @Roles(Role.ACCOUNTANT, Role.OPERATOR)
   @Get('export')
   async export(
     @CurrentUser() user: AuthUser,
