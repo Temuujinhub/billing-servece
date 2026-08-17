@@ -75,6 +75,10 @@ PUBLIC_URL=https://msgbill.mn SHORT_URL_BASE=https://bil.mn bash deploy/remote-d
 
 ## Домэйн солих үед ГАРААР хийх зүйлс (код биш)
 
+> Алхам алхмаар бүрэн заавар: [`CUTOVER_CHECKLIST.md`](CUTOVER_CHECKLIST.md)
+> (DigitalOcean, сервер, CallPro, Bonum, LIME — тус бүрд чеклист + имэйлийн
+> бэлэн загвар). Доорх нь товч хураангуй.
+
 1. **CallPro (SMS)** — оператор урьдчилан бүртгээгүй домэйн руу заасан линкийг
    блоклодог (`unverified link`). `bil.mn`-ийг бүртгүүлнэ. Бүртгэгдэх хүртэл
    `SHORT_URL_BASE`-ийг хоосон болгож `msgbill.mn`-ээр илгээж болно.
