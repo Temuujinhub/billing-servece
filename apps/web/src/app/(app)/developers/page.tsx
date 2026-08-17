@@ -318,7 +318,7 @@ export default function DevelopersPage() {
             </p>
             <div className="rounded-xl bg-navy-900 p-4">
               <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Нэхэмжлэх үүсгээд SMS илгээх</p>
-              <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://billing.mastrsys.com/api/v1/partner/invoices \\
+              <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://msgbill.mn/api/v1/partner/invoices \\
   -H "X-Api-Key: bsk_ТАНЫ_ТҮЛХҮҮР" \\
   -H "Content-Type: application/json" \\
   -H "Idempotency-Key: order-10041" \\
@@ -347,7 +347,7 @@ export default function DevelopersPage() {
             </p>
             <div className="rounded-xl bg-navy-900 p-4">
               <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Баримт үүсгэх</p>
-              <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://billing.mastrsys.com/api/v1/partner/receipts \\
+              <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://msgbill.mn/api/v1/partner/receipts \\
   -H "X-Api-Key: bsk_ТАНЫ_ТҮЛХҮҮР" \\
   -H "Content-Type: application/json" \\
   -H "Idempotency-Key: order-10041" \\
@@ -388,7 +388,7 @@ export default function DevelopersPage() {
             </p>
             <div className="rounded-xl bg-navy-900 p-4">
               <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">POS-оос баримт үүсгэх</p>
-              <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://billing.mastrsys.com/api/v1/partner/receipts \\
+              <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://msgbill.mn/api/v1/partner/receipts \\
   -H "X-Api-Key: bsk_ТАНЫ_ТҮЛХҮҮР" \\
   -H "Content-Type: application/json" \\
   -H "Idempotency-Key: pos-7788-000123" \\

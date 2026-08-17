@@ -1,11 +1,11 @@
 {
   "info": {
-    "name": "billingservice.mn Partner API",
-    "description": "billingservice.mn-ийн гаднын системд зориулсан API.\n\nҮйлчилгээнүүд:\n• Үйлчилгээ 2 — API-аар нэхэмжлэх үүсгэж SMS илгээх (scope: invoice)\n• Үйлчилгээ 3 — өөрийн системээс eBarimt баримт шууд үүсгэх (scope: receipt)\n• Үйлчилгээ 4 — POS терминалаас eBarimt (scope: pos, device_id заавал)\n\nТУРШИЛТ: Dashboard → Developers хуудаснаас ТЕСТ түлхүүр (bsk_test_...) үүсгээд {{apiKey}} хувьсагчид тавина. Тест түлхүүр СЕРВЕРТ ЮУ Ч БИЧИХГҮЙ — бодит хэлбэртэй симуляц хариу буцаана (хариунд \"test\": true талбар байна). Бодит ажиллагаанд live түлхүүрээ ашиглана.\n\nIdempotency: POST хүсэлтүүдэд Idempotency-Key header дэмжигдэнэ — ижил түлхүүр+ижил body давтвал хадгалсан хариу буцаана (давхар нэхэмжлэх/баримт үүсэхгүй).",
+    "name": "msgbill.mn Partner API",
+    "description": "msgbill.mn-ийн гаднын системд зориулсан API.\n\nҮйлчилгээнүүд:\n• Үйлчилгээ 2 — API-аар нэхэмжлэх үүсгэж SMS илгээх (scope: invoice)\n• Үйлчилгээ 3 — өөрийн системээс eBarimt баримт шууд үүсгэх (scope: receipt)\n• Үйлчилгээ 4 — POS терминалаас eBarimt (scope: pos, device_id заавал)\n\nТУРШИЛТ: Dashboard → Developers хуудаснаас ТЕСТ түлхүүр (bsk_test_...) үүсгээд {{apiKey}} хувьсагчид тавина. Тест түлхүүр СЕРВЕРТ ЮУ Ч БИЧИХГҮЙ — бодит хэлбэртэй симуляц хариу буцаана (хариунд \"test\": true талбар байна). Бодит ажиллагаанд live түлхүүрээ ашиглана.\n\nIdempotency: POST хүсэлтүүдэд Idempotency-Key header дэмжигдэнэ — ижил түлхүүр+ижил body давтвал хадгалсан хариу буцаана (давхар нэхэмжлэх/баримт үүсэхгүй).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "https://billing.mastrsys.com/api/v1", "type": "string" },
+    { "key": "baseUrl", "value": "https://msgbill.mn/api/v1", "type": "string" },
     { "key": "apiKey", "value": "bsk_test_ТҮЛХҮҮРЭЭ_ЭНД", "type": "string" }
   ],
   "auth": {

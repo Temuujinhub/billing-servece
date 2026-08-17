@@ -36,6 +36,28 @@ export function newPublicToken(): string {
   return randomBytes(6).toString('base64url');
 }
 
+/**
+ * Public payment link for an invoice token.
+ *
+ * SMS-д явах линк нь SHORT_URL_BASE (богино домэйн, ж: https://bil.mn) -аар
+ * үүснэ — домэйн бүр 1 тэмдэгт нь илгээлтийн segment-ийн зардал. Тохируулаагүй
+ * бол канон PUBLIC_URL-д унана, тул нэг ч линк хаягдахгүй.
+ *
+ * Хоёр домэйн ижил web контейнерийг үзүүлдэг (deploy/Caddyfile) тул токен аль
+ * хаягаар нээгдсэнээс үл хамааран ажиллана.
+ */
+export function payLinkFor(
+  config: { get<T = string>(key: string): T | undefined },
+  token: string,
+): string {
+  const base = (
+    config.get<string>('SHORT_URL_BASE') ||
+    config.get<string>('PUBLIC_URL') ||
+    ''
+  ).replace(/\/+$/, '');
+  return `${base}/p/${token}`;
+}
+
 // Mongolian Cyrillic → Latin (ASCII-only so the SMS stays pure GSM-7:
 // 160 chars/segment instead of UCS-2's 70 — roughly half the cost).
 const MN_LATIN: Record<string, string> = {

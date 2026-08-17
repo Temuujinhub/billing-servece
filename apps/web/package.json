@@ -1,7 +1,7 @@
 {
   "name": "@billingservice/web",
   "version": "0.1.0",
-  "description": "billingservice.mn — landing, merchant dashboard and payment page (Next.js)",
+  "description": "msgbill.mn — landing, merchant dashboard and payment page (Next.js)",
   "private": true,
   "scripts": {
     "dev": "next dev",

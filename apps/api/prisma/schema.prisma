@@ -1,5 +1,5 @@
 // =============================================================================
-// billingservice.mn — data model (MVP scope of the PRD data dictionary).
+// msgbill.mn — data model (MVP scope of the PRD data dictionary).
 //
 // Conventions
 //   • Every tenant-owned table carries `tenantId` — queries MUST scope by it.

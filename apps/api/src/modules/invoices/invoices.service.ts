@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InvoiceState, Prisma } from '@prisma/client';
 import { AuthUser } from '../../common/decorators';
 import { apiError } from '../../common/filters/http-exception.filter';
-import { newPublicToken, normalizeMnPhone, sha256 } from '../../common/utils';
+import { newPublicToken, normalizeMnPhone, payLinkFor, sha256 } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { MessagingService, renderSmsTemplate } from '../messaging/messaging.service';
@@ -262,7 +262,7 @@ export class InvoicesService {
         expiresAt: new Date(Math.max(Date.now() + 60 * 864e5, (invoice.dueDate?.getTime() ?? 0) + 30 * 864e5)),
       },
     });
-    const payUrl = `${this.config.get('PUBLIC_URL') ?? ''}/p/${token}`;
+    const payUrl = payLinkFor(this.config, token);
 
     if (invoice.customer.phone) {
       const body = renderSmsTemplate(invoice.tenant.smsTemplate, {
@@ -309,7 +309,7 @@ export class InvoicesService {
         await tx.shortLink.create({
           data: { invoiceId: id, tokenHash: sha256(token), expiresAt: new Date(Date.now() + 60 * 864e5) },
         });
-        const payUrl = `${this.config.get('PUBLIC_URL') ?? ''}/p/${token}`;
+        const payUrl = payLinkFor(this.config, token);
         if (full.customer.phone) {
           await this.messaging.sendSms(tx, {
             tenantId: user.tenantId,

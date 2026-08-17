@@ -1,6 +1,6 @@
 import type { Config } from 'tailwindcss';
 
-// billingservice.mn design system — Wave-inspired: deep navy, calm teal
+// msgbill.mn design system — Wave-inspired: deep navy, calm teal
 // primary, generous whitespace, soft cards. Matches the product wireframes
 // (navy top bar, white sidebar, mint active states, teal CTAs).
 const config: Config = {

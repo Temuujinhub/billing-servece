@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Headers, HttpStatus, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
@@ -7,7 +8,7 @@ import { Type } from 'class-transformer';
 import { Request } from 'express';
 import { Public } from '../../common/decorators';
 import { apiError } from '../../common/filters/http-exception.filter';
-import { sha256 } from '../../common/utils';
+import { payLinkFor, sha256 } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BillingService } from '../billing/billing.service';
 import { CreateInvoiceDto } from '../invoices/invoices.dto';
@@ -117,6 +118,7 @@ export class PartnerApiController {
     private readonly invoices: InvoicesService,
     private readonly receipts: ReceiptsService,
     private readonly billing: BillingService,
+    private readonly config: ConfigService,
   ) {}
 
   /** Idempotency-Key: ижил түлхүүр+ижил body → хадгалсан хариу; өөр body → 409. */
@@ -161,7 +163,7 @@ export class PartnerApiController {
         amount: dto.amount,
         balance: dto.amount,
         state: 'SENT',
-        pay_url: 'https://billing.mastrsys.com/p/TESTTOKEN',
+        pay_url: payLinkFor(this.config, 'TESTTOKEN'),
         created_at: new Date().toISOString(),
         test: true,
       };

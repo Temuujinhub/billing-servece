@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# billingservice.mn — remote deploy script (runs ON the DigitalOcean droplet).
+# Message Billing Service (msgbill.mn) — remote deploy script (runs ON the server).
 #
 # Invoked by the GitHub Actions deploy workflow after the repository has been
 # rsynced to /opt/billingservice. Idempotent and safe to run on every deploy.
@@ -12,7 +12,8 @@
 #      Its database volumes are NOT touched, so it can be resumed later with:
 #        cd /opt/cloud-pms && docker compose -f docker-compose.prod.yml up -d
 #   4. Generate a strong .env with random secrets on the FIRST deploy only,
-#      then reuse it (so secrets stay stable across deploys).
+#      then reuse it (so secrets stay stable across deploys). Existing .env
+#      files are migrated in place to the current public/short domains.
 #   5. Build and (re)start the whole stack behind the Caddy reverse proxy.
 #   6. Smoke-test the API through the proxy.
 # =============================================================================
@@ -20,7 +21,9 @@ set -euo pipefail
 
 APP_DIR="/opt/billingservice"
 COMPOSE_FILE="docker-compose.prod.yml"
-PUBLIC_URL="${PUBLIC_URL:-https://billing.mastrsys.com}"
+PUBLIC_URL="${PUBLIC_URL:-https://msgbill.mn}"
+# SMS-д явах төлбөрийн линкийн (богино) домэйн — Caddy дээр /p/* үйлчилдэг.
+SHORT_URL_BASE="${SHORT_URL_BASE:-https://bil.mn}"
 HOTEL_PMS_DIR="/opt/cloud-pms"
 
 cd "$APP_DIR"
@@ -75,7 +78,7 @@ if [ ! -f .env ]; then
   FIRST_RUN=1
   umask 077
   cat > .env <<EOF
-# billingservice.mn production secrets — generated $(date -u +%FT%TZ). Keep private.
+# msgbill.mn production secrets — generated $(date -u +%FT%TZ). Keep private.
 POSTGRES_USER=billing
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 POSTGRES_DB=billingservice
@@ -86,9 +89,11 @@ JWT_REFRESH_TTL=604800
 ENCRYPTION_KEY=$(openssl rand -hex 32)
 WEBHOOK_SIGNING_SECRET=$(openssl rand -hex 32)
 PUBLIC_URL=${PUBLIC_URL}
+# SMS-ийн төлбөрийн линк энэ богино домэйнээр явна (Caddy /p/* -ийг үйлчилнэ).
+SHORT_URL_BASE=${SHORT_URL_BASE}
 # Web is served same-origin through Caddy, so the API base stays relative.
 NEXT_PUBLIC_API_URL=
-CORS_ORIGINS=${PUBLIC_URL}
+CORS_ORIGINS=${PUBLIC_URL},${SHORT_URL_BASE}
 # Mock providers + demo data until real QPay/eBarimt/SMS contracts are signed.
 PAYMENT_SANDBOX=true
 SEED_ON_START=true
@@ -105,6 +110,43 @@ SEED_ON_START=true
 PAYMENT_PROVIDER=qpay_mock
 SMS_PROVIDER=mock
 EOF
+fi
+
+# --- 4b. Domain migration for an EXISTING .env (2026-08: billing.mastrsys.com →
+#         msgbill.mn + bil.mn). .env deploy хооронд хадгалагдах тул домэйн
+#         сольсныг энд тусгахгүй бол сервер хуучин хаягаараа линк үүсгэсээр
+#         байна. Idempotent: аль хэдийн шинэ бол юу ч өөрчлөгдөхгүй.
+if [ "$FIRST_RUN" != "1" ] && [ -f .env ]; then
+  ENV_CHANGED=0
+  if grep -q 'billing\.mastrsys\.com' .env; then
+    cp -a .env ".env.bak-$(date -u +%Y%m%dT%H%M%SZ)"
+    sed -i 's#https\{0,1\}://billing\.mastrsys\.com#https://msgbill.mn#g' .env
+    ENV_CHANGED=1
+    log "Migrated .env domain: billing.mastrsys.com → msgbill.mn (backup kept)"
+  fi
+  if ! grep -q '^SHORT_URL_BASE=' .env; then
+    printf '\n# SMS-ийн төлбөрийн линкийн богино домэйн (Caddy /p/* үйлчилнэ).\nSHORT_URL_BASE=%s\n' "$SHORT_URL_BASE" >> .env
+    ENV_CHANGED=1
+    log "Added SHORT_URL_BASE=${SHORT_URL_BASE} to .env"
+  fi
+  # CORS: богино домэйнээс нээгдсэн төлбөрийн хуудас ижил origin-оор API-д
+  # хандах ч, хөтөч redirect/embed үед хоёр домэйн хоёулаа зөвшөөрөгдсөн байх.
+  CUR_CORS=$(sed -n 's/^CORS_ORIGINS=//p' .env | tail -1 | tr -d '\r"')
+  case ",$CUR_CORS," in
+    *",$SHORT_URL_BASE,"*) ;;
+    *)
+      if [ -n "$CUR_CORS" ]; then
+        sed -i "s#^CORS_ORIGINS=.*#CORS_ORIGINS=${CUR_CORS},${SHORT_URL_BASE}#" .env
+      else
+        printf 'CORS_ORIGINS=%s,%s\n' "$PUBLIC_URL" "$SHORT_URL_BASE" >> .env
+      fi
+      ENV_CHANGED=1
+      log "Added ${SHORT_URL_BASE} to CORS_ORIGINS"
+      ;;
+  esac
+  if [ "$ENV_CHANGED" = "1" ]; then
+    log ".env шинэ домэйнд тохирууллаа"
+  fi
 fi
 
 # --- 5. Build and (re)start the stack
@@ -152,11 +194,26 @@ if [ "$API_OK" != "1" ]; then
 fi
 
 # -k because the very first run may still be provisioning the Let's Encrypt cert.
-if curl -fsSk --resolve billing.mastrsys.com:443:127.0.0.1 \
-    "https://billing.mastrsys.com/health/live" >/dev/null 2>&1; then
-  echo "✅ Reachable end-to-end through Caddy (HTTPS)."
-else
-  echo "ℹ Proxy/TLS check not green yet — certificate provisioning can take a minute."
+# --resolve: DNS сервер рүү заасан эсэхээс үл хамааран ЯГ энэ хостыг шалгана.
+PUBLIC_HOST=$(printf '%s' "$PUBLIC_URL" | sed -e 's#^https\{0,1\}://##' -e 's#/.*$##')
+SHORT_HOST=$(printf '%s' "$SHORT_URL_BASE" | sed -e 's#^https\{0,1\}://##' -e 's#/.*$##')
+for HOST in "$PUBLIC_HOST" "$SHORT_HOST"; do
+  [ -n "$HOST" ] || continue
+  if curl -fsSk --resolve "$HOST:443:127.0.0.1" "https://$HOST/health/live" >/dev/null 2>&1; then
+    echo "✅ $HOST reachable end-to-end through Caddy (HTTPS)."
+  else
+    echo "ℹ $HOST proxy/TLS check not green yet — certificate provisioning can take a minute."
+  fi
+done
+# Богино домэйн нь төлбөрийн хуудсыг ҮНЭХЭЭР үйлчилж байгаа эсэх (redirect биш):
+# буруу токен ч 200/404 буцаана, харин 502 бол web контейнер рүү заагаагүй гэсэн үг.
+if [ -n "$SHORT_HOST" ]; then
+  SHORT_CODE=$(curl -s -o /dev/null -w '%{http_code}' -k --resolve "$SHORT_HOST:443:127.0.0.1" \
+    "https://$SHORT_HOST/p/HEALTHCHK" || echo ERR)
+  case "$SHORT_CODE" in
+    2*|3*|4*) echo "✅ $SHORT_HOST/p/* төлбөрийн хуудсыг үйлчилж байна (HTTP $SHORT_CODE)." ;;
+    *) echo "⚠ $SHORT_HOST/p/* HTTP $SHORT_CODE — Caddyfile-ийн bil.mn блокыг шалгана уу." ;;
+  esac
 fi
 
 # --- 8b. Diagnostics: migration state + recent API errors (no secrets in either)
@@ -222,4 +279,4 @@ else
   echo "   → регистрээр ТТД (merchantTin) автоматаар бөглөх боломжгүй байж магадгүй."
 fi
 
-log "Deploy complete → ${PUBLIC_URL}"
+log "Deploy complete → ${PUBLIC_URL} (SMS линк: ${SHORT_URL_BASE}/p/…)"

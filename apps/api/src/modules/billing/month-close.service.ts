@@ -145,7 +145,7 @@ export class MonthCloseService implements OnApplicationBootstrap, OnModuleDestro
         customerPhone: tenant.contactPhone ?? undefined,
         customerEmail: tenant.contactEmail ?? undefined,
         amount: bill.total,
-        description: `billingservice.mn үйлчилгээний төлбөр ${bill.cycle} (НӨАТ орсон)`,
+        description: `msgbill.mn үйлчилгээний төлбөр ${bill.cycle} (НӨАТ орсон)`,
         dueDate: new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10),
         send: Boolean(tenant.contactPhone),
       } as any,

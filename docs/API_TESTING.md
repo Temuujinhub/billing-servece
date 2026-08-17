@@ -17,9 +17,9 @@
 ## Postman-аар турших
 
 1. Postman collection татах: Dashboard → Developers → «Postman collection»
-   (эсвэл `https://billing.mastrsys.com/billingservice-partner-api.postman_collection.json`).
+   (эсвэл `https://msgbill.mn/billingservice-partner-api.postman_collection.json`).
 2. Collection variables:
-   - `baseUrl` = `https://billing.mastrsys.com/api/v1`
+   - `baseUrl` = `https://msgbill.mn/api/v1`
    - `apiKey` = өөрийн `bsk_test_...` түлхүүр
 3. Хүсэлтүүдийг дарааллаар нь ажиллуулж хариуг харна.
 

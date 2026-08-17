@@ -1,9 +1,10 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import * as ExcelJS from 'exceljs';
 import { AuthUser } from '../../common/decorators';
 import { apiError } from '../../common/filters/http-exception.filter';
-import { normalizeMnPhone, smsSegments } from '../../common/utils';
+import { normalizeMnPhone, payLinkFor, smsSegments } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CustomersService } from '../customers/customers.service';
 import { InvoicesService } from '../invoices/invoices.service';
@@ -73,6 +74,7 @@ export class ImportsService {
     private readonly invoices: InvoicesService,
     private readonly messaging: MessagingService,
     private readonly billing: BillingService,
+    private readonly config: ConfigService,
   ) {}
 
   // ---------------------------------------------------------------- inspect
@@ -193,7 +195,11 @@ export class ImportsService {
       if (!row.valid || !row.normalized) continue;
       const n = row.normalized as any;
       // The SMS body includes tenant name + amount + link; ~40 extra chars.
-      smsSegmentEstimate += smsSegments(`X: Танд ${n.amount}₮ нэхэмжлэх ирлээ. Төлөх: https://billing.mastrsys.com/p/XXXXXXXX`);
+      // Линкийг бодит богино домэйнээр (SHORT_URL_BASE) тооцно — домэйны урт
+      // segment-ийн тоог шууд өөрчилдөг тул үнийн таамаг зөрөхгүй.
+      smsSegmentEstimate += smsSegments(
+        `X: Танд ${n.amount}₮ нэхэмжлэх ирлээ. Төлөх: ${payLinkFor(this.config, 'XXXXXXXX')}`,
+      );
     }
     return {
       batch: {

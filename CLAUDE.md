@@ -1,4 +1,4 @@
-# billingservice.mn — ажиллах журам
+# msgbill.mn (Message Billing Service) — ажиллах журам
 
 ## Ажлын бүртгэл (заавал)
 
