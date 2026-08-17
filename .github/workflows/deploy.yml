@@ -251,5 +251,10 @@ jobs:
             fi
             sleep 6
           done
+          # Оношилгоо: HTTPS хариулахгүй байгаагийн түгээмэл шалтгаан нь Caddy
+          # (сертификат аваагүй / хуучин тохиргоо) тул log-ийг нь шууд харуулна.
+          echo "— Diagnosis: Caddy logs from the droplet —"
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            'cd /opt/billingservice && docker compose -f docker-compose.prod.yml ps caddy && docker compose -f docker-compose.prod.yml logs --no-color --tail=60 caddy' || true
           echo "::error title=Wrong revision live::Droplet $DEPLOY_HOST is not serving commit $GITHUB_SHA — буруу сервер эсвэл хуучин код ажилласаар байна."
           exit 1
