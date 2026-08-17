@@ -1,17 +1,42 @@
 # =============================================================================
-# billingservice.mn — reverse proxy (Caddy) for the production droplet.
+# Message Billing Service (msgbill.mn) — reverse proxy (Caddy) for production.
 #
-# Serves the app on billing.mastrsys.com with automatic HTTPS (Let's Encrypt).
-# The apex domain and bare-IP requests are redirected to the canonical host.
-# When the billingservice.mn domain is purchased, add it as an extra site
-# address on the main block below — nothing else needs to change.
+#   msgbill.mn      → канон хаяг: landing + dashboard + admin + API (auto-HTTPS)
+#   www.msgbill.mn  → apex рүү 301
+#   bil.mn          → SMS-д явдаг УРТ БИШ линкийн хаяг. `/p/<token>` төлбөрийн
+#                     хуудсыг ШУУД (redirect-гүй) үзүүлнэ — нэг hop хасагдаж
+#                     утсан дээр хурдан нээгдэнэ. Нүүр хуудас нь msgbill.mn руу.
+#
+# DNS (DigitalOcean nameservers, 2026-08-17): msgbill.mn + *.msgbill.mn + bil.mn
+# A → серверийн IP. Let's Encrypt сертификатыг Caddy өөрөө авч, автоматаар
+# сунгана — гараар юу ч тохируулах шаардлагагүй (порт 80/443 нээлттэй байх).
+#
+# Хуучин billing.mastrsys.com хаягийг цаашид ашиглахгүй тул энд БАЙХГҮЙ. Хэрэв
+# хуучин линкүүдийг ажиллуулах шаардлага гарвал, DNS-ийг энэ сервер рүү заасны
+# ДАРАА л доорх блокыг нэмнэ (DNS заагаагүй байхад ACME сертификат авч чадахгүй
+# бөгөөд Let's Encrypt-ийн хязгаарт хүрэх эрсдэлтэй):
+#
+#   billing.mastrsys.com {
+#       redir https://msgbill.mn{uri} permanent
+#   }
 # =============================================================================
 {
 	admin off
 	email stemuujin@gmail.com
 }
 
-billing.mastrsys.com {
+# --- Shared snippets --------------------------------------------------------
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+# --- Canonical host ---------------------------------------------------------
+msgbill.mn {
 	encode zstd gzip
 
 	# Backend (NestJS): REST API, health checks, payment webhooks.
@@ -25,20 +50,43 @@ billing.mastrsys.com {
 		reverse_proxy web:3000
 	}
 
-	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-		X-Content-Type-Options "nosniff"
-		Referrer-Policy "strict-origin-when-cross-origin"
-		-Server
-	}
+	import security_headers
 }
 
-# While hotel PMS is paused, send the apex + www to the billing service.
-mastrsys.com, www.mastrsys.com {
-	redir https://billing.mastrsys.com{uri} temporary
+www.msgbill.mn {
+	redir https://msgbill.mn{uri} permanent
+}
+
+# --- Short-link host (SMS) --------------------------------------------------
+# Төлбөрийн хуудас руу шаардлагатай бүх зам (/p/*, /_next/*, фонт, зураг) энэ
+# хаягаас ижил web контейнерээр үйлчилнэ; зөвхөн нүүр хуудас канон хаяг руу
+# чиглүүлнэ. noindex — ижил контент хоёр домэйнд индекслэгдэхээс сэргийлнэ.
+#
+# `www.bil.mn` ЗӨРИУД байхгүй: bil.mn-д wildcard/www A record тохируулаагүй тул
+# энд бичвэл Caddy сертификат авч чадахгүй, ACME-г хий давтана. Хэрэв хэрэгтэй
+# бол ЭХЛЭЭД DNS-д `www` A record нэмээд дараа нь энэ мөрт нэмнэ.
+bil.mn {
+	encode zstd gzip
+
+	@backend path /api/* /health/*
+	handle @backend {
+		reverse_proxy api:4000
+	}
+
+	@root path /
+	handle @root {
+		redir https://msgbill.mn/ temporary
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+
+	import security_headers
+	header X-Robots-Tag "noindex"
 }
 
 # Bare-IP / unknown-host HTTP requests → canonical host.
 :80 {
-	redir https://billing.mastrsys.com{uri} temporary
+	redir https://msgbill.mn{uri} temporary
 }

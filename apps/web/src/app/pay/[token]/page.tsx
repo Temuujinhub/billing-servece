@@ -262,7 +262,7 @@ export default function PayPage() {
         </div>
 
         <p className="mt-5 text-center text-[12px] leading-relaxed text-navy-400">
-          Энэ хуудсыг <b className="text-navy-200">billingservice.mn</b> найдвартай дамжуулж байна.
+          Энэ хуудсыг <b className="text-navy-200">msgbill.mn</b> найдвартай дамжуулж байна.
           {data.merchant.phone && <> Холбоо барих: {data.merchant.phone}</>}
         </p>
       </div>

@@ -34,8 +34,10 @@ function templatePreview(template: string): string {
     .replaceAll('{{дугаар}}', 'INV-00042')
     .replaceAll('{{дүн}}', '150,000₮')
     .replaceAll('{{хугацаа}}', ', хугацаа: 2026-09-01')
-    .replaceAll('{{линк}}', 'https://billing.mastrsys.com/p/aB3xK9pQ');
-  if (!out.includes('https://billing.mastrsys.com/p/')) out += ' https://billing.mastrsys.com/p/aB3xK9pQ';
+    // SMS-д явах линк богино домэйнээр (сервер тал: SHORT_URL_BASE=https://bil.mn),
+    // тул segment/урт тооцоолол бодит илгээлттэй таарна.
+    .replaceAll('{{линк}}', 'https://bil.mn/p/aB3xK9pQ');
+  if (!out.includes('https://bil.mn/p/')) out += ' https://bil.mn/p/aB3xK9pQ';
   return out;
 }
 

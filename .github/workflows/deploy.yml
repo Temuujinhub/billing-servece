@@ -1,7 +1,7 @@
-name: Deploy billingservice.mn
+name: Deploy msgbill.mn
 
 # Deploys the stack to the Mongolia-hosted production server.
-#   • Manually  : Actions tab → "Deploy billingservice.mn" → "Run workflow"
+#   • Manually  : Actions tab → "Deploy msgbill.mn" → "Run workflow"
 #   • Automatic : on every push to a PRODUCTION branch (below)
 #
 # PRODUCTION BRANCH: `main` — ГАНЦХАН эх сурвалж. Өмнө нь production өөр
@@ -172,7 +172,7 @@ jobs:
       - name: Run remote deploy script
         run: |
           ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "PUBLIC_URL=https://billing.mastrsys.com DEPLOY_SHA=$GITHUB_SHA bash /opt/billingservice/deploy/remote-deploy.sh"
+            "PUBLIC_URL=https://msgbill.mn SHORT_URL_BASE=https://bil.mn DEPLOY_SHA=$GITHUB_SHA bash /opt/billingservice/deploy/remote-deploy.sh"
 
       # One-time data move: pg_dump on the old server → full restore on the
       # target (drops the target schema first — target data is REPLACED).
@@ -235,12 +235,12 @@ jobs:
           # HTTP 200 хангалтгүй — /health/live одоо ажиллаж буй commit SHA-гаа
           # буцаадаг тул буруу сервер эсвэл хуучин код "ногоон" харагдаж чадахгүй.
           # --resolve: DNS өөр IP заасан ч бид ЯГ deploy хийсэн серверээ шалгана.
-          DNS_IP=$(getent hosts billing.mastrsys.com | awk '{print $1}' | head -1)
+          DNS_IP=$(getent hosts msgbill.mn | awk '{print $1}' | head -1)
           if [ -n "$DNS_IP" ] && [ "$DNS_IP" != "$DEPLOY_HOST" ]; then
-            echo "::warning title=DNS mismatch::billing.mastrsys.com resolves to $DNS_IP but this workflow deployed to $DEPLOY_HOST — visitors are NOT seeing this deploy!"
+            echo "::warning title=DNS mismatch::msgbill.mn resolves to $DNS_IP but this workflow deployed to $DEPLOY_HOST — visitors are NOT seeing this deploy!"
           fi
           for i in $(seq 1 20); do
-            BODY=$(curl -fsSk --resolve "billing.mastrsys.com:443:$DEPLOY_HOST" --max-time 10 https://billing.mastrsys.com/health/live 2>/dev/null || true)
+            BODY=$(curl -fsSk --resolve "msgbill.mn:443:$DEPLOY_HOST" --max-time 10 https://msgbill.mn/health/live 2>/dev/null || true)
             if [ -n "$BODY" ]; then
               SERVED=$(printf '%s' "$BODY" | grep -o '"commit":"[a-f0-9]*"' | cut -d'"' -f4)
               if [ "$SERVED" = "$GITHUB_SHA" ]; then

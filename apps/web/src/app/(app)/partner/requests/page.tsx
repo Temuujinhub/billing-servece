@@ -123,7 +123,7 @@ export default function PartnerRequestsPage() {
       <div>
         <h1 className="text-2xl font-extrabold tracking-tight text-navy-900">Мерчант бүртгэлийн хүсэлтүүд</h1>
         <p className="mt-1 text-sm text-muted">
-          billingservice.mn-ээс ирсэн шинэ мерчантуудын бүртгэлийн хүсэлтүүд. Бүртгэлээ хийгээд олгосон
+          msgbill.mn-ээс ирсэн шинэ мерчантуудын бүртгэлийн хүсэлтүүд. Бүртгэлээ хийгээд олгосон
           утгуудаа бөглөж баталгаажуулахад тухайн байгууллагын үйлчилгээ шууд идэвхжинэ.
         </p>
       </div>

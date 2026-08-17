@@ -1,4 +1,4 @@
-# billingservice.mn
+# msgbill.mn — Message Billing Service
 
 **Нэхэмжлэхээс eBarimt хүртэлх авлага хураалтын автоматжуулалт** — Монголын
 байгууллагуудад зориулсан B2B SaaS платформ. Excel-ээр бөөнөөр нэхэмжлэх үүсгэж,
@@ -65,10 +65,18 @@ NEXT_PUBLIC_API_URL=http://localhost:4000 npm run dev   # http://localhost:3000
 
 ## Production
 
-`billing.mastrsys.com` (DigitalOcean droplet, Docker + Caddy auto-HTTPS).
-GitHub Actions "Deploy" workflow нь кодыг rsync хийж `deploy/remote-deploy.sh`
-ажиллуулна — түр зуур ажиллаж байгаа hotel PMS стекийг унтрааж (өгөгдөл нь
-хадгалагдана), billingservice стекийг асаана.
+| Домэйн | Зориулалт |
+|---|---|
+| `https://msgbill.mn` | Канон хаяг — landing, dashboard, admin, `/api/*` |
+| `https://bil.mn/p/<token>` | SMS-д явах богино төлбөрийн линк (ижил web контейнер) |
+
+Сервер: `202.37.235.16` (Монголд хостлогдсон), Docker + Caddy auto-HTTPS
+(Let's Encrypt, гараар тохируулах шаардлагагүй). GitHub Actions "Deploy
+msgbill.mn" workflow нь дүрсүүдийг CI дээр build хийж, кодыг rsync хийж
+`deploy/remote-deploy.sh` ажиллуулна. Дэлгэрэнгүй:
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+Хуучин `billing.mastrsys.com` хаягийг ашиглахаа больсон (2026-08, B-40).
 
 ## Санхүүгийн найдвартай байдлын зарчмууд
 

@@ -38,7 +38,7 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
 
   const swagger = new DocumentBuilder()
-    .setTitle('billingservice.mn API')
+    .setTitle('msgbill.mn API — Message Billing Service')
     .setDescription('Нэхэмжлэхээс eBarimt хүртэлх авлага хураалтын автоматжуулалт — REST API')
     .setVersion('0.1.0')
     .addBearerAuth()
@@ -48,7 +48,7 @@ async function bootstrap() {
   const port = Number(process.env.API_PORT ?? 4000);
   await app.listen(port, '0.0.0.0');
   // eslint-disable-next-line no-console
-  console.log(`billingservice.mn API listening on :${port}`);
+  console.log(`msgbill.mn API listening on :${port}`);
 }
 
 void bootstrap();

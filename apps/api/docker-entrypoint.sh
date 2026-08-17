@@ -17,5 +17,5 @@ if [ "$SEED_ON_START" = "true" ]; then
     npx prisma db seed || echo "⚠ Seed skipped/failed (continuing)"
 fi
 
-echo "→ Starting billingservice.mn API..."
+echo "→ Starting msgbill.mn API..."
 exec node dist/main.js

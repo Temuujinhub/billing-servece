@@ -1,5 +1,5 @@
 /**
- * Demo seed for billingservice.mn — makes the dashboard immediately browsable.
+ * Demo seed for msgbill.mn — makes the dashboard immediately browsable.
  * Idempotent: skips entirely when the demo tenant already exists.
  *
  * Login: demo@billingservice.mn / Demo123$

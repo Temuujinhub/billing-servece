@@ -1,5 +1,5 @@
 # =============================================================================
-# billingservice.mn — local development stack.
+# msgbill.mn (Message Billing Service) — local development stack.
 #
 #   docker compose up -d            # postgres only; run the apps with npm
 #   docker compose --profile full up -d --build   # full stack on :8080

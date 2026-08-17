@@ -15,6 +15,9 @@ export const envValidationSchema = Joi.object({
   ENCRYPTION_KEY: Joi.string().hex().length(64).required(),
   WEBHOOK_SIGNING_SECRET: Joi.string().min(16).required(),
   PUBLIC_URL: Joi.string().uri().default('http://localhost:3000'),
+  // SMS-ийн төлбөрийн линкийн богино домэйн (ж: https://bil.mn). Хоосон бол
+  // PUBLIC_URL хэрэглэгдэнэ — тохируулаагүй байхад линк ХЭЗЭЭ Ч тасрахгүй.
+  SHORT_URL_BASE: Joi.string().uri().allow('').default(''),
   CORS_ORIGINS: Joi.string().default('http://localhost:3000'),
   PAYMENT_SANDBOX: Joi.string().valid('true', 'false').default('true'),
   SEED_ON_START: Joi.string().valid('true', 'false').default('false'),

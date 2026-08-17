@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { newPublicToken, sha256 } from '../../common/utils';
+import { newPublicToken, payLinkFor, sha256 } from '../../common/utils';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MessagingService, renderSmsTemplate } from './messaging.service';
 
@@ -79,7 +79,7 @@ export class ReminderService implements OnApplicationBootstrap, OnModuleDestroy 
             await tx.shortLink.create({
               data: { invoiceId: invoice.id, tokenHash: sha256(token), expiresAt: new Date(Date.now() + 60 * 864e5) },
             });
-            const payUrl = `${this.config.get('PUBLIC_URL') ?? ''}/p/${token}`;
+            const payUrl = payLinkFor(this.config, token);
             const body = `Сануулга (${invoice.remindersSent + 1}/${MAX_REMINDERS}): ${renderSmsTemplate(invoice.tenant.smsTemplate, {
               tenantName: invoice.tenant.name,
               customerName: invoice.customer.name,

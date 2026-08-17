@@ -209,7 +209,7 @@ export default function LandingPage() {
             <a href="/health/live" className="hover:text-indigo-600">Статус</a>
             <Link href="/login" className="hover:text-indigo-600">Нэвтрэх</Link>
           </nav>
-          <p>© {new Date().getFullYear()} billingservice.mn</p>
+          <p>© {new Date().getFullYear()} msgbill.mn — Message Billing Service</p>
         </div>
       </footer>
     </div>

@@ -179,7 +179,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </>
             )}
             <div className="mt-auto rounded-2xl border border-white/70 bg-gradient-to-br from-indigo-600/90 to-blue-500/90 p-4 text-[12.5px] leading-snug text-white shadow-[0_10px_30px_-12px_rgba(79,70,229,0.5)]">
-              <p className="font-bold">billingservice.mn</p>
+              <p className="font-bold">msgbill.mn</p>
               <p className="mt-1 text-indigo-100">MVP v0.1 · Нэхэмжлэхээс eBarimt хүртэл нэг урсгалаар.</p>
             </div>
           </nav>

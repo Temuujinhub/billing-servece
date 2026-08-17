@@ -111,8 +111,8 @@ export class IntegrationsService {
       'Сайн байна уу,',
       '',
       kind === 'BONUM'
-        ? 'billingservice.mn платформоор дамжуулан төлбөр хүлээн авах дараах байгууллагад Bonum Gateway мерчант бүртгэл (терминал) нээж өгнө үү:'
-        : 'billingservice.mn платформын дараах шинэ байгууллагыг eBarimt POS API instance дээр (LIME холболт) merchant-аар нэмж бүртгэж өгнө үү:',
+        ? 'msgbill.mn (Message Billing Service) платформоор дамжуулан төлбөр хүлээн авах дараах байгууллагад Bonum Gateway мерчант бүртгэл (терминал) нээж өгнө үү:'
+        : 'msgbill.mn (Message Billing Service) платформын дараах шинэ байгууллагыг eBarimt POS API instance дээр (LIME холболт) merchant-аар нэмж бүртгэж өгнө үү:',
       '',
       `  Байгууллагын нэр:  ${payload.name}`,
       `  Регистр:           ${payload.regNo}`,
@@ -138,11 +138,11 @@ export class IntegrationsService {
         'бүртгэл хийгдмэгц олгогдсон merchantTin + posNo-г эргүүлэн ирүүлнэ үү.',
       );
     }
-    lines.push('', 'Баярлалаа.', '', 'billingservice.mn — Media Professional LLC');
+    lines.push('', 'Баярлалаа.', '', 'msgbill.mn — Media Professional LLC');
 
     return {
       to: '', // dispatchEmail резолв хийнэ (админ тохиргоо → env fallback)
-      subject: `[billingservice.mn] Шинэ мерчант бүртгүүлэх хүсэлт — ${payload.name}`,
+      subject: `[msgbill.mn] Шинэ мерчант бүртгүүлэх хүсэлт — ${payload.name}`,
       text: lines.join('\n'),
     };
   }

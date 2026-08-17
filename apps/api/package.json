@@ -1,7 +1,7 @@
 {
   "name": "@billingservice/api",
   "version": "0.1.0",
-  "description": "billingservice.mn API — accounts-receivable automation platform (NestJS modular monolith)",
+  "description": "msgbill.mn API — accounts-receivable automation platform (NestJS modular monolith)",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {

@@ -20,7 +20,7 @@ export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 
 export const ADMIN_KEY = 'adminOnly';
-/** Restricts a route to platform admins (billingservice.mn operators). */
+/** Restricts a route to platform admins (msgbill.mn operators). */
 export const AdminOnly = () => SetMetadata(ADMIN_KEY, true);
 
 export const ROLES_KEY = 'roles';
