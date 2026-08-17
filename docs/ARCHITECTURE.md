@@ -64,7 +64,7 @@ admin role.
 
 ## API гэрээ
 
-- Prefix `/api/v1`, Swagger `/api/docs`.
+- Prefix `/api/v1`; Swagger `/api/docs` нь default хаалттай (`SWAGGER_ENABLED=true` үед л нээгдэнэ).
 - Error envelope: `{code, message_mn, message_en, field_errors, retryable, request_id}`.
 - Public endpoints (payment page) нь short-link token-оор өөрөө authorize
   болно — token нь 128-bit random, DB-д зөвхөн SHA-256.

@@ -57,8 +57,8 @@ AES-256-GCM, bcrypt-12, rotation-той refresh token, гарын үсэгтэй
 | ✅ | Төлбөрийн итгэлцлийн загвар маш зөв: **хуурамч webhook мөнгө бичиж чадахгүй** — баталгаагүй callback нь зөвхөн provider-оос дахин шалгах trigger болдог |
 | ✅ | Replay-safe confirm (`updateMany` claim, P2002 no-op), идемпотент бүх зам |
 | ✅ | Pay token: hash-тай, хугацаатай, цуцлагддаг; 48 бит + rate limit |
-| ⚠ B-44 | **Нэвтрэлтийн lockout байхгүй** — ганц хамгаалалт per-IP 10/мин (in-memory тул restart-аар шинэчлэгддэг). `failedLoginCount/lockedUntil` багана + exponential backoff хэрэгтэй |
-| ⚠ B-45 | **Нууц үг солих/сэргээх endpoint огт байхгүй** — урссан нууц үгийг DB-ээс өөр аргаар солих боломжгүй, урьсан гишүүн эзний өгсөн нууц үгтэйгээ үлддэг |
+| ✅ B-44 | Нэвтрэлтийн lockout нэмэгдэв: 5 удаа буруу → 15 минут түгжинэ (`failedLoginCount/lockedUntil`), түгжигдсэн оролдлого audit log-д `auth.login_locked` |
+| ✅ B-45 | Нууц үг солих (`POST /auth/change-password`, бусад session revoke) + SMS-ээр сэргээх (`/auth/forgot-password` → 6 оронтой код, 10 мин, 5 оролдлого, throttle 3/15мин → `/auth/reset-password`) нэмэгдэв |
 
 ## A05 — Security Misconfiguration
 
@@ -70,7 +70,7 @@ AES-256-GCM, bcrypt-12, rotation-той refresh token, гарын үсэгтэй
 | 🔧 | CORS: `CORS_ORIGINS` хоосон үед бүх origin-д нээгддэг байсан → fail-closed болов |
 | 🔧 | Login хуудасны «Демо: demo@…/Demo123$» бичиг production build-д харагдахаа болив |
 | 🔧 | Swagger `SWAGGER_ENABLED=false`-аар унтраах боломжтой болов |
-| 📋 | `/api/docs` (Swagger) нийтэд нээлттэй хэвээр — партнёрын баримт тул санаатай. Хаахыг хүсвэл серверийн `.env`-д `SWAGGER_ENABLED=false` |
+| ✅ | `/api/docs` (Swagger) DEFAULT ХААЛТТАЙ болов (2026-08-17, эзний шийдвэр) — партнёрт Postman collection + docs/API_TESTING.md. Нээх бол `.env`-д `SWAGGER_ENABLED=true` |
 | ⚠ B-48 | Access/refresh token **localStorage-д** — XSS гарвал 7 хоногийн session хулгайлагдана. httpOnly cookie руу шилжих нь дунд хэмжээний refactor |
 
 ## A06 — Vulnerable and Outdated Components
@@ -89,8 +89,8 @@ upgrade шаарддаг** (NestJS 10→11: multer/body-parser/qs; Next 14→15/
 | Байдал | Дүгнэлт |
 |---|---|
 | ✅ | Refresh rotation (нэг удаагийн хэрэглээ), нэвтрэлтийн enumeration-гүй, auth зам бүр Throttle-тэй |
-| ⚠ B-44 | Lockout байхгүй (дээрх A04) |
-| ⚠ B-45 | Нууц үг солих байхгүй (дээрх A04) |
+| ✅ B-44 | Lockout нэмэгдэв (дээрх A04) |
+| ✅ B-45 | Нууц үг солих/SMS сэргээх нэмэгдэв (дээрх A04); нууц үгийн бодлого: 8+, том/жижиг үсэг, тоо, тусгай тэмдэгт (бүх талбарт) |
 | ⚠ B-50 | Refresh token хулгайн **reuse detection байхгүй** — цуцлагдсан token дахин ирэхэд бүх chain-ийг таслах хэрэгтэй; гишүүн хасагдахад token-ууд нь bulk revoke хийгддэггүй |
 | 📋 **P0 гар ажил** | **Production DB-д seed данснууд амьд байна**: `demo@billingservice.mn / Demo123$` (OWNER) ба `admin@billingservice.mn / Admin123$` (**platform admin!**) — анхны deploy `SEED_ON_START=true`-тэй явсан. **Одоо шууд**: admin@-ийн нууц үгийг солих/устгах, demo-гийнхыг солих. Доорх «Яаралтай гар ажил» хэсгийг үз |
 
@@ -147,8 +147,6 @@ upgrade шаарддаг** (NestJS 10→11: multer/body-parser/qs; Next 14→15/
 
 | ID | Ажил | Тэргүүлэх |
 |---|---|---|
-| B-44 | Нэвтрэлтийн lockout (failedLoginCount/lockedUntil + backoff) | P1 |
-| B-45 | Нууц үг солих + сэргээх (имэйлээр) урсгал | P1 |
 | B-46 | `GET /tenant` талбаруудыг роль-аар шүүх; админ baseUrl-д `@IsUrl` | P2 |
 | B-47 | Гарах webhook secret-ийг шифрлэж хадгалах | P2 |
 | B-48 | Token-ийг localStorage-аас httpOnly cookie руу шилжүүлэх | P2 |

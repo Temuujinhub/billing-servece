@@ -19,8 +19,8 @@ export const envValidationSchema = Joi.object({
   // PUBLIC_URL хэрэглэгдэнэ — тохируулаагүй байхад линк ХЭЗЭЭ Ч тасрахгүй.
   SHORT_URL_BASE: Joi.string().uri().allow('').default(''),
   CORS_ORIGINS: Joi.string().default('http://localhost:3000'),
-  // /api/docs (Swagger) — партнёрт зориулсан нийтийн баримт; хаах бол 'false'.
-  SWAGGER_ENABLED: Joi.string().valid('true', 'false').default('true'),
+  // /api/docs (Swagger) — DEFAULT ХААЛТТАЙ; хөгжүүлэлт/дотоод хэрэгцээнд 'true'.
+  SWAGGER_ENABLED: Joi.string().valid('true', 'false').default('false'),
   PAYMENT_SANDBOX: Joi.string().valid('true', 'false').default('true'),
   SEED_ON_START: Joi.string().valid('true', 'false').default('false'),
   // Comma-separated emails that get platform-admin access on login.

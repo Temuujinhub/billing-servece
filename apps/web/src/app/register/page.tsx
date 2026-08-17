@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 import { Logo } from '@/components/logo';
+import { PasswordPolicyChecklist, passwordPolicyOk } from '@/components/password-policy';
 import { ErrorNote, Spinner } from '@/components/ui';
 import { ApiError, registerAccount } from '@/lib/api';
 
@@ -34,9 +35,7 @@ export default function RegisterPage() {
     if (!form.organizationName.trim()) problems.push('Байгууллагын нэрээ оруулна уу');
     if (!form.name.trim()) problems.push('Нэрээ оруулна уу');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) problems.push('Имэйл хаяг буруу байна');
-    if (form.password.length < 8) problems.push('Нууц үг доод тал нь 8 тэмдэгт байна');
-    else if (!/[A-Za-zА-Яа-яЁёӨөҮү]/.test(form.password) || !/\d/.test(form.password))
-      problems.push('Нууц үг үсэг болон тоо хоёуланг агуулсан байх ёстой');
+    if (!passwordPolicyOk(form.password)) problems.push('Нууц үг бүх шаардлагыг хангасан байх ёстой');
     if (problems.length) {
       setError(problems.join(' · '));
       return;
@@ -103,7 +102,8 @@ export default function RegisterPage() {
             </div>
             <div>
               <label className="label" htmlFor="password">Нууц үг</label>
-              <input id="password" type="password" required minLength={8} autoComplete="new-password" className="input" value={form.password} onChange={(e) => set('password', e.target.value)} placeholder="Доод тал нь 8 тэмдэгт, үсэг + тоо" />
+              <input id="password" type="password" required minLength={8} autoComplete="new-password" className="input" value={form.password} onChange={(e) => set('password', e.target.value)} placeholder="8+ тэмдэгт: том, жижиг үсэг, тоо, тусгай тэмдэгт" />
+              <PasswordPolicyChecklist password={form.password} />
               <p className="mt-1 text-[12px] text-slate-500">Доод тал нь 8 тэмдэгт бөгөөд үсэг, тоо хоёуланг агуулна. Жишээ: Fleex2026</p>
             </div>
             {error && <ErrorNote message={error} />}

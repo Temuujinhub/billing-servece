@@ -21,6 +21,11 @@ export default function LoginPage() {
     setError(null);
     try {
       const auth = await login(email, password);
+      // Түр/анхдагч нууц үгтэй данс — эхлээд нууц үгээ солиулна.
+      if (auth.user.mustChangePassword) {
+        router.replace('/settings?changePassword=1');
+        return;
+      }
       router.replace(auth.user.isAdmin ? '/admin' : '/dashboard');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Сүлжээний алдаа. Дахин оролдоно уу.');
@@ -36,9 +41,6 @@ export default function LoginPage() {
       <div className="flex flex-1 items-center justify-center px-4 pb-16">
         <div className="card w-full max-w-md animate-fade-up p-8">
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Нэвтрэх</h1>
-          {process.env.NODE_ENV !== 'production' && (
-            <p className="mt-1.5 text-sm text-slate-500">Демо: demo@billingservice.mn / Demo123$</p>
-          )}
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4" noValidate>
             <div>
@@ -73,7 +75,12 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-slate-500">
+          <p className="mt-4 text-center text-sm">
+            <Link href="/forgot-password" className="font-medium text-slate-500 hover:text-indigo-600">
+              Нууц үгээ мартсан уу?
+            </Link>
+          </p>
+          <p className="mt-3 text-center text-sm text-slate-500">
             Бүртгэлгүй юу?{' '}
             <Link href="/register" className="font-semibold text-indigo-600 hover:text-indigo-700">
               Үнэгүй бүртгүүлэх

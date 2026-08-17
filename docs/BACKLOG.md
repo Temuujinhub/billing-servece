@@ -73,6 +73,9 @@
 
 | ID | Ажил | Статус |
 |---|---|---|
+| B-44 | Нэвтрэлтийн lockout: 5 удаа буруу → 15 мин түгжинэ (`failedLoginCount`/`lockedUntil`, migration 12) + `auth.login_locked` audit | ✅ |
+| B-45 | Нууц үг солих (`/auth/change-password`, бусад session revoke) + **SMS-ээр сэргээх** (`/auth/forgot-password` 6 оронтой код 10 мин / `/auth/reset-password`, throttle, enumeration-гүй) + `/forgot-password` UI | ✅ |
+| B-54 | Нууц үгийн бодлого бүх талбарт (8+, том/жижиг үсэг, тоо, тусгай тэмдэгт — API DTO + web live чеклист); демо данс АДМИНААС үүсдэг боллоо (Admin → Ops, нэг удаа харагдах санамсаргүй нууц үг, login хуудасны демо hint устгав); bootstrap админ `mustChangePassword`-тэй үүсч UI сольтол анхааруулна; Swagger `/api/docs` **default хаалттай** болов (landing линкүүд хасагдав) | ✅ |
 | B-52 | OWASP Top 10 аудит (тайлан: `docs/SECURITY_OWASP.md`) + шууд засварууд: CSV formula injection саармагжуулалт; нэвтрэлтийн амжилт/бүтэлгүйтлийн audit log (IP-тай); tenant webhook-ийн SSRF хамгаалалт (private IP хориг + redirect manual + TLD шаардлага); legacy webhook HMAC + timingSafeEqual + throttle; цуцалсан/хугацаа дууссан pay линк status/simulate-д ажиллахгүй болов; reports export VIEWER-т хаагдав; API түлхүүрийн scope ил тод болов; CORS fail-closed; JWT HS256 pin; Caddy clickjacking/Permissions-Policy header; login хуудасны демо нууц үг prod-д нуугдав; SWAGGER_ENABLED унтраалга | ✅ |
 
 ## Дууссан (2026-08-17, домэйн + брэнд шилжилт)

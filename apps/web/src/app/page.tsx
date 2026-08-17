@@ -52,7 +52,6 @@ export default function LandingPage() {
             <a href="#how" className="hover:text-indigo-600">Хэрхэн ажилладаг</a>
             <a href="#use-cases" className="hover:text-indigo-600">Хэнд зориулагдсан</a>
             <a href="#pricing" className="hover:text-indigo-600">Үнэ</a>
-            <a href="/api/docs" className="hover:text-indigo-600">API</a>
           </nav>
           <div className="flex items-center gap-3">
             <Link href="/login" className="btn-secondary hidden sm:inline-flex">Нэвтрэх</Link>
@@ -205,7 +204,6 @@ export default function LandingPage() {
         <div className="mx-auto flex max-w-content flex-col items-center justify-between gap-4 px-5 py-8 text-[13.5px] text-slate-500 sm:flex-row">
           <Logo />
           <nav className="flex flex-wrap items-center gap-5" aria-label="Хөл цэс">
-            <a href="/api/docs" className="hover:text-indigo-600">API баримтжуулалт</a>
             <a href="/health/live" className="hover:text-indigo-600">Статус</a>
             <Link href="/login" className="hover:text-indigo-600">Нэвтрэх</Link>
           </nav>

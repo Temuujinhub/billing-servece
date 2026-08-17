@@ -11,6 +11,8 @@ export interface SessionUser {
   isAdmin?: boolean;
   /** Партнёрын ажилтан: BONUM | EBARIMT (энгийн хэрэглэгчид null). */
   partnerKind?: 'BONUM' | 'EBARIMT' | null;
+  /** Түр/анхдагч нууц үгтэй — UI солихыг шаардаж анхааруулна. */
+  mustChangePassword?: boolean;
 }
 
 export interface AuthResponse {

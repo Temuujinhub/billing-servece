@@ -48,6 +48,13 @@ export function clearSession() {
   localStorage.removeItem(LS_USER);
 }
 
+/** Хадгалсан session хэрэглэгчийн талбарыг шинэчилнэ (ж: нууц үг сольсны дараа). */
+export function updateStoredUser(patch: Partial<SessionUser>) {
+  const user = getSessionUser();
+  if (!user) return;
+  localStorage.setItem(LS_USER, JSON.stringify({ ...user, ...patch }));
+}
+
 async function rawRequest<T>(path: string, init: RequestInit = {}, token?: string | null): Promise<T> {
   const headers = new Headers(init.headers);
   if (!(init.body instanceof FormData) && init.body !== undefined) {

@@ -1,5 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { encryptString } from '../../common/crypto';
 import { AdminOnly, AuthUser, CurrentUser } from '../../common/decorators';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -370,6 +372,73 @@ export class AdminController {
       orderBy: { createdAt: 'desc' },
       take: Math.min(Number(take) || 100, 300),
     });
+  }
+
+  /**
+   * Демо данс админаас үүсгэнэ/шинэчилнэ (B-54). Нууц үг санамсаргүй үүсч
+   * НЭГ Л УДАА энэ хариунд харагдана — дараа нь дахин дуудвал шинэ нууц үг
+   * үүснэ. Демо данс public хуудсанд хэзээ ч харагдахгүй.
+   */
+  @Post('demo-account')
+  async resetDemoAccount(@CurrentUser() user: AuthUser) {
+    const email = 'demo@msgbill.mn';
+    // 16 тэмдэгт, бодлого хангасан санамсаргүй нууц үг: Aa + тоо + тусгай.
+    const rand = randomBytes(9).toString('base64url');
+    const password = `De${rand}3!`;
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const demo = await tx.user.findUnique({ where: { email }, include: { memberships: true } });
+      if (!demo) {
+        const created = await tx.user.create({
+          data: { email, name: 'Демо Хэрэглэгч', passwordHash },
+        });
+        const tenant = await tx.tenant.create({
+          data: {
+            name: 'Демо Байгууллага',
+            type: 'ORGANIZATION',
+            kybStatus: 'APPROVED',
+            contactEmail: email,
+            invoiceSeq: { create: {} },
+            modules: {
+              create: [
+                { code: 'EXCEL_SMS', enabled: true },
+                { code: 'API_SMS', enabled: false, quantity: 0 },
+                { code: 'EBARIMT_API', enabled: false, quantity: 0, tier: 1 },
+                { code: 'POS_EBARIMT', enabled: false, quantity: 0 },
+                { code: 'EBARIMT', enabled: false },
+                { code: 'REMINDER', enabled: false },
+              ],
+            },
+          },
+        });
+        await tx.membership.create({ data: { tenantId: tenant.id, userId: created.id, role: 'OWNER' } });
+        return { tenantId: tenant.id, created: true };
+      }
+      await tx.user.update({
+        where: { id: demo.id },
+        data: { passwordHash, failedLoginCount: 0, lockedUntil: null, mustChangePassword: false },
+      });
+      // Хуучин session-уудыг нь унтраана — демог дараагийн хүнд өгөхөд цэвэр.
+      await tx.refreshToken.updateMany({
+        where: { userId: demo.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      return { tenantId: demo.memberships[0]?.tenantId ?? null, created: false };
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: result.tenantId ?? undefined,
+        actorId: user.userId,
+        actorEmail: user.email,
+        action: result.created ? 'admin.demo_account_created' : 'admin.demo_account_reset',
+        targetType: 'user',
+        targetId: email,
+      },
+    });
+    // Нууц үг зөвхөн энэ хариунд — DB-д hash-ээс өөр юу ч үлдэхгүй.
+    return { email, password, created: result.created };
   }
 
   @Get('features')

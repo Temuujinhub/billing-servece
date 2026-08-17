@@ -38,9 +38,10 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  // /api/docs нь партнёруудад зориулсан НИЙТИЙН баримт (landing-аас холбоотой).
-  // Хаах шаардлага гарвал .env-д SWAGGER_ENABLED=false тавиад restart хийнэ.
-  if ((process.env.SWAGGER_ENABLED ?? 'true') !== 'false') {
+  // /api/docs DEFAULT-ООР ХААЛТТАЙ (2026-08-17, эзний шийдвэр) — endpoint-ийн
+  // бүтэц гадныханд ил гарахгүй. Партнёрт Postman collection + docs/API_TESTING.md
+  // өгнө. Нээх бол .env-д SWAGGER_ENABLED=true тавиад restart хийнэ.
+  if (process.env.SWAGGER_ENABLED === 'true') {
     const swagger = new DocumentBuilder()
       .setTitle('msgbill.mn API — Message Billing Service')
       .setDescription('Нэхэмжлэхээс eBarimt хүртэлх авлага хураалтын автоматжуулалт — REST API')
