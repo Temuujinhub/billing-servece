@@ -44,7 +44,9 @@ export class BootstrapService implements OnApplicationBootstrap {
       const passwordHash = await bcrypt.hash(password, 12);
       await this.prisma.$transaction(async (tx) => {
         const user = await tx.user.create({
-          data: { email, name: 'Платформын админ', passwordHash, platformAdmin: true },
+          // mustChangePassword: env-ээр ирсэн нууц үг түр гэж үзнэ — админ
+          // анх нэвтрэхэд UI сольж авахыг шаардана (B-54).
+          data: { email, name: 'Платформын админ', passwordHash, platformAdmin: true, mustChangePassword: true },
         });
         const tenant = await tx.tenant.create({
           data: {

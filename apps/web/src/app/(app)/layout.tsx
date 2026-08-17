@@ -187,7 +187,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {menuOpen && <div className="fixed inset-0 z-20 bg-slate-900/25 backdrop-blur-[2px] lg:hidden" onClick={() => setMenuOpen(false)} />}
 
         {/* Main content */}
-        <main className="min-w-0 flex-1 px-4 py-7 sm:px-6 lg:px-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-7 sm:px-6 lg:px-8">
+          {user?.mustChangePassword && (
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13.5px] text-amber-800">
+              <span>⚠ Та түр (анхдагч) нууц үгээр нэвтэрсэн байна. Аюулгүй байдлын үүднээс нууц үгээ солино уу.</span>
+              <Link href="/settings?changePassword=1" className="btn-primary px-3 py-1.5 text-[12.5px]">
+                Нууц үг солих →
+              </Link>
+            </div>
+          )}
+          {children}
+        </main>
       </div>
     </div>
   );

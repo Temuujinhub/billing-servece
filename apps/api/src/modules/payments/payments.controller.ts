@@ -81,6 +81,7 @@ export class PaymentsController {
   // ---- legacy HMAC-signed webhook (mock/internal)
 
   @Public()
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
   @HttpCode(200)
   @Post('webhooks/qpay')
   webhook(

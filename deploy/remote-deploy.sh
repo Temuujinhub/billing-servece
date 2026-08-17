@@ -181,6 +181,18 @@ if [ "$FIRST_RUN" = "1" ]; then
   sed -i 's/^SEED_ON_START=true/SEED_ON_START=false/' .env
 fi
 
+# --- 6b. Nightly DB backup (ISO 27001 availability/recovery, B-55).
+#         03:30 Улаанбаатар (19:30 UTC) — pg_dump → gzip, 14 хоног хадгална.
+#         Idempotent: cron файлыг бүрэн дарж бичнэ.
+mkdir -p "$APP_DIR/backups"
+chmod 700 "$APP_DIR/backups"
+cat > /etc/cron.d/billingservice-backup <<'EOF'
+# msgbill.mn — өдөр тутмын өгөгдлийн сангийн нөөшлөлт (deploy бүрд шинэчлэгдэнэ)
+30 19 * * * root cd /opt/billingservice && docker compose -f docker-compose.prod.yml exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > backups/db-$(date +\%F).sql.gz 2>> backups/backup.log && find backups -name 'db-*.sql.gz' -mtime +14 -delete
+EOF
+chmod 644 /etc/cron.d/billingservice-backup
+log "Nightly DB backup cron installed (03:30 UB, 14 days retention → $APP_DIR/backups)"
+
 # --- 7. Tidy up dangling images (keeps the small droplet disk healthy)
 docker image prune -f >/dev/null 2>&1 || true
 

@@ -27,6 +27,56 @@ interface EventOps {
 
 type Tab = 'receipts' | 'messages' | 'failures';
 
+/**
+ * Демо данс (B-54): нууц үг зөвхөн ЭНЭ дэлгэцэд НЭГ УДАА харагдана — дахин
+ * дарвал шинэ нууц үг үүсч хуучин нь хүчингүй болно.
+ */
+function DemoAccountCard() {
+  const [creds, setCreds] = useState<{ email: string; password: string; created: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function reset() {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      setCreds(await api<{ email: string; password: string; created: boolean }>('/admin/demo-account', { method: 'POST', body: JSON.stringify({}) }));
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card space-y-3 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-bold text-slate-900">🎭 Демо данс</h2>
+          <p className="mt-0.5 text-[13px] text-slate-500">
+            Танилцуулгад өгөх демо нэвтрэлт — товч дармагц шинэ нууц үг үүсч, хуучин нь хүчингүй болно.
+          </p>
+        </div>
+        <button className="btn-secondary" disabled={busy} onClick={reset}>
+          {busy ? <Spinner className="h-5 w-5" /> : creds ? 'Дахин шинэчлэх' : 'Демо данс үүсгэх / шинэчлэх'}
+        </button>
+      </div>
+      {err && <ErrorNote message={err} />}
+      {creds && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 py-3 text-[13.5px]">
+          <p className="font-semibold text-indigo-900">
+            {creds.created ? 'Демо данс үүслээ' : 'Демо дансны нууц үг шинэчлэгдлээ'} — доорх мэдээлэл зөвхөн одоо харагдана:
+          </p>
+          <p className="mt-1.5 font-mono text-slate-800">
+            {creds.email} / {creds.password}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminOpsPage() {
   const [tab, setTab] = useState<Tab>('receipts');
   const [receipts, setReceipts] = useState<ReceiptRow[] | null>(null);
@@ -68,6 +118,7 @@ export default function AdminOpsPage() {
     <AdminGate title="Ops дараалал">
       <div className="space-y-5">
         <AdminHeader title="🚦 Ops дараалал" sub="Гацсан eBarimt, SMS, provider алдаанууд — нэг дороос retry" />
+        <DemoAccountCard />
         <div className="flex flex-wrap gap-2">
           {TABS.map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)}

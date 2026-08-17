@@ -22,5 +22,8 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/package.json ./package.json
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
+# Least privilege: root эрхгүй ажиллана (файлууд read-only хэрэглэгдэнэ,
+# порт 4000 нь >1024 тул эрх шаардахгүй).
+USER node
 EXPOSE 4000
 ENTRYPOINT ["./docker-entrypoint.sh"]

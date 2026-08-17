@@ -128,6 +128,20 @@ model User {
   passwordHash  String
   // Platform-operator access: sees the admin area (production column: "platformAdmin").
   platformAdmin Boolean  @default(false)
+  // Түр/анхдагч нууц үгтэй данс (bootstrap админ, демо) — нэвтрэхэд UI
+  // анхааруулж, сольсны дараа false болно.
+  mustChangePassword Boolean @default(false)
+  // Brute-force lockout (B-44): 5 удаа буруу → 15 минут түгжинэ.
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  // SMS-ээр нууц үг сэргээх (B-45): 6 оронтой код hash-лагдаж хадгалагдана.
+  resetCodeHash      String?
+  resetCodeExpiresAt DateTime?
+  resetCodeAttempts  Int       @default(0)
+  // Админ SMS 2FA (SCA, B-56): ADMIN_2FA=true үед нэвтрэлтийн 2-р алхам.
+  twoFactorCodeHash  String?
+  twoFactorExpiresAt DateTime?
+  twoFactorAttempts  Int       @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { PasswordPolicyChecklist, passwordPolicyOk } from '@/components/password-policy';
 import { ErrorNote, Modal, PageLoader, Spinner } from '@/components/ui';
-import { api, ApiError, getSessionUser } from '@/lib/api';
+import { api, ApiError, getSessionUser, updateStoredUser } from '@/lib/api';
 import { shortDate } from '@/lib/format';
 import type { IntegrationKind, IntegrationRequest, Role, TenantInfo } from '@/lib/types';
 
@@ -91,6 +92,95 @@ const SERVICE_MN: Record<string, { title: string; desc: string }> = {
   BONUM: { title: 'Төлбөр хүлээн авах', desc: 'Төлбөрийн линк, QR-ээр орлого хүлээн авч дансандаа шууд авна' },
   EBARIMT: { title: 'eBarimt баримт', desc: 'Төлбөр бүрд НӨАТ-ын баримт автоматаар үүснэ' },
 };
+
+/** Нууц үг солих карт — ?changePassword=1 үед онцолж, дээшээ гүйлгэнэ. */
+function PasswordChangeCard() {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [highlighted, setHighlighted] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const mustChange = getSessionUser()?.mustChangePassword && !done;
+
+  useEffect(() => {
+    const wants = new URLSearchParams(window.location.search).get('changePassword') === '1';
+    if (wants || getSessionUser()?.mustChangePassword) {
+      setHighlighted(true);
+      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, []);
+
+  async function submit() {
+    if (busy) return;
+    setError(null);
+    if (!passwordPolicyOk(next)) {
+      setError('Шинэ нууц үг доорх бүх шаардлагыг хангасан байх ёстой.');
+      return;
+    }
+    if (next !== confirm) {
+      setError('Шинэ нууц үг давталттайгаа таарахгүй байна.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await api('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      });
+      updateStoredUser({ mustChangePassword: false });
+      setDone(true);
+      setCurrent('');
+      setNext('');
+      setConfirm('');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Сүлжээний алдаа. Дахин оролдоно уу.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      ref={cardRef}
+      className={`card space-y-4 p-6 ${highlighted ? 'ring-2 ring-indigo-400 ring-offset-2' : ''}`}
+      id="password"
+    >
+      <h2 className="font-bold text-slate-900">Нууц үг солих</h2>
+      {mustChange && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-[13px] font-medium text-amber-800">
+          ⚠ Та түр (анхдагч) нууц үгээр нэвтэрсэн байна — үргэлжлүүлэхийн өмнө нууц үгээ солино уу.
+        </p>
+      )}
+      {done && (
+        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">
+          ✓ Нууц үг шинэчлэгдлээ. Бусад төхөөрөмж дээрх нэвтрэлтүүд гарсан болно.
+        </p>
+      )}
+      <div className="grid gap-5 sm:grid-cols-3">
+        <div>
+          <label className="label" htmlFor="pw-current">Одоогийн нууц үг</label>
+          <input id="pw-current" type="password" autoComplete="current-password" className="input" value={current} onChange={(e) => setCurrent(e.target.value)} />
+        </div>
+        <div>
+          <label className="label" htmlFor="pw-next">Шинэ нууц үг</label>
+          <input id="pw-next" type="password" autoComplete="new-password" className="input" value={next} onChange={(e) => setNext(e.target.value)} />
+          <PasswordPolicyChecklist password={next} />
+        </div>
+        <div>
+          <label className="label" htmlFor="pw-confirm">Шинэ нууц үг (давтах)</label>
+          <input id="pw-confirm" type="password" autoComplete="new-password" className="input" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        </div>
+      </div>
+      {error && <ErrorNote message={error} />}
+      <button className="btn-primary" disabled={busy || !current || !next || !confirm} onClick={submit}>
+        {busy ? <Spinner className="h-5 w-5 text-white" /> : 'Нууц үг шинэчлэх'}
+      </button>
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const [info, setInfo] = useState<TenantInfo | null>(null);
@@ -292,6 +382,8 @@ export default function SettingsPage() {
           )}
         </p>
       </div>
+
+      <PasswordChangeCard />
 
       <div className="card space-y-5 p-6">
         <h2 className="font-bold text-slate-900">Байгууллага</h2>
