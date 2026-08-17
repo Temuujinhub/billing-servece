@@ -35,7 +35,14 @@
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
+		# Clickjacking-ээс хамгаална — ЯЛАНГУЯА /p/* төлбөрийн хуудсыг өөр
+		# сайтын iframe дотор нээж төлөгчийг хуурах халдлагыг таслана.
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'"
+		# Апп камер/микрофон/байршил/FLoC ашигладаггүй — хөтчид шууд хаана.
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
 		-Server
+		-X-Powered-By
 	}
 }
 
