@@ -653,21 +653,39 @@ export class ProviderConfigService {
     if (!cfg.merchantTin) {
       return { ok: false, message_mn: 'Эхлээд байгууллагын регистрийг хадгална уу — ТТД түүгээр автоматаар бөглөгдөнө.', details: [] };
     }
-    // Мерчант нь ОПЕРАТОРЫН POS дээр бүртгэгддэг. Мерчантын өөрийн хадгалсан
-    // утгыг энд ХЭРЭГЛЭХГҮЙ — өөр POS руу хүсэлт явбал бүртгэл буруу газар очно.
-    const posNo =
-      (await this.operator.configuredPosNo()) || (await this.operatorPosNo()) || '';
-    if (!posNo) {
-      return {
-        ok: false,
-        message_mn:
-          'Операторын POS дугаар тодорхойгүй байна — Админ → Интеграци → «ТЕГ операторын эрх» хэсэгт оруулах, ' +
-          'эсвэл баримтын сервер (VAT_BASE_URL) ажиллаж байх шаардлагатай.',
-        details: [],
-      };
+    // Гэрээний төрлөөс хамаарч saveOprMerchants / saveOprLessors / хоёулааг
+    // дуудна (админ сонголт). Lessor бүртгэл posNo шаарддаггүй (биет нь ТТД-ийн
+    // жагсаалт) тул зөвхөн merchants замд POS-ийг шаардана.
+    const kind = await this.operator.registerKind();
+    let posNo = '';
+    if (kind !== 'lessors') {
+      // Мерчант нь ОПЕРАТОРЫН POS дээр бүртгэгддэг. Мерчантын өөрийн хадгалсан
+      // утгыг энд ХЭРЭГЛЭХГҮЙ — өөр POS руу хүсэлт явбал бүртгэл буруу газар очно.
+      posNo = (await this.operator.configuredPosNo()) || (await this.operatorPosNo()) || '';
+      if (!posNo) {
+        return {
+          ok: false,
+          message_mn:
+            'Операторын POS дугаар тодорхойгүй байна — Админ → Интеграци → «ТЕГ операторын эрх» хэсэгт оруулах, ' +
+            'эсвэл баримтын сервер (VAT_BASE_URL) ажиллаж байх шаардлагатай.',
+          details: [],
+        };
+      }
     }
 
-    const res = await this.operator.registerMerchants(posNo, [cfg.merchantTin]);
+    let res =
+      kind === 'lessors'
+        ? await this.operator.registerLessors([cfg.merchantTin])
+        : await this.operator.registerMerchants(posNo, [cfg.merchantTin]);
+    if (kind === 'both' && res.ok) {
+      const lessorRes = await this.operator.registerLessors([cfg.merchantTin]);
+      res = {
+        ok: res.ok && lessorRes.ok,
+        status: lessorRes.ok ? res.status : lessorRes.status,
+        message_mn: `Борлуулагч: ${res.message_mn} · Түрээслэгч: ${lessorRes.message_mn}`,
+        details: [...res.details, ...lessorRes.details],
+      };
+    }
     await this.prisma.auditLog.create({
       data: {
         tenantId: user.tenantId,
@@ -676,7 +694,7 @@ export class ProviderConfigService {
         action: 'integration.ebarimt.merchant_requested',
         targetType: 'tenant',
         targetId: user.tenantId,
-        meta: { merchantTin: cfg.merchantTin, posNo, ok: res.ok, status: res.status, details: res.details },
+        meta: { merchantTin: cfg.merchantTin, posNo, registerKind: kind, ok: res.ok, status: res.status, details: res.details },
       },
     });
     return { ok: res.ok, message_mn: res.message_mn, details: res.details };

@@ -41,10 +41,14 @@ interface TokenState {
   expiresAt: number;
 }
 
+export type OperatorRegisterKind = 'merchants' | 'lessors' | 'both';
+
 interface OperatorSettings {
   apiKey?: string; // encrypted at rest
   posNo?: string;
   baseUrl?: string;
+  /** ТЕГ-т аль API-аар бүртгэх вэ: saveOprMerchants | saveOprLessors | хоёулаа. */
+  registerKind?: OperatorRegisterKind;
   // OIDC password grant (ТЕГ-ийн нэгдсэн нэвтрэлт) — админ UI-аас тохируулна.
   tokenUrl?: string;
   clientId?: string;
@@ -256,6 +260,12 @@ export class EbarimtOperatorService {
       message_mn: String(parsed?.msg ?? 'Хүсэлт илгээгдлээ.'),
       details,
     };
+  }
+
+  /** Операторын гэрээгээр аль бүртгэлийн API хэрэглэхийг админ сонгосон нь. */
+  async registerKind(): Promise<OperatorRegisterKind> {
+    const s = await this.settings();
+    return s.registerKind === 'lessors' || s.registerKind === 'both' ? s.registerKind : 'merchants';
   }
 
   /** Мерчант (борлуулагч) бүртгэх хүсэлт: нэг POS дээр нэг буюу хэд хэдэн ТТД. */
