@@ -272,9 +272,10 @@ export class AdminController {
   @Get('ebarimt-operator')
   async ebarimtOperator() {
     const row = await this.prisma.platformSetting.findUnique({ where: { key: 'ebarimtOperator' } });
-    const cfg = (row?.value as { apiKey?: string; posNo?: string; baseUrl?: string; tokenUrl?: string; clientId?: string; username?: string; password?: string } | null) ?? {};
+    const cfg = (row?.value as { apiKey?: string; posNo?: string; baseUrl?: string; tokenUrl?: string; clientId?: string; username?: string; password?: string; registerKind?: string } | null) ?? {};
     return {
       hasApiKey: Boolean(cfg.apiKey),
+      registerKind: cfg.registerKind ?? 'merchants',
       posNo: cfg.posNo ?? '',
       baseUrl: cfg.baseUrl ?? '',
       tokenUrl: cfg.tokenUrl ?? '',
@@ -296,7 +297,7 @@ export class AdminController {
   @Put('ebarimt-operator')
   async setEbarimtOperator(
     @CurrentUser() user: AuthUser,
-    @Body() body: { apiKey?: string; posNo?: string; baseUrl?: string; tokenUrl?: string; clientId?: string; username?: string; password?: string },
+    @Body() body: { apiKey?: string; posNo?: string; baseUrl?: string; tokenUrl?: string; clientId?: string; username?: string; password?: string; registerKind?: string },
   ) {
     const row = await this.prisma.platformSetting.findUnique({ where: { key: 'ebarimtOperator' } });
     const prev = (row?.value as { apiKey?: string; posNo?: string; baseUrl?: string; tokenUrl?: string; clientId?: string; username?: string; password?: string } | null) ?? {};
@@ -309,6 +310,10 @@ export class AdminController {
       clientId: (body.clientId ?? prev.clientId ?? '').trim(),
       username: (body.username ?? prev.username ?? '').trim(),
       password: body.password?.trim() ? encryptString(body.password.trim()) : (prev.password ?? undefined),
+      // ТЕГ-т аль API-аар бүртгэх: merchants (default) | lessors | both.
+      registerKind: ['merchants', 'lessors', 'both'].includes(body.registerKind ?? '')
+        ? body.registerKind
+        : ((prev as any).registerKind ?? 'merchants'),
     };
     await this.prisma.platformSetting.upsert({
       where: { key: 'ebarimtOperator' },
@@ -328,6 +333,7 @@ export class AdminController {
       clientId: value.clientId,
       username: value.username,
       hasPassword: Boolean(value.password),
+      registerKind: (value as any).registerKind,
     };
   }
 

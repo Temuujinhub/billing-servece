@@ -181,7 +181,7 @@ export default function IntegrationsPage() {
   const [cForm, setCForm] = useState({ apiKey: '', from: '' });
   const [globalizing, setGlobalizing] = useState(false);
   const [globalMsg, setGlobalMsg] = useState<string | null>(null);
-  const [opr, setOpr] = useState<{ hasApiKey: boolean; posNo: string; baseUrl: string; tokenUrl: string; clientId: string; username: string; hasPassword: boolean; envApiKeySet: boolean; envPosNoSet: boolean } | null>(null);
+  const [opr, setOpr] = useState<{ hasApiKey: boolean; registerKind?: string; posNo: string; baseUrl: string; tokenUrl: string; clientId: string; username: string; hasPassword: boolean; envApiKeySet: boolean; envPosNoSet: boolean } | null>(null);
   const [oprKey, setOprKey] = useState('');
   const [oprPass, setOprPass] = useState('');
   const [oprSaving, setOprSaving] = useState(false);
@@ -212,7 +212,7 @@ export default function IntegrationsPage() {
       .then((d) => setDistricts(d.items ?? []))
       .catch(() => setDistricts([]));
     // ТЕГ операторын эрх (админ тохиргоо) — байхгүй бол env fallback.
-    api<{ hasApiKey: boolean; posNo: string; baseUrl: string; tokenUrl: string; clientId: string; username: string; hasPassword: boolean; envApiKeySet: boolean; envPosNoSet: boolean }>('/admin/ebarimt-operator')
+    api<{ hasApiKey: boolean; registerKind?: string; posNo: string; baseUrl: string; tokenUrl: string; clientId: string; username: string; hasPassword: boolean; envApiKeySet: boolean; envPosNoSet: boolean }>('/admin/ebarimt-operator')
       .then(setOpr)
       .catch(() => setOpr(null));
   }, [load]);
@@ -227,6 +227,7 @@ export default function IntegrationsPage() {
         method: 'PUT',
         body: JSON.stringify({
           apiKey: oprKey || undefined,
+          registerKind: opr.registerKind ?? 'merchants',
           posNo: opr.posNo,
           baseUrl: opr.baseUrl || undefined,
           tokenUrl: opr.tokenUrl,
@@ -560,7 +561,7 @@ export default function IntegrationsPage() {
           <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/40 px-4 py-3">
             <p className="text-[12.5px] font-bold text-slate-700">ТЕГ операторын эрх (платформ даяар нэг)</p>
             <p className="mt-1 text-[12px] text-slate-500">
-              «ТЕГ-т бүртгүүлэх хүсэлт» товч энэ түлхүүрээр saveOprMerchants дуудна. Түлхүүрийг ТЕГ-ээс
+              «ТЕГ-т бүртгүүлэх хүсэлт» товч энэ түлхүүрээр доор сонгосон бүртгэлийн API-г дуудна. Түлхүүрийг ТЕГ-ээс
               (Posapi@itc.gov.mn) авна. {opr.envApiKeySet && !opr.hasApiKey && 'Одоогоор серверийн env түлхүүр ашиглагдаж байна.'}
             </p>
             <div className="mt-2 grid gap-3 sm:grid-cols-3">
@@ -574,6 +575,18 @@ export default function IntegrationsPage() {
                   placeholder={opr.hasApiKey ? 'Солих бол шинээр бичнэ' : 'Posapi@itc.gov.mn-ээс авна'}
                   autoComplete="new-password"
                 />
+              </div>
+              <div>
+                <label className="label">Бүртгэлийн API</label>
+                <select
+                  className="input"
+                  value={opr.registerKind ?? 'merchants'}
+                  onChange={(e) => setOpr((o) => (o ? { ...o, registerKind: e.target.value } : o))}
+                >
+                  <option value="merchants">Борлуулагч (saveOprMerchants)</option>
+                  <option value="lessors">Түрээслэгч (saveOprLessors)</option>
+                  <option value="both">Хоёулаа</option>
+                </select>
               </div>
               <div>
                 <label className="label">Операторын POS дугаар</label>

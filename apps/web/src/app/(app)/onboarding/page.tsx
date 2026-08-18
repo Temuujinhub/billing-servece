@@ -38,9 +38,11 @@ export default function OnboardingPage() {
     name: '',
     regNo: '',
     address: '',
+    contactPhone: '',
     representative: '',
     bankName: '',
     bankAccount: '',
+    bankAccountName: '',
   });
 
   // eBarimt step state
@@ -57,9 +59,11 @@ export default function OnboardingPage() {
           name: r.tenant.name ?? '',
           regNo: r.tenant.regNo ?? '',
           address: r.tenant.address ?? '',
+          contactPhone: r.tenant.contactPhone ?? '',
           representative: r.tenant.representative ?? '',
           bankName: r.tenant.bankName ?? '',
           bankAccount: r.tenant.bankAccount ?? '',
+          bankAccountName: r.tenant.bankAccountName ?? '',
         });
       })
       .catch((e) => setError(e.message));
@@ -79,9 +83,11 @@ export default function OnboardingPage() {
           name: form.name.trim() || undefined,
           regNo: form.regNo.trim() || undefined,
           address: form.address.trim() || undefined,
+          contactPhone: form.contactPhone.trim() || undefined,
           representative: form.representative.trim() || undefined,
           bankName: form.bankName.trim() || undefined,
           bankAccount: form.bankAccount.trim() || undefined,
+          bankAccountName: form.bankAccountName.trim() || undefined,
         }),
       });
       setStep(next);
@@ -144,8 +150,15 @@ export default function OnboardingPage() {
   if (!info) return <PageLoader />;
 
   const status = info.tenant.kybStatus;
-  const step1Ok = form.name.trim().length > 1 && form.regNo.trim().length >= 7;
-  const step2Ok = form.bankName.trim().length > 1 && form.bankAccount.trim().length >= 8;
+  // Эдгээр талбар Bonum/eBarimt хүсэлт илгээхэд ЗААВАЛ шаардагддаг тул
+  // wizard дээрээ л бүрэн бөглүүлнэ — дараа нь ANKET_INCOMPLETE-ээр гацахгүй.
+  const step1Ok =
+    form.name.trim().length > 1 &&
+    form.regNo.trim().length >= 7 &&
+    form.address.trim().length > 3 &&
+    form.contactPhone.replace(/\D/g, '').length >= 8;
+  const step2Ok =
+    form.bankName.trim().length > 1 && form.bankAccount.trim().length >= 8 && form.bankAccountName.trim().length > 1;
 
   if (done || status === 'SUBMITTED' || status === 'UNDER_REVIEW' || status === 'APPROVED') {
     return (
@@ -219,10 +232,14 @@ export default function OnboardingPage() {
               <input className="input" value={form.regNo} onChange={(e) => set('regNo', e.target.value)} maxLength={20} placeholder="1234567" />
             </div>
             <div className="sm:col-span-2">
-              <label className="label">Хаяг</label>
+              <label className="label">Хаяг *</label>
               <input className="input" value={form.address} onChange={(e) => set('address', e.target.value)} maxLength={300} placeholder="Улаанбаатар, СБД, …" />
             </div>
-            <div className="sm:col-span-2">
+            <div>
+              <label className="label">Холбоо барих утас *</label>
+              <input className="input" value={form.contactPhone} onChange={(e) => set('contactPhone', e.target.value)} maxLength={20} placeholder="88112233" />
+            </div>
+            <div>
               <label className="label">Эрх бүхий төлөөлөгч</label>
               <input className="input" value={form.representative} onChange={(e) => set('representative', e.target.value)} maxLength={150} placeholder="Овог Нэр — Захирал" />
             </div>
@@ -249,6 +266,10 @@ export default function OnboardingPage() {
             <div>
               <label className="label">Дансны дугаар *</label>
               <input className="input" value={form.bankAccount} onChange={(e) => set('bankAccount', e.target.value)} maxLength={40} placeholder="5000000000" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">Дансны нэр *</label>
+              <input className="input" value={form.bankAccountName} onChange={(e) => set('bankAccountName', e.target.value)} maxLength={150} placeholder="Байгууллагын нэрээр" />
             </div>
           </div>
           <div className="flex justify-between">
