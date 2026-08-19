@@ -30,8 +30,8 @@
 | Scope | Үйлчилгээ | Endpoint |
 |---|---|---|
 | `invoice` | Үйлчилгээ 2 — API нэхэмжлэх + SMS | `POST/GET /partner/invoices` |
-| `receipt` | Үйлчилгээ 3 — eBarimt API | `POST /partner/receipts` (device_id-гүй) |
-| `pos` | Үйлчилгээ 4 — POS терминал | `POST /partner/receipts` (device_id-тэй) |
+| `receipt` | Үйлчилгээ 3 — eBarimt API | `POST /partner/receipts`, `POST /partner/receipts/:id/cancel` (device_id-гүй) |
+| `pos` | Үйлчилгээ 4 — POS терминал | `POST /partner/receipts`, `POST /partner/receipts/:id/cancel` (device_id-тэй) |
 
 Scope сонгоогүй (хоосон) түлхүүр бүх эрхтэй.
 
@@ -59,4 +59,14 @@ POST хүсэлт бүрд `Idempotency-Key` header дамжуулахыг зө�
 2. Billing хуудсанд хэрэглэх үйлчилгээгээ идэвхжүүлсэн (шатлал сонгосон).
 3. Live түлхүүр үүсгэж, тест түлхүүрээ хүчингүй болгосон.
 4. Webhook хэрэгтэй бол Developers → Webhooks (payment.succeeded,
-   receipt.created — HMAC гарын үсэгтэй).
+   receipt.created, receipt.cancelled — HMAC гарын үсэгтэй; формат нь
+   Developers хуудасны «Webhook формат» хэсэгт).
+
+## Баримт цуцлах
+
+`POST /partner/receipts/:id/cancel` — ТЕГ-т илгээгдсэн баримтыг цуцална
+(биегүй POST, түлхүүр нь баримт үүсгэсэн scope-той байна). Хариу:
+`{id, state, receipt_no, error}`. ТЕГ түр амжилтгүй бол
+`state=CANCEL_PENDING` — систем 10 минут тутам автоматаар дахин оролдож,
+амжилттай болмогц `receipt.cancelled` webhook илгээнэ. Тест түлхүүр
+`{state: "CANCELLED", test: true}` симуляц буцаана.

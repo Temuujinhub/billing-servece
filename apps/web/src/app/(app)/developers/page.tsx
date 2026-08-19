@@ -6,7 +6,29 @@ import { api, ApiError, getSessionUser } from '@/lib/api';
 import { dateTime, shortDate } from '@/lib/format';
 import type { ApiKeyScope, DevelopersOverview } from '@/lib/types';
 
-const EVENTS = ['payment.succeeded', 'receipt.created'];
+const EVENTS = ['payment.succeeded', 'receipt.created', 'receipt.cancelled'];
+
+const EVENT_DESC: Record<string, string> = {
+  'payment.succeeded': 'Нэхэмжлэхийн төлбөр амжилттай төлөгдөв',
+  'receipt.created': 'eBarimt баримт ТЕГ-т амжилттай үүсэв',
+  'receipt.cancelled': 'eBarimt баримт цуцлагдав',
+};
+
+const WEBHOOK_SAMPLE = `POST https://tanai-server.mn/webhooks/billing
+Content-Type: application/json
+X-Billing-Event: receipt.created
+X-Billing-Signature: 3f1a9c… (HMAC-SHA256)
+
+{
+  "event": "receipt.created",
+  "created_at": "2026-08-19T09:30:00.000Z",
+  "data": {
+    "receipt_id": "rcp_7f3a…",
+    "transaction_id": "txn_91bc…",
+    "receipt_no": "0000123456",
+    "lottery": "AB12345678"
+  }
+}`;
 
 const SCOPES: { value: ApiKeyScope; label: string }[] = [
   { value: 'invoice', label: 'Нэхэмжлэх API (Үйлчилгээ 2)' },
@@ -230,7 +252,7 @@ export default function DevelopersPage() {
         </div>
         {data.webhooks.length === 0 ? (
           <div className="border-t border-slate-200/60 p-6">
-            <EmptyState title="Endpoint алга" hint="payment.succeeded, receipt.created event-үүдийг хүлээн авах URL-ээ нэмээрэй." />
+            <EmptyState title="Endpoint алга" hint="payment.succeeded, receipt.created, receipt.cancelled event-үүдийг хүлээн авах URL-ээ нэмээрэй." />
           </div>
         ) : (
           <table className="w-full border-t border-slate-200/60">
@@ -277,6 +299,40 @@ export default function DevelopersPage() {
             </tbody>
           </table>
         )}
+        {/* Webhook формат — B-66 */}
+        <div className="space-y-3 border-t border-slate-200/60 px-6 py-5">
+          <h3 className="text-[13.5px] font-bold text-slate-900">Webhook формат</h3>
+          <p className="text-[13px] leading-relaxed text-slate-600">
+            Event болмогц таны URL руу JSON биетэй <b>POST</b> илгээнэ. Биет нь{' '}
+            <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">event</code>,{' '}
+            <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">created_at</code>,{' '}
+            <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">data</code> гэсэн 3 талбартай.
+          </p>
+          <div className="rounded-xl bg-navy-900 p-4">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Жишээ илгээлт</p>
+            <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{WEBHOOK_SAMPLE}</pre>
+          </div>
+          <ul className="space-y-1.5 text-[13px] leading-relaxed text-slate-600">
+            {EVENTS.map((ev) => (
+              <li key={ev}>
+                • <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">{ev}</code> — {EVENT_DESC[ev]}.
+              </li>
+            ))}
+            <li>
+              • <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">payment.succeeded</code>-ийн data:
+              invoice_id, invoice_number, amount, provider, provider_payment_id, invoice_state;{' '}
+              <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">receipt.cancelled</code>-ийн data: receipt_id, receipt_no.
+            </li>
+            <li>
+              • <b>Гарын үсэг:</b> <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">X-Billing-Signature</code> =
+              HMAC-SHA256(биетийн түүхий текст, whsec_ нууц), hex хэлбэрээр. Нууцыг endpoint нэмэхэд нэг л удаа харуулна.
+            </li>
+            <li>
+              • <b>Хариу:</b> 10 секундэд 2xx буцаана — амжилтгүй бол 1 удаа шууд дахин илгээнэ (at-least-once тул давхардлыг
+              receipt_id/invoice_id-аар шүүнэ). Redirect дагахгүй.
+            </li>
+          </ul>
+        </div>
       </div>
 
       {/* Quick docs — үйлчилгээ тус бүрээр таб */}
@@ -370,7 +426,20 @@ export default function DevelopersPage() {
   "error": null
 }`}</pre>
             </div>
+            <div className="rounded-xl bg-navy-900 p-4">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-navy-300">Баримт цуцлах</p>
+              <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`curl -X POST https://msgbill.mn/api/v1/partner/receipts/rcp_7f3a…/cancel \\
+  -H "X-Api-Key: bsk_ТАНЫ_ТҮЛХҮҮР"`}</pre>
+              <p className="mt-2 text-[11px] font-bold uppercase tracking-widest text-navy-300">Хариу (200)</p>
+              <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`{
+  "id": "rcp_7f3a…",
+  "state": "CANCELLED",
+  "receipt_no": "0000123456",
+  "error": null
+}`}</pre>
+            </div>
             <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-slate-600">
+              <li>• <b>POST /api/v1/partner/receipts/:id/cancel</b> — ТЕГ-т илгээгдсэн баримтыг цуцалж буцаана. ТЕГ түр амжилтгүй бол <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">{'state: "CANCEL_PENDING"'}</code> + <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">error</code> ирнэ — систем 10 минут тутам автоматаар дахин оролдоно; эцсийн үр дүнг GET-ээр эсвэл <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">receipt.cancelled</code> webhook-оор мэднэ.</li>
               <li>• <b>GET /api/v1/partner/receipts/:id</b> — баримтын төлөв (state, receipt_no, lottery, qr_data).</li>
               <li>• <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">receipt_type</code>: CITIZEN | ORGANIZATION — ААН-ийн баримтад <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">payer_reg_no</code> дамжуулна.</li>
               <li>• <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">payment_method</code>: CASH | CARD | BANK_TRANSFER.</li>
@@ -503,13 +572,14 @@ export default function DevelopersPage() {
             </div>
             <div>
               <label className="label">Events</label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {EVENTS.map((ev) => {
                   const on = hookEvents.includes(ev);
                   return (
                     <button
                       key={ev}
                       type="button"
+                      title={EVENT_DESC[ev]}
                       onClick={() => setHookEvents((cur) => (on ? cur.filter((e) => e !== ev) : [...cur, ev]))}
                       className={`rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition ${
                         on ? 'bg-navy-900 text-white' : 'bg-navy-50 text-navy-600'
@@ -520,6 +590,19 @@ export default function DevelopersPage() {
                   );
                 })}
               </div>
+              <ul className="mt-2 space-y-0.5 text-[12px] leading-relaxed text-slate-500">
+                {EVENTS.map((ev) => (
+                  <li key={ev}>
+                    <code className="font-mono">{ev}</code> — {EVENT_DESC[ev]}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-xl bg-navy-50/70 px-3.5 py-3 text-[12.5px] leading-relaxed text-navy-800">
+              Илгээлт: JSON биетэй POST —{' '}
+              <code className="rounded bg-white/70 px-1 py-0.5 font-mono text-[11.5px]">{'{ "event", "created_at", "data" }'}</code>.
+              Толгойд <code className="rounded bg-white/70 px-1 py-0.5 font-mono text-[11.5px]">X-Billing-Signature</code> (whsec_
+              нууцаар HMAC-SHA256) ирнэ; 10 секундэд 2xx буцаана. Дэлгэрэнгүй форматыг доорх «Webhook формат» хэсгээс харна уу.
             </div>
             <div className="flex justify-end gap-3">
               <button className="btn-secondary" onClick={() => setHookModal(false)}>Болих</button>
