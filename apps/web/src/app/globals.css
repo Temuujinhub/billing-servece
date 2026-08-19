@@ -100,3 +100,118 @@ h1, h2, h3 {
     @apply bg-slate-50/50;
   }
 }
+
+/* =============================================================================
+   App dark theme (B-62) — CallPro Text console-той ижил гэр бүлийн харагдац:
+   бараан хөх-хар фон, зөөлөн хүрээтэй бараан картууд, teal акцент, ногоон
+   амжилтын тоонууд. Манай үйлчилгээ CallPro мессежийн өргөтгөл тул хэрэглэгчид
+   ТАНИЛ загварыг dashboard-д баримтална. Scope: (app) layout-ийн `.app-dark`
+   wrapper — landing/login-д нөлөөлөхгүй. Хуудас бүрийн Tailwind утилитуудыг
+   scoped selector-оор (илүү өндөр specificity) дахин будна — 30+ хуудсыг
+   өөрчлөхгүйгээр нэг цэгээс удирдана.
+   ========================================================================== */
+
+.app-dark {
+  color-scheme: dark;
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 460px at 85% -10%, rgba(35, 196, 164, 0.06), transparent 60%),
+    radial-gradient(700px 420px at -10% 30%, rgba(56, 130, 246, 0.05), transparent 55%),
+    linear-gradient(160deg, #0c1220 0%, #0e1626 100%);
+  color: #dbe4f0;
+}
+
+/* --- Компонент классууд --- */
+.app-dark .card {
+  background: rgba(19, 28, 44, 0.82);
+  border-color: rgba(148, 163, 184, 0.12);
+  box-shadow: 0 10px 40px -18px rgba(0, 0, 0, 0.55);
+}
+.app-dark .card:hover {
+  background: rgba(22, 32, 50, 0.9);
+  border-color: rgba(45, 212, 191, 0.28);
+  box-shadow: 0 16px 50px -18px rgba(35, 196, 164, 0.12);
+}
+.app-dark .card thead { background: rgba(255, 255, 255, 0.03); }
+.app-dark .card tbody tr:hover { background: rgba(255, 255, 255, 0.04); backdrop-filter: none; }
+.app-dark .input {
+  background: rgba(10, 16, 28, 0.7);
+  border-color: rgba(148, 163, 184, 0.18);
+  color: #e2e8f0;
+}
+.app-dark .input:focus {
+  background: rgba(10, 16, 28, 0.95);
+  border-color: #23c4a4;
+  --tw-ring-color: rgba(35, 196, 164, 0.25);
+}
+.app-dark .input::placeholder { color: #5b6b82; }
+.app-dark select.input option { background: #131c2c; color: #e2e8f0; }
+.app-dark .label { color: #9aa9bf; }
+.app-dark .th { color: #7e8ea6; }
+.app-dark .td { color: #cfd9e6; }
+.app-dark ::selection { background: rgba(35, 196, 164, 0.35); color: #ecfeff; }
+.app-dark .scroll-thin::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); }
+
+/* Товчнууд: primary нь CallPro teal, secondary нь бараан шил */
+.app-dark .btn-primary {
+  background-image: linear-gradient(135deg, #14b8a6 0%, #0e9f8c 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 8px 20px -8px rgba(20, 184, 166, 0.55);
+}
+.app-dark .btn-primary:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 25px rgba(20, 184, 166, 0.45);
+}
+.app-dark .btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(148, 163, 184, 0.22);
+  color: #dbe4f0;
+  box-shadow: none;
+}
+.app-dark .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); }
+.app-dark .btn-danger { background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: #f87171; }
+.app-dark .btn-danger:hover { background: rgba(239, 68, 68, 0.18); }
+
+/* --- Текстийн утилитууд --- */
+.app-dark .text-ink,
+.app-dark .text-slate-900, .app-dark .text-slate-800,
+.app-dark .text-navy-900, .app-dark .text-navy-800 { color: #eef3f9; }
+.app-dark .text-slate-700, .app-dark .text-navy-700 { color: #c3cedd; }
+.app-dark .text-slate-600, .app-dark .text-navy-600 { color: #9fadc2; }
+.app-dark .text-slate-500, .app-dark .text-navy-500 { color: #8494ab; }
+.app-dark .text-slate-400, .app-dark .text-navy-400 { color: #64748b; }
+.app-dark .hover\:text-slate-900:hover { color: #eef3f9; }
+/* Акцент текстүүд — бараан фонд уншигдахуйц гэрэлтэй хувилбар */
+.app-dark .text-indigo-600, .app-dark .text-indigo-700 { color: #8fb3ff; }
+.app-dark .text-teal-600, .app-dark .text-teal-700 { color: #2dd4bf; }
+.app-dark .text-emerald-600, .app-dark .text-emerald-700 { color: #34d399; }
+.app-dark .text-amber-600, .app-dark .text-amber-700, .app-dark .text-amber-800 { color: #fbbf24; }
+.app-dark .text-red-600, .app-dark .text-red-700 { color: #f87171; }
+
+/* --- Фонын утилитууд --- */
+.app-dark .bg-surface { background-color: #0e1626; }
+.app-dark .bg-white,
+.app-dark .bg-white\/50, .app-dark .bg-white\/60,
+.app-dark .bg-white\/70, .app-dark .bg-white\/80 { background-color: rgba(19, 28, 44, 0.85); }
+.app-dark .hover\:bg-white:hover, .app-dark .hover\:bg-white\/60:hover,
+.app-dark .hover\:bg-white\/70:hover, .app-dark .hover\:bg-white\/80:hover,
+.app-dark .hover\:bg-slate-50:hover { background-color: rgba(255, 255, 255, 0.07); }
+.app-dark .bg-navy-50, .app-dark .bg-slate-50, .app-dark .bg-slate-50\/50,
+.app-dark .bg-slate-100 { background-color: rgba(255, 255, 255, 0.045); }
+.app-dark .bg-navy-100 { background-color: rgba(255, 255, 255, 0.08); }
+.app-dark .bg-slate-300 { background-color: rgba(148, 163, 184, 0.35); }
+/* Өнгөт pill/badge фонууд — бүдэг тунгалаг хувилбар */
+.app-dark .bg-teal-50 { background-color: rgba(45, 212, 191, 0.12); }
+.app-dark .bg-emerald-50 { background-color: rgba(52, 211, 153, 0.12); }
+.app-dark .bg-indigo-50 { background-color: rgba(129, 140, 248, 0.14); }
+.app-dark .bg-amber-50 { background-color: rgba(251, 191, 36, 0.12); }
+.app-dark .bg-red-50 { background-color: rgba(248, 113, 113, 0.13); }
+
+/* --- Хүрээнүүд --- */
+.app-dark .border-slate-200\/60, .app-dark .border-slate-200\/80,
+.app-dark .border-slate-200, .app-dark .border-slate-300\/70,
+.app-dark .border-white\/40, .app-dark .border-white\/60,
+.app-dark .border-white\/70, .app-dark .border-white\/80 { border-color: rgba(148, 163, 184, 0.14); }
+.app-dark .border-teal-400\/30, .app-dark .border-teal-200 { border-color: rgba(45, 212, 191, 0.3); }
+.app-dark .border-indigo-100, .app-dark .border-indigo-200 { border-color: rgba(129, 140, 248, 0.25); }
+.app-dark .border-amber-200 { border-color: rgba(251, 191, 36, 0.3); }
+.app-dark .border-red-200, .app-dark .border-red-200\/80 { border-color: rgba(248, 113, 113, 0.3); }
+.app-dark .divide-slate-200\/60 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(148, 163, 184, 0.12); }
