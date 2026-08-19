@@ -88,6 +88,14 @@
             "url": { "raw": "{{baseUrl}}/partner/receipts/:id", "host": ["{{baseUrl}}"], "path": ["partner", "receipts", ":id"], "variable": [{ "key": "id", "value": "" }] },
             "description": "state=CREATED бол receipt_no (ДДТД), lottery, qr_data ирнэ; FAILED бол error + автомат retry хийгдэнэ."
           }
+        },
+        {
+          "name": "Баримт цуцлах",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/partner/receipts/:id/cancel", "host": ["{{baseUrl}}"], "path": ["partner", "receipts", ":id", "cancel"], "variable": [{ "key": "id", "value": "" }] },
+            "description": "ТЕГ-т илгээгдсэн баримтыг цуцална. Хариу: {id, state, receipt_no, error}. ТЕГ түр амжилтгүй бол state=CANCEL_PENDING — 10 минут тутам автоматаар дахин оролдож, амжилттай болмогц receipt.cancelled webhook илгээнэ."
+          }
         }
       ]
     },

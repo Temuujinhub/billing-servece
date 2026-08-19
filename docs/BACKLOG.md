@@ -89,6 +89,12 @@
 | B-40 | Үйлчилгээний нэр **Message Billing Service**, канон домэйн **msgbill.mn**, SMS-ийн богино линк **bil.mn** болов. Caddy дээр 4 хаягт (msgbill.mn, www, bil.mn, www) auto-HTTPS; bil.mn нь `/p/*`-ийг ижил web контейнерээр redirect-гүй үйлчилж, нүүр хуудсаа канон хаяг руу заана + `X-Robots-Tag: noindex`. Сервер тал: шинэ `SHORT_URL_BASE` env (хоосон бол PUBLIC_URL) — SMS/сануулга/API тест хариу бүх төлбөрийн линк `payLinkFor()`-оор нэг эх сурвалжаас гарна. `remote-deploy.sh` нь БАЙГАА `.env`-ийн домэйныг idempotent шинэчилж (backup-тай), CORS-д bil.mn нэмнэ. Хуучин `billing.mastrsys.com` ашиглахаа больсон. | ✅ |
 | B-43 | Deploy бүрд Caddy тохиргоог дахин ачаалдаг болов (`caddy reload`, fallback restart) — Caddyfile bind-mount тул `up -d` өөрчлөлтийг авдаггүй, 2026-08-17-ны эхний domain deploy үүнээс болж verify дээр унасан. Мөн `www.bil.mn` (DNS-д нэмэгдсэн) Caddy-д орж, verify unaлтад caddy log-ийн оношилгоо нэмэгдэв. | ✅ |
 
+## Дууссан (2026-08-19, Developers хуудасны баримтжуулалт)
+
+| ID | Ажил | Статус |
+|---|---|---|
+| B-66 | Developers хуудасны Үйлчилгээ 3 табд «Баримт цуцлах» баримтжуулалт нэмэгдэв: `POST /partner/receipts/:id/cancel` curl + хариу, CANCEL_PENDING/авто-retry тайлбар; Postman collection + docs/API_TESTING.md-д мөн адил. Webhook endpoint хэсэгт «Webhook формат» блок: жишээ илгээлт (`{event, created_at, data}` биет, `X-Billing-Event`/`X-Billing-Signature` толгой), event тус бүрийн data талбарууд, HMAC-SHA256 баталгаажуулалт, retry/at-least-once дүрэм; endpoint нэмэх modal-д event-үүдийн тайлбар + форматын товч санамж, `receipt.cancelled` event сонголтод нэмэгдэв | ✅ |
+
 ## Дууссан (2026-08-19, төлбөрийн урсгалын UX)
 
 | ID | Ажил | Статус |
