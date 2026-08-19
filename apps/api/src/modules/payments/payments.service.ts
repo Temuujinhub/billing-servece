@@ -182,7 +182,9 @@ export class PaymentsService {
         description: `${invoice.number} ${invoice.description}`.slice(0, 100),
         internalRef: intent.id,
         // Hosted-checkout providers (Bonum) send the payer back to OUR page.
-        returnUrl: `${publicUrl}/p/${token}`,
+        // ?r=1 — «төлөөд буцаж ирлээ» гэдгийг хуудас таньж шууд баталгаажуулалтын
+        // горимд орж, төлбөрийн товчийг дахин үзүүлэхгүй (давхар төлөлтөөс сэргийлнэ).
+        returnUrl: `${publicUrl}/p/${token}?r=1`,
       });
     } catch (e: any) {
       await this.prisma.paymentIntent.update({

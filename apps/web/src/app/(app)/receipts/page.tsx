@@ -12,6 +12,7 @@ export default function ReceiptsPage() {
   const [items, setItems] = useState<ReceiptRow[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [retrying, setRetrying] = useState<string | null>(null);
   const [qrOpen, setQrOpen] = useState<string | null>(null);
 
@@ -33,8 +34,14 @@ export default function ReceiptsPage() {
     if (!window.confirm('Энэ баримтыг цуцлах уу? Цуцлалт ТЕГ рүү илгээгдэх бөгөөд буцаах боломжгүй.')) return;
     setRetrying(id);
     setError(null);
+    setNote(null);
     try {
-      await api(`/receipts/${id}/cancel`, { method: 'POST' });
+      const r = await api<{ state: string; error: string | null; receiptNo: string | null }>(`/receipts/${id}/cancel`, { method: 'POST' });
+      if (r.state === 'CANCELLED') {
+        setNote(`✓ Баримт ${r.receiptNo ?? id} амжилттай цуцлагдаж, ТЕГ-т дамжуулагдлаа.`);
+      } else {
+        setNote(`⚠ Цуцлалт ТЕГ-т дамжуулагдаж чадсангүй${r.error ? `: ${r.error}` : ''} — систем 10 минут тутам автоматаар дахин оролдоно.`);
+      }
       load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
@@ -68,6 +75,11 @@ export default function ReceiptsPage() {
         </p>
       </div>
 
+      {note && (
+        <p className={`rounded-xl px-4 py-3 text-[13.5px] font-medium ${note.startsWith('✓') ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
+          {note}
+        </p>
+      )}
       {error && <ErrorNote message={error} onRetry={() => window.location.reload()} />}
       {!items ? (
         error ? null : <PageLoader />
