@@ -640,6 +640,17 @@ export class ProviderConfigService {
    * «POS дугаар татах» дарахад бүртгэл нь /rest/info дээр гарч ирнэ.
    */
   async requestEbarimtMerchant(user: AuthUser): Promise<{ ok: boolean; message_mn: string; details: string[] }> {
+    return this.requestEbarimtMerchantFor(user.tenantId, { userId: user.userId, email: user.email });
+  }
+
+  /**
+   * Ижил хүсэлтийг ЗААСАН tenant-ийн өмнөөс (админ) илгээнэ — байгууллага
+   * бүрийн ТТД-ийг платформын оператор өөрөө ТЕГ рүү явуулах боломж.
+   */
+  async requestEbarimtMerchantFor(
+    tenantId: string,
+    actor: { userId?: string; email: string },
+  ): Promise<{ ok: boolean; message_mn: string; details: string[] }> {
     if (!(await this.operator.isEnabled())) {
       return {
         ok: false,
@@ -649,7 +660,7 @@ export class ProviderConfigService {
         details: [],
       };
     }
-    const cfg = await this.getEbarimt(user.tenantId);
+    const cfg = await this.getEbarimt(tenantId);
     if (!cfg.merchantTin) {
       return { ok: false, message_mn: 'Эхлээд байгууллагын регистрийг хадгална уу — ТТД түүгээр автоматаар бөглөгдөнө.', details: [] };
     }
@@ -688,12 +699,12 @@ export class ProviderConfigService {
     }
     await this.prisma.auditLog.create({
       data: {
-        tenantId: user.tenantId,
-        actorId: user.userId,
-        actorEmail: user.email,
+        tenantId: tenantId,
+        actorId: actor.userId,
+        actorEmail: actor.email,
         action: 'integration.ebarimt.merchant_requested',
         targetType: 'tenant',
-        targetId: user.tenantId,
+        targetId: tenantId,
         meta: { merchantTin: cfg.merchantTin, posNo, registerKind: kind, ok: res.ok, status: res.status, details: res.details },
       },
     });

@@ -50,12 +50,32 @@ export default function AdminMerchantDetailPage() {
   const [reasonModal, setReasonModal] = useState<{ action: string; label: string } | null>(null);
   const [reason, setReason] = useState('');
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
+  const [tegMsg, setTegMsg] = useState<{ ok: boolean; text: string; details: string[] } | null>(null);
+  const [tegBusy, setTegBusy] = useState(false);
 
   const load = useCallback(() => {
     api<Merchant360>(`/admin/merchants/${id}`).then(setData).catch((e) => setError(e.message));
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  /** B-63: энэ байгууллагын ТТД-ийг ТЕГ рүү бүртгүүлэх хүсэлтийг админ илгээнэ. */
+  async function requestTeg() {
+    if (tegBusy) return;
+    setTegBusy(true);
+    setTegMsg(null);
+    try {
+      const r = await api<{ ok: boolean; message_mn: string; details: string[] }>(
+        `/admin/merchants/${id}/ebarimt/merchant-request`,
+        { method: 'POST' },
+      );
+      setTegMsg({ ok: r.ok, text: r.message_mn, details: r.details ?? [] });
+    } catch (e) {
+      setTegMsg({ ok: false, text: e instanceof ApiError ? e.message : 'Алдаа гарлаа', details: [] });
+    } finally {
+      setTegBusy(false);
+    }
+  }
 
   async function kyb(action: string, reasonText?: string) {
     setBusy(true);
@@ -147,6 +167,30 @@ export default function AdminMerchantDetailPage() {
               <button disabled={busy} className="btn-primary px-3.5 py-2 text-[13px]" onClick={() => kyb('ACTIVATE')}>
                 ▶ Идэвхжүүлэх
               </button>
+            )}
+          </div>
+
+          {/* eBarimt / ТЕГ бүртгэл (B-63) — байгууллагын өмнөөс админ илгээнэ */}
+          <div className="card flex flex-wrap items-center gap-3 p-5">
+            <div className="mr-auto">
+              <p className="text-[13px] font-bold uppercase tracking-wide text-slate-500">eBarimt / ТЕГ бүртгэл</p>
+              <p className="mt-0.5 text-[12.5px] text-slate-500">
+                ТТД-ийг нь ТЕГ рүү бүртгүүлэх хүсэлт илгээнэ (Админ → Интеграци дахь «Бүртгэлийн API» сонголтоор).
+                Дараа нь байгууллага ТЕГ порталдаа зөвшөөрч, LIME instance дээр нэмэгдэнэ.
+              </p>
+            </div>
+            <button disabled={tegBusy} className="btn-primary px-3.5 py-2 text-[13px]" onClick={requestTeg}>
+              {tegBusy ? <Spinner className="h-4 w-4 text-white" /> : '📨 ТЕГ-т бүртгүүлэх хүсэлт'}
+            </button>
+            {tegMsg && (
+              <div className={`w-full rounded-xl px-3.5 py-2.5 text-[13px] ${tegMsg.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                {tegMsg.ok ? '✓' : '⚠'} {tegMsg.text}
+                {tegMsg.details.length > 0 && (
+                  <ul className="mt-1 list-inside list-disc text-[12.5px]">
+                    {tegMsg.details.map((d, i) => (<li key={i}>{d}</li>))}
+                  </ul>
+                )}
+              </div>
             )}
           </div>
 

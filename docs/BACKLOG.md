@@ -89,6 +89,12 @@
 | B-40 | Үйлчилгээний нэр **Message Billing Service**, канон домэйн **msgbill.mn**, SMS-ийн богино линк **bil.mn** болов. Caddy дээр 4 хаягт (msgbill.mn, www, bil.mn, www) auto-HTTPS; bil.mn нь `/p/*`-ийг ижил web контейнерээр redirect-гүй үйлчилж, нүүр хуудсаа канон хаяг руу заана + `X-Robots-Tag: noindex`. Сервер тал: шинэ `SHORT_URL_BASE` env (хоосон бол PUBLIC_URL) — SMS/сануулга/API тест хариу бүх төлбөрийн линк `payLinkFor()`-оор нэг эх сурвалжаас гарна. `remote-deploy.sh` нь БАЙГАА `.env`-ийн домэйныг idempotent шинэчилж (backup-тай), CORS-д bil.mn нэмнэ. Хуучин `billing.mastrsys.com` ашиглахаа больсон. | ✅ |
 | B-43 | Deploy бүрд Caddy тохиргоог дахин ачаалдаг болов (`caddy reload`, fallback restart) — Caddyfile bind-mount тул `up -d` өөрчлөлтийг авдаггүй, 2026-08-17-ны эхний domain deploy үүнээс болж verify дээр унасан. Мөн `www.bil.mn` (DNS-д нэмэгдсэн) Caddy-д орж, verify unaлтад caddy log-ийн оношилгоо нэмэгдэв. | ✅ |
 
+## Дууссан (2026-08-19, админ ТЕГ бүртгэл per-merchant)
+
+| ID | Ажил | Статус |
+|---|---|---|
+| B-63 | Админ байгууллага бүрийн өмнөөс «ТЕГ-т бүртгүүлэх хүсэлт» илгээдэг боллоо: `POST /admin/merchants/:id/ebarimt/merchant-request` + Admin → Байгууллага → дэлгэрэнгүй хуудасны «eBarimt / ТЕГ бүртгэл» карт. Өмнө нь товч зөвхөн админы ӨӨРИЙН tenant-ийн ТТД-ийг илгээдэг, merchant талд товч огт байгаагүй — EasyParking (ТТД 15200020090) зэрэг гадны байгууллагын онбординг гацдаг цоорхой байв. `requestEbarimtMerchantFor(tenantId, actor)` refactor, audit хэвээр | ✅ |
+
 ## Дууссан (2026-08-18, dashboard dark theme)
 
 | ID | Ажил | Статус |
