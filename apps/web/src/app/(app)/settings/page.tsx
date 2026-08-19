@@ -93,6 +93,64 @@ const SERVICE_MN: Record<string, { title: string; desc: string }> = {
   EBARIMT: { title: 'eBarimt баримт', desc: 'Төлбөр бүрд НӨАТ-ын баримт автоматаар үүснэ' },
 };
 
+/**
+ * eBarimt туршилтын баримт (10₮) — интеграцээ (ТТД бүртгэл, POS, instance)
+ * БОДИТ баримтаар шалгана. Тарифт тооцогдохгүй; цуцлах бол eBarimt хуудаснаас.
+ */
+function TestReceiptCard() {
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<{ id: string; state: string; receipt_no: string | null; lottery: string | null; error: string | null } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const canRun = ['OWNER', 'ACCOUNTANT'].includes(getSessionUser()?.role ?? '');
+
+  async function run() {
+    if (busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      setRes(await api('/receipts/test', { method: 'POST' }));
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!canRun) return null;
+  return (
+    <div className="card space-y-3 p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-bold text-slate-900">🧿 eBarimt туршилт</h2>
+          <p className="mt-1 text-[13px] text-slate-500">
+            10₮-ийн БОДИТ туршилтын баримт үүсгэж ТЕГ-ийн бүртгэл, POS холболтоо шалгана.
+            Тарифт тооцогдохгүй; шаардлагагүй бол eBarimt хуудаснаас цуцалж болно.
+          </p>
+        </div>
+        <button className="btn-secondary" disabled={busy} onClick={run}>
+          {busy ? <Spinner className="h-5 w-5" /> : 'Туршилтын баримт (10₮)'}
+        </button>
+      </div>
+      {err && <ErrorNote message={err} />}
+      {res && (
+        <div className={`rounded-xl px-4 py-3 text-[13px] ${res.state === 'CREATED' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
+          {res.state === 'CREATED' ? (
+            <>
+              ✓ Баримт амжилттай үүслээ — интеграци бүрэн ажиллаж байна.
+              <span className="ml-2 font-mono">ДДТД: {res.receipt_no ?? '—'}</span>
+              {res.lottery && <span className="ml-2 font-mono">Сугалаа: {res.lottery}</span>}
+            </>
+          ) : (
+            <>
+              ⚠ Төлөв: {res.state}. {res.error ?? 'Систем 10 минут тутам автоматаар дахин оролдоно.'}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Нууц үг солих карт — ?changePassword=1 үед онцолж, дээшээ гүйлгэнэ. */
 function PasswordChangeCard() {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -429,6 +487,8 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+
+      <TestReceiptCard />
 
       {/* SMS template builder */}
       <div className="card space-y-4 p-6">

@@ -494,6 +494,8 @@ model EbarimtReceipt {
   description   String?
   deviceId      String? // pos source: аль терминалаас
   receiptNo     String?
+  // POS API-ийн буцаасан баримтын огноо ("yyyy-MM-dd HH:mm:ss") — цуцлахад хэрэгтэй.
+  receiptDate   String?
   lottery       String?
   qrData        String?
   receiptType   String       @default("CITIZEN") // CITIZEN | ORGANIZATION

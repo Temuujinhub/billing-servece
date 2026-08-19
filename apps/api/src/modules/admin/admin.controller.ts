@@ -149,6 +149,18 @@ export class AdminController {
     return this.admin.setTenantModule(user, id, code.toUpperCase(), Boolean(body.enabled), body.quantity);
   }
 
+  /**
+   * Байгууллагын ТТД-ийг ТЕГ рүү бүртгүүлэх хүсэлтийг АДМИН тухайн
+   * байгууллагын өмнөөс илгээнэ (B-63) — merchant өөрөө товчгүй байсан
+   * цоорхойг хаана. Аль API (merchants/lessors/both) дуудагдах нь
+   * «ТЕГ операторын эрх» доторх «Бүртгэлийн API» сонголтоор тодорхойлогдоно.
+   */
+  @HttpCode(200)
+  @Post('merchants/:id/ebarimt/merchant-request')
+  requestEbarimtForMerchant(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.providerConfigs.requestEbarimtMerchantFor(id, { userId: user.userId, email: user.email });
+  }
+
   /** Tenant-тэй тохиролцсон нэгж үнэ (ж: API илгээлт 75₮) / eBarimt API шатлал. */
   @HttpCode(200)
   @Put('merchants/:id/pricing/:code')

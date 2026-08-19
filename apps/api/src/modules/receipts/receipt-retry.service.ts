@@ -31,6 +31,9 @@ export class ReceiptRetryService implements OnApplicationBootstrap, OnModuleDest
     for (const tenantId of tenants) {
       const { processed } = await this.receipts.processPending(tenantId);
       if (processed > 0) this.logger.log(`eBarimt retry sweep: tenant ${tenantId} → ${processed} баримт үүслээ`);
+      // Гацсан цуцлалтуудыг (CANCEL_PENDING) мөн дахин оролдоно (B-22).
+      const cancelled = await this.receipts.processCancelPending(tenantId).catch(() => 0);
+      if (cancelled > 0) this.logger.log(`eBarimt cancel sweep: tenant ${tenantId} → ${cancelled} оролдлого`);
     }
   }
 }

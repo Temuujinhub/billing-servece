@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpStatus, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags } from '@nestjs/swagger';
@@ -288,6 +288,35 @@ export class PartnerApiController {
         error: receipt.error,
       };
     });
+  }
+
+  /**
+   * Баримт цуцлах (B-22): буцаалт/refund-ийн үед хүлээн авч ТЕГ рүү дамжуулна.
+   * Идемпотент — аль хэдийн CANCELLED бол мөн л CANCELLED буцаана. Амжилтгүй
+   * дамжуулалт CANCEL_PENDING төлөвт үлдэж 10 мин тутам автоматаар дахина.
+   */
+  @HttpCode(200)
+  @Post('receipts/:id/cancel')
+  async cancelReceipt(@Req() req: Request, @Param('id') id: string) {
+    const partner = (req as any).partner as PartnerContext;
+    if (partner.mode === 'test') {
+      return { id, state: 'CANCELLED', test: true };
+    }
+    const found = await this.prisma.ebarimtReceipt.findFirst({
+      where: { id, tenantId: partner.tenantId, source: { in: ['api', 'pos'] } },
+      select: { source: true },
+    });
+    if (!found) {
+      throw apiError(HttpStatus.NOT_FOUND, 'RECEIPT_NOT_FOUND', 'Баримт олдсонгүй.', 'Receipt not found.');
+    }
+    requireScope(partner, found.source === 'pos' ? 'pos' : 'receipt');
+    const receipt = await this.receipts.cancel(partner.tenantId, id, { email: `apikey:${partner.keyId}` });
+    return {
+      id: receipt.id,
+      state: receipt.state,
+      receipt_no: receipt.receiptNo,
+      error: receipt.error,
+    };
   }
 
   @Get('receipts/:id')
