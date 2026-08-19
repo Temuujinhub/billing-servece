@@ -40,11 +40,23 @@ export interface EbarimtCreateResult {
   receiptNo: string;
   lottery: string | null;
   qrData: string | null;
+  /** POS API-ийн буцаасан баримтын огноо ("yyyy-MM-dd HH:mm:ss") — цуцлахад заавал хэрэгтэй. */
+  receiptDate?: string | null;
+}
+
+export interface EbarimtCancelArgs {
+  tenantId: string;
+  /** Баримтын ДДТД (бидний хадгалсан receiptNo). */
+  receiptNo: string;
+  /** Баримт үүссэн огноо "yyyy-MM-dd HH:mm:ss" — POS API DELETE-д шаардлагатай. */
+  receiptDate: string;
 }
 
 export interface EbarimtPort {
   readonly code: string;
   createReceipt(args: EbarimtCreateArgs): Promise<EbarimtCreateResult>;
+  /** Баримт цуцлах (буцаалт) — дэмждэггүй adapter undefined орхино. */
+  cancelReceipt?(args: EbarimtCancelArgs): Promise<void>;
 }
 
 export const EBARIMT_PORT = 'EBARIMT_PORT';

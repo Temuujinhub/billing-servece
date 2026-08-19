@@ -89,6 +89,13 @@
 | B-40 | Үйлчилгээний нэр **Message Billing Service**, канон домэйн **msgbill.mn**, SMS-ийн богино линк **bil.mn** болов. Caddy дээр 4 хаягт (msgbill.mn, www, bil.mn, www) auto-HTTPS; bil.mn нь `/p/*`-ийг ижил web контейнерээр redirect-гүй үйлчилж, нүүр хуудсаа канон хаяг руу заана + `X-Robots-Tag: noindex`. Сервер тал: шинэ `SHORT_URL_BASE` env (хоосон бол PUBLIC_URL) — SMS/сануулга/API тест хариу бүх төлбөрийн линк `payLinkFor()`-оор нэг эх сурвалжаас гарна. `remote-deploy.sh` нь БАЙГАА `.env`-ийн домэйныг idempotent шинэчилж (backup-тай), CORS-д bil.mn нэмнэ. Хуучин `billing.mastrsys.com` ашиглахаа больсон. | ✅ |
 | B-43 | Deploy бүрд Caddy тохиргоог дахин ачаалдаг болов (`caddy reload`, fallback restart) — Caddyfile bind-mount тул `up -d` өөрчлөлтийг авдаггүй, 2026-08-17-ны эхний domain deploy үүнээс болж verify дээр унасан. Мөн `www.bil.mn` (DNS-д нэмэгдсэн) Caddy-д орж, verify unaлтад caddy log-ийн оношилгоо нэмэгдэв. | ✅ |
 
+## Дууссан (2026-08-19, eBarimt цуцлалт + туршилтын баримт)
+
+| ID | Ажил | Статус |
+|---|---|---|
+| B-22 | eBarimt цуцлалт: posapi adapter-т `DELETE /rest/receipt {id, date}` зам (баримтын огноог migration 14-өөр хадгална); `POST /partner/receipts/:id/cancel` (test горим, scope, идемпотент) + dashboard `/receipts/:id/cancel` (OWNER/Нягтлан, confirm-той товч); PENDING/FAILED → шууд CANCELLED, CREATED → CANCEL_PENDING→CANCELLED, амжилтгүй цуцлалтыг 10 мин тутмын sweeper дахина; `receipt.cancelled` webhook + audit | ✅ |
+| B-64 | Тохиргоо цэсэнд «🧿 eBarimt туршилт» карт: 10₮-ийн БОДИТ баримт (`POST /receipts/test`, source=test — тарифт тооцогдохгүй) үүсгэж ТТД бүртгэл/POS/instance-ээ шалгана; ДДТД+сугалаа эсвэл алдааг шууд харуулна | ✅ |
+
 ## Дууссан (2026-08-19, админ ТЕГ бүртгэл per-merchant)
 
 | ID | Ажил | Статус |
@@ -119,7 +126,6 @@
 |---|---|---|---|
 | B-20 | Production дээр Медиа Профессионал tenant-ийн ID-г Admin → Pricing-д тохируулах | P0 | Гар тохиргоо — deploy-ийн дараа хийнэ |
 | B-21 | Платформын нэхэмжлэхийн төлөлт хоцрох үеийн сануулга/зогсоолт (dunning) | P1 | Одоо REMINDER модулиар сануулах боломжтой; автомат зогсоолт алга |
-| B-22 | eBarimt баримт ЦУЦЛАХ API (буцаалт/refund-ийн баримт) | P1 | posapi adapter-т cancel зам + /partner/receipts/:id/cancel |
 | B-23 | Онбордингийн нэгдсэн статус самбар (Bonum/LIME/ТЕГ алхам бүр нэг дэлгэцэд) | P1 | IntegrationRequest төлвүүд бэлэн, UI нэгтгэл дутуу |
 | B-24 | Төлбөрийн хуудсанд төлөгч ААН-ийн баримт сонгох (B2B) | P2 | Суурь талбарууд бэлэн (receiptType/payerRegNo) |
 | B-25 | Quota дөхөх үеийн анхааруулга (имэйл/SMS) + шатлал upsell | P2 | |

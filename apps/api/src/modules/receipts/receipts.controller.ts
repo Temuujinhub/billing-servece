@@ -28,4 +28,30 @@ export class ReceiptsController {
   retry(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.receipts.retry(user.tenantId, id);
   }
+
+  /**
+   * Тохиргооны «Туршилтын баримт (10₮)» — интеграцээ (ТТД бүртгэл, POS,
+   * instance) бодит баримтаар шалгана. Тарифт тооцогдохгүй (source=test).
+   */
+  @Roles(Role.OWNER, Role.ACCOUNTANT)
+  @HttpCode(200)
+  @Post('test')
+  async testReceipt(@CurrentUser() user: AuthUser) {
+    const r = await this.receipts.createStandalone({
+      tenantId: user.tenantId,
+      source: 'test',
+      amount: 10,
+      description: 'Туршилтын баримт — msgbill.mn',
+      paymentMethod: 'CASH',
+    });
+    return { id: r.id, state: r.state, receipt_no: r.receiptNo, lottery: r.lottery, error: r.error };
+  }
+
+  /** Баримт цуцлах (B-22) — ТЕГ рүү DELETE дамжуулна; эргэлт буцалтгүй тул OWNER/Нягтлан л. */
+  @Roles(Role.OWNER, Role.ACCOUNTANT)
+  @HttpCode(200)
+  @Post(':id/cancel')
+  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.receipts.cancel(user.tenantId, id, { userId: user.userId, email: user.email });
+  }
 }

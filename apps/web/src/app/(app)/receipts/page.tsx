@@ -28,6 +28,21 @@ export default function ReceiptsPage() {
     load();
   }, [load]);
 
+  /** B-22: баримт цуцлах — ТЕГ рүү дамжуулагдана, буцаах боломжгүй тул баталгаажуулна. */
+  async function cancel(id: string) {
+    if (!window.confirm('Энэ баримтыг цуцлах уу? Цуцлалт ТЕГ рүү илгээгдэх бөгөөд буцаах боломжгүй.')) return;
+    setRetrying(id);
+    setError(null);
+    try {
+      await api(`/receipts/${id}/cancel`, { method: 'POST' });
+      load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Алдаа гарлаа');
+    } finally {
+      setRetrying(null);
+    }
+  }
+
   async function retry(id: string) {
     setRetrying(id);
     setError(null);
@@ -122,6 +137,11 @@ export default function ReceiptsPage() {
                           {r.state === 'FAILED' && (
                             <button onClick={() => retry(r.id)} disabled={retrying === r.id} className="btn-secondary px-3 py-1.5 text-[12.5px]">
                               {retrying === r.id ? <Spinner className="h-4 w-4" /> : '↻ Дахих'}
+                            </button>
+                          )}
+                          {['CREATED', 'DELIVERED', 'CANCEL_PENDING'].includes(r.state) && (
+                            <button onClick={() => cancel(r.id)} disabled={retrying === r.id} className="btn-danger px-3 py-1.5 text-[12.5px]">
+                              {retrying === r.id ? <Spinner className="h-4 w-4" /> : r.state === 'CANCEL_PENDING' ? '↻ Цуцлалт дахих' : '✕ Цуцлах'}
                             </button>
                           )}
                         </div>

@@ -1,10 +1,16 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { apiError } from '../../common/filters/http-exception.filter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WebhooksService } from '../developers/webhooks.service';
 import { EBARIMT_PORT, EbarimtPort } from '../providers/ebarimt.port';
 import { PosApiEbarimtAdapter } from '../providers/posapi-ebarimt.adapter';
 import { ReceiptPurgeService } from './receipt-purge.service';
+
+/** Date → "yyyy-MM-dd HH:mm:ss" (Улаанбаатар, UTC+8) — POS API-ийн огнооны формат. */
+function formatUbDateTime(d: Date): string {
+  return new Date(d.getTime() + 8 * 3600_000).toISOString().slice(0, 19).replace('T', ' ');
+}
 
 /**
  * eBarimt receipts. The actual receipt is cut by the EBARIMT_PORT adapter
@@ -57,7 +63,7 @@ export class ReceiptsService {
    */
   async createStandalone(args: {
     tenantId: string;
-    source: 'api' | 'pos';
+    source: 'api' | 'pos' | 'test';
     amount: number;
     description?: string | null;
     receiptType?: 'CITIZEN' | 'ORGANIZATION';
@@ -145,6 +151,7 @@ export class ReceiptsService {
           data: {
             state: 'CREATED',
             receiptNo: result.receiptNo,
+            receiptDate: result.receiptDate ?? null,
             receiptType,
             payerRegNo,
             // Хадгалах хугацаа 0 бол сугалаа/QR-г огт бичихгүй (ТЕГ-ийн
@@ -186,6 +193,102 @@ export class ReceiptsService {
     }
   }
 
+  /**
+   * Баримт цуцлах (B-22) — хүсэлтийг хүлээн авч ТЕГ POS API руу дамжуулна.
+   *   PENDING/FAILED  → ТЕГ-т очоогүй тул шууд CANCELLED (юу ч дамжуулахгүй)
+   *   CREATED/DELIVERED → CANCEL_PENDING болгож adapter-ын DELETE-ийг дуудна;
+   *                       амжилтгүй бол CANCEL_PENDING-д үлдэж sweeper дахина
+   *   CANCELLED       → идемпотент, хэвээр буцаана
+   */
+  async cancel(tenantId: string, receiptId: string, actor?: { userId?: string; email?: string }) {
+    const receipt = await this.prisma.ebarimtReceipt.findFirst({ where: { id: receiptId, tenantId } });
+    if (!receipt) {
+      throw apiError(HttpStatus.NOT_FOUND, 'RECEIPT_NOT_FOUND', 'Баримт олдсонгүй.', 'Receipt not found.');
+    }
+    if (receipt.state === 'CANCELLED') return receipt;
+    if (receipt.state === 'NOT_REQUIRED') {
+      throw apiError(HttpStatus.BAD_REQUEST, 'RECEIPT_NOT_CANCELLABLE', 'Энэ бичилтэд баримт үүсээгүй тул цуцлах зүйл алга.', 'Nothing to cancel.');
+    }
+
+    // ТЕГ-т хараахан очоогүй баримт: дотооддоо цуцалж, дахин илгээхийг зогсооно.
+    if (receipt.state === 'PENDING' || receipt.state === 'FAILED') {
+      const updated = await this.prisma.ebarimtReceipt.update({
+        where: { id: receipt.id },
+        data: { state: 'CANCELLED', error: null },
+      });
+      await this.auditCancel(tenantId, receipt.id, actor, 'local');
+      return updated;
+    }
+
+    // CREATED | DELIVERED | CANCEL_PENDING → ТЕГ рүү дамжуулна.
+    if (!receipt.receiptNo) {
+      throw apiError(HttpStatus.BAD_REQUEST, 'RECEIPT_NOT_CANCELLABLE', 'Баримтын ДДТД олдсонгүй — цуцлах боломжгүй.', 'Receipt has no id (ДДТД).');
+    }
+    await this.prisma.ebarimtReceipt.updateMany({
+      where: { id: receipt.id, state: { in: ['CREATED', 'DELIVERED'] } },
+      data: { state: 'CANCEL_PENDING' },
+    });
+    try {
+      if (!this.ebarimt.cancelReceipt) {
+        throw new Error(`${this.ebarimt.code} adapter цуцлалт дэмждэггүй`);
+      }
+      await this.ebarimt.cancelReceipt({
+        tenantId,
+        receiptNo: receipt.receiptNo,
+        // POS API-ийн өгсөн огноог тэргүүлж, хуучин (өмнөх хувилбарын) баримтад
+        // үүссэн цагаа УБ-ын цагаар форматлана.
+        receiptDate: receipt.receiptDate ?? formatUbDateTime(receipt.createdAt),
+      });
+      const updated = await this.prisma.ebarimtReceipt.update({
+        where: { id: receipt.id },
+        data: { state: 'CANCELLED', error: null },
+      });
+      await this.auditCancel(tenantId, receipt.id, actor, 'provider');
+      this.webhooks.emit(tenantId, 'receipt.cancelled', {
+        receipt_id: receipt.id,
+        receipt_no: receipt.receiptNo,
+      });
+      return updated;
+    } catch (e: any) {
+      const message = String(e?.message ?? e).slice(0, 500);
+      const updated = await this.prisma.ebarimtReceipt.update({
+        where: { id: receipt.id },
+        data: { state: 'CANCEL_PENDING', error: message },
+      });
+      this.logger.warn(`eBarimt cancel failed for ${receipt.id}: ${message}`);
+      return updated;
+    }
+  }
+
+  private auditCancel(tenantId: string, receiptId: string, actor: { userId?: string; email?: string } | undefined, via: 'local' | 'provider') {
+    return this.prisma.auditLog
+      .create({
+        data: {
+          tenantId,
+          actorId: actor?.userId,
+          actorEmail: actor?.email ?? 'system',
+          action: 'receipt.cancelled',
+          targetType: 'receipt',
+          targetId: receiptId,
+          meta: { via },
+        },
+      })
+      .catch(() => undefined);
+  }
+
+  /** CANCEL_PENDING баримтуудыг дахин цуцлах гэж оролдоно (sweeper). */
+  async processCancelPending(tenantId: string) {
+    const rows = await this.prisma.ebarimtReceipt.findMany({
+      where: { tenantId, state: 'CANCEL_PENDING' },
+      select: { id: true },
+      take: 50,
+    });
+    for (const r of rows) {
+      await this.cancel(tenantId, r.id).catch(() => undefined);
+    }
+    return rows.length;
+  }
+
   /** Drain PENDING receipts for a tenant (invoked after payments + retry endpoint). */
   async processPending(tenantId: string) {
     const pending = await this.prisma.ebarimtReceipt.findMany({
@@ -203,7 +306,7 @@ export class ReceiptsService {
   /** Бүх tenant-ийн гацсан баримтыг дахин оролдох sweeper-т зориулсан жагсаалт. */
   async tenantsWithPending(): Promise<string[]> {
     const rows = await this.prisma.ebarimtReceipt.findMany({
-      where: { state: { in: ['PENDING', 'FAILED'] }, retries: { lt: 5 } },
+      where: { state: { in: ['PENDING', 'FAILED', 'CANCEL_PENDING'] }, retries: { lt: 5 } },
       select: { tenantId: true },
       distinct: ['tenantId'],
       take: 100,

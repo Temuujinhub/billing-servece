@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomBytes, randomUUID } from 'crypto';
-import { EbarimtCreateArgs, EbarimtCreateResult, EbarimtPort } from './ebarimt.port';
+import { EbarimtCancelArgs, EbarimtCreateArgs, EbarimtCreateResult, EbarimtPort } from './ebarimt.port';
 
 /**
  * MOCK eBarimt adapter — generates realistic local receipts (no tax authority
@@ -17,7 +17,12 @@ export class MockEbarimtAdapter implements EbarimtPort {
       receiptNo: randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase(),
       lottery,
       qrData: randomBytes(48).toString('base64'),
+      receiptDate: new Date().toISOString().slice(0, 19).replace('T', ' '),
     };
+  }
+
+  async cancelReceipt(_args: EbarimtCancelArgs): Promise<void> {
+    // Mock: цуцлалт үргэлж амжилттай.
   }
 
   private block(n: number): string {

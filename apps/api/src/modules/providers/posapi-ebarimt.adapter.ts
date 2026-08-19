@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EbarimtCreateArgs, EbarimtCreateResult, EbarimtPort } from './ebarimt.port';
+import { EbarimtCancelArgs, EbarimtCreateArgs, EbarimtCreateResult, EbarimtPort } from './ebarimt.port';
 
 /**
  * ТЕГ eBarimt POS API 3.0 adapter — LIME-ээр дамжуулан суулгасан ЛОКАЛ instance.
@@ -295,7 +295,37 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
       receiptNo: String(body.id),
       lottery: body.lottery ? String(body.lottery) : null,
       qrData: body.qrData ? String(body.qrData) : null,
+      receiptDate: body.date ? String(body.date) : null,
     };
+  }
+
+  /**
+   * Баримт цуцлах (заавар §: DELETE /rest/receipt, биет {id, date}).
+   * date нь баримт үүсэхэд POS API-ийн буцаасан огноо байх ЁСТОЙ — өдөр
+   * зөрвөл ТЕГ цуцлалтыг хүлээж авахгүй.
+   */
+  async cancelReceipt(args: EbarimtCancelArgs): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/rest/receipt`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: args.receiptNo, date: args.receiptDate }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await res.text();
+    let body: any = {};
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      /* non-JSON */
+    }
+    const status = String(body?.status ?? '').toUpperCase();
+    if (!res.ok || (status && status !== 'SUCCESS')) {
+      throw new Error(
+        `POS API cancel failed (${res.status} ${status || '-'}): ${String(body?.message ?? body?.msg ?? text).slice(0, 300)}`,
+      );
+    }
+    // Цуцлалтыг ТЕГ рүү даруй тулгах best-effort push.
+    fetch(`${this.baseUrl}/rest/sendData`, { signal: AbortSignal.timeout(30_000) }).catch(() => undefined);
   }
 }
 
