@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Logo } from '@/components/logo';
-import { getSessionUser, logout } from '@/lib/api';
-import type { SessionUser } from '@/lib/types';
+import { api, getSessionUser, logout } from '@/lib/api';
+import type { SessionUser, TenantInfo } from '@/lib/types';
 
 const NAV = [
   { href: '/dashboard', label: 'Хянах самбар', icon: '📊' },
@@ -50,6 +50,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Аль байгууллагын хуудсанд орсноо хэрэглэгч ил хардаг байх (B-67).
+  const [tenantName, setTenantName] = useState<string | null>(null);
 
   useEffect(() => {
     const u = getSessionUser();
@@ -58,6 +60,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       return;
     }
     setUser(u);
+    if (!u.isAdmin && !u.partnerKind) {
+      api<TenantInfo>('/tenant')
+        .then((t) => setTenantName(t.tenant.name))
+        .catch(() => {});
+    }
   }, [router]);
 
   if (!user) {
@@ -77,6 +84,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             ☰
           </button>
           <Logo dark href={user.isAdmin ? '/admin' : '/dashboard'} />
+          {tenantName && (
+            <span
+              className="max-w-[140px] truncate rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[12.5px] font-bold text-slate-800 sm:max-w-[240px] lg:max-w-[320px]"
+              title={tenantName}
+            >
+              🏢 {tenantName}
+            </span>
+          )}
+          {user.isAdmin && (
+            <span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-3 py-1 text-[12.5px] font-bold text-amber-300">
+              🛡️ Платформ админ
+            </span>
+          )}
           {/* Live API status with pulse */}
           <span className="ml-2 hidden items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[12px] font-semibold text-emerald-300 md:inline-flex">
             <span className="relative flex h-2 w-2">
@@ -179,8 +199,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </>
             )}
             <div className="mt-auto rounded-2xl border border-teal-400/20 bg-gradient-to-br from-teal-600/25 to-emerald-600/15 p-4 text-[12.5px] leading-snug text-white shadow-[0_10px_30px_-12px_rgba(20,184,166,0.3)]">
-              <p className="font-bold">msgbill.mn</p>
-              <p className="mt-1 text-teal-100/80">Нэхэмжлэхээс eBarimt хүртэл нэг урсгалаар.</p>
+              {tenantName ? (
+                <>
+                  <p className="truncate font-bold" title={tenantName}>🏢 {tenantName}</p>
+                  <p className="mt-1 text-teal-100/80">msgbill.mn — нэхэмжлэхээс eBarimt хүртэл нэг урсгалаар.</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-bold">msgbill.mn</p>
+                  <p className="mt-1 text-teal-100/80">Нэхэмжлэхээс eBarimt хүртэл нэг урсгалаар.</p>
+                </>
+              )}
             </div>
           </nav>
         </aside>
