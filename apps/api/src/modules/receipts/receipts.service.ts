@@ -4,6 +4,7 @@ import { apiError } from '../../common/filters/http-exception.filter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WebhooksService } from '../developers/webhooks.service';
 import { EBARIMT_PORT, EbarimtPort } from '../providers/ebarimt.port';
+import { EbarimtRegistryService } from '../providers/ebarimt-registry.service';
 import { PosApiEbarimtAdapter } from '../providers/posapi-ebarimt.adapter';
 import { ReceiptPurgeService } from './receipt-purge.service';
 
@@ -35,6 +36,7 @@ export class ReceiptsService {
     private readonly posapi: PosApiEbarimtAdapter,
     private readonly webhooks: WebhooksService,
     private readonly purge: ReceiptPurgeService,
+    private readonly registry: EbarimtRegistryService,
   ) {}
 
   /** Called inside the payment-confirm transaction. */
@@ -126,12 +128,20 @@ export class ReceiptsService {
       const receiptType = receipt.receiptType === 'ORGANIZATION' || (invoice?.payerRegNo && receipt.source === 'payment')
         ? 'ORGANIZATION'
         : 'CITIZEN';
+      // POS API-ийн customerTin нь заавал ТТД (11+ орон). Регистр (7 орон эсвэл
+      // АА########) ирсэн бол ТЕГ-ийн нээлттэй лавлагаагаар ТТД болгож
+      // хөрвүүлнэ; олдохгүй бол байгаагаар нь илгээж алдааг error-т буулгана.
+      let payerTin = payerRegNo;
+      if (receiptType === 'ORGANIZATION' && payerRegNo && !/^[0-9]{11,}$/.test(payerRegNo)) {
+        const info = await this.registry.lookup(payerRegNo).catch(() => null);
+        if (info?.tin) payerTin = info.tin;
+      }
       const result = await this.ebarimt.createReceipt({
         tenantId,
         amount: receipt.transaction?.gross ?? receipt.amount ?? 0,
         description: (invoice ? `${invoice.number} ${invoice.description}` : (receipt.description ?? 'Борлуулалт')).slice(0, 128),
         receiptType,
-        customerTin: payerRegNo,
+        customerTin: payerTin,
         paymentProvider: receipt.transaction?.provider ?? (paymentMethod === 'CASH' ? 'cash' : paymentMethod === 'BANK_TRANSFER' ? 'bank_transfer' : 'card'),
         providerPaymentId: receipt.transaction?.providerPaymentId ?? receipt.id,
         merchant: {
