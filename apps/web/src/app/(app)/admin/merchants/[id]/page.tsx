@@ -13,6 +13,9 @@ interface Merchant360 {
   tenant: {
     id: string; name: string; regNo: string | null; status: string; kybStatus: string;
     contactEmail: string | null; contactPhone: string | null; createdAt: string;
+    tin: string | null; address: string | null;
+    ebarimtMerchantTin: string | null; ebarimtPosNo: string | null;
+    ebarimtBranchNo: string | null; ebarimtDistrictCode: string | null;
     modules: { code: string; enabled: boolean; quantity: number; unitPrice: number | null; tier: number | null }[];
     memberships: { id: string; role: string; user: { id: string; name: string; email: string; platformAdmin: boolean } }[];
     _count: { invoices: number; customers: number; batches: number };
@@ -52,6 +55,10 @@ export default function AdminMerchantDetailPage() {
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const [tegMsg, setTegMsg] = useState<{ ok: boolean; text: string; details: string[] } | null>(null);
   const [tegBusy, setTegBusy] = useState(false);
+  // B-69: админ засварын форм — нээхэд одоогийн утгуудаар бөглөгдөнө.
+  const [editOpen, setEditOpen] = useState(false);
+  const [edit, setEdit] = useState<Record<string, string>>({});
+  const [editMsg, setEditMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(() => {
     api<Merchant360>(`/admin/merchants/${id}`).then(setData).catch((e) => setError(e.message));
@@ -74,6 +81,44 @@ export default function AdminMerchantDetailPage() {
       setTegMsg({ ok: false, text: e instanceof ApiError ? e.message : 'Алдаа гарлаа', details: [] });
     } finally {
       setTegBusy(false);
+    }
+  }
+
+  function openEdit() {
+    const t = data!.tenant;
+    setEdit({
+      name: t.name ?? '',
+      regNo: t.regNo ?? '',
+      tin: t.tin ?? '',
+      contactEmail: t.contactEmail ?? '',
+      contactPhone: t.contactPhone ?? '',
+      address: t.address ?? '',
+      ebarimtMerchantTin: t.ebarimtMerchantTin ?? '',
+      ebarimtPosNo: t.ebarimtPosNo ?? '',
+      ebarimtBranchNo: t.ebarimtBranchNo ?? '',
+      ebarimtDistrictCode: t.ebarimtDistrictCode ?? '',
+    });
+    setEditMsg(null);
+    setEditOpen(true);
+  }
+
+  async function saveEdit() {
+    setBusy(true);
+    setEditMsg(null);
+    try {
+      const r = await api<{ ok: boolean; changed: string[] }>(`/admin/merchants/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(edit),
+      });
+      setEditMsg({
+        ok: true,
+        text: r.changed.length ? `Хадгалагдлаа — өөрчлөгдсөн: ${r.changed.join(', ')}` : 'Өөрчлөлт байсангүй.',
+      });
+      load();
+    } catch (e) {
+      setEditMsg({ ok: false, text: e instanceof ApiError ? e.message : 'Алдаа гарлаа' });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -190,6 +235,62 @@ export default function AdminMerchantDetailPage() {
                     {tegMsg.details.map((d, i) => (<li key={i}>{d}</li>))}
                   </ul>
                 )}
+              </div>
+            )}
+          </div>
+
+          {/* B-69: байгууллагын мэдээллийг админ засна (алдаатай регистр, байршлын код г.м.) */}
+          <div className="card p-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="mr-auto">
+                <p className="text-[13px] font-bold uppercase tracking-wide text-slate-500">Байгууллагын мэдээлэл</p>
+                <p className="mt-0.5 text-[12.5px] text-slate-500">
+                  ТТД {data.tenant.ebarimtMerchantTin || data.tenant.tin || '—'} · Байршлын код {data.tenant.ebarimtDistrictCode || '—'} · POS {data.tenant.ebarimtPosNo || '—'}
+                </p>
+              </div>
+              <button className="btn-secondary px-3.5 py-2 text-[13px]" onClick={() => (editOpen ? setEditOpen(false) : openEdit())}>
+                {editOpen ? 'Хаах' : '✏️ Засах'}
+              </button>
+            </div>
+            {editOpen && (
+              <div className="mt-4 border-t border-slate-200/60 pt-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {([
+                    { key: 'name', label: 'Нэр' },
+                    { key: 'regNo', label: 'Регистр' },
+                    { key: 'tin', label: 'ТТД' },
+                    { key: 'ebarimtMerchantTin', label: 'eBarimt merchantTin' },
+                    { key: 'ebarimtPosNo', label: 'POS дугаар' },
+                    { key: 'ebarimtDistrictCode', label: 'Байршлын код (4 орон)' },
+                    { key: 'ebarimtBranchNo', label: 'Салбар №' },
+                    { key: 'contactEmail', label: 'Имэйл' },
+                    { key: 'contactPhone', label: 'Утас' },
+                  ] as const).map((f) => (
+                    <div key={f.key}>
+                      <label className="label" htmlFor={`mt-${f.key}`}>{f.label}</label>
+                      <input
+                        id={`mt-${f.key}`}
+                        className="input"
+                        value={edit[f.key] ?? ''}
+                        onChange={(e) => setEdit((d) => ({ ...d, [f.key]: e.target.value }))}
+                      />
+                    </div>
+                  ))}
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <label className="label" htmlFor="mt-address">Хаяг</label>
+                    <input id="mt-address" className="input" value={edit.address ?? ''} onChange={(e) => setEdit((d) => ({ ...d, address: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-end gap-3">
+                  {editMsg && (
+                    <span className={`text-[13px] font-medium ${editMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {editMsg.ok ? '✓' : '⚠'} {editMsg.text}
+                    </span>
+                  )}
+                  <button className="btn-primary min-w-[120px] px-3.5 py-2 text-[13px]" disabled={busy} onClick={saveEdit}>
+                    {busy ? <Spinner className="h-4 w-4 text-white" /> : 'Хадгалах'}
+                  </button>
+                </div>
               </div>
             )}
           </div>

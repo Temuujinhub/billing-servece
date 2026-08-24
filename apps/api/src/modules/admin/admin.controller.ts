@@ -1,14 +1,31 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import * as bcrypt from 'bcryptjs';
+import { IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { randomBytes } from 'crypto';
 import { encryptString } from '../../common/crypto';
 import { AdminOnly, AuthUser, CurrentUser } from '../../common/decorators';
+import { apiError } from '../../common/filters/http-exception.filter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MonthCloseService } from '../billing/month-close.service';
 import { EbarimtOperatorService } from '../providers/ebarimt-operator.service';
 import { ProviderConfigService } from '../providers/provider-config.service';
 import { AdminService } from './admin.service';
+
+/** B-69: админаас засаж болох байгууллагын талбарууд — бүгд optional, хоосон мөр = null болгож арилгана. */
+class UpdateMerchantDto {
+  @IsOptional() @IsString() @MaxLength(120) name?: string;
+  @IsOptional() @IsString() @MaxLength(20) regNo?: string;
+  @IsOptional() @IsString() @MaxLength(20) tin?: string;
+  @IsOptional() @IsString() @MaxLength(120) contactEmail?: string;
+  @IsOptional() @IsString() @MaxLength(20) contactPhone?: string;
+  @IsOptional() @IsString() @MaxLength(300) address?: string;
+  @IsOptional() @IsString() @MaxLength(20) ebarimtMerchantTin?: string;
+  @IsOptional() @IsString() @MaxLength(20) ebarimtPosNo?: string;
+  @IsOptional() @IsString() @MaxLength(10) ebarimtBranchNo?: string;
+  @IsOptional() @Matches(/^([0-9]{4})?$/, { message: 'Байршлын код (ebarimtDistrictCode) 4 оронтой тоо байна.' })
+  ebarimtDistrictCode?: string;
+}
 
 /** Best-effort HTTP probe: status + latency + a short body sample, never throws. */
 async function probe(url: string, init?: RequestInit) {
@@ -126,6 +143,48 @@ export class AdminController {
   @Get('merchants/:id')
   merchant(@Param('id') id: string) {
     return this.admin.merchant360(id);
+  }
+
+  /**
+   * B-69: байгууллагын үндсэн + eBarimt талбаруудыг админ засна (ж: буруу
+   * оруулсан байршлын код). Зөвхөн ирсэн талбарууд шинэчлэгдэж, өөрчлөлт
+   * бүр нь хуучин→шинэ утгатайгаа audit-д үлдэнэ.
+   */
+  @Patch('merchants/:id')
+  async updateMerchant(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateMerchantDto) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) throw apiError(HttpStatus.NOT_FOUND, 'TENANT_NOT_FOUND', 'Байгууллага олдсонгүй.', 'Tenant not found.');
+    const FIELDS = [
+      'name', 'regNo', 'tin', 'contactEmail', 'contactPhone', 'address',
+      'ebarimtMerchantTin', 'ebarimtPosNo', 'ebarimtBranchNo', 'ebarimtDistrictCode',
+    ] as const;
+    const data: Record<string, string | null> = {};
+    const changes: Record<string, { from: string | null; to: string | null }> = {};
+    for (const f of FIELDS) {
+      const v = (dto as Record<string, string | undefined>)[f];
+      if (v === undefined) continue;
+      const next = v.trim() || null;
+      if (f === 'name' && !next) continue; // нэрийг хоосолж болохгүй
+      const prev = (tenant as Record<string, unknown>)[f] as string | null;
+      if (next !== prev) {
+        data[f] = next;
+        changes[f] = { from: prev, to: next };
+      }
+    }
+    if (Object.keys(data).length === 0) return { ok: true, changed: [] };
+    await this.prisma.tenant.update({ where: { id }, data });
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: id,
+        actorId: user.userId,
+        actorEmail: user.email,
+        action: 'admin.merchant.updated',
+        targetType: 'tenant',
+        targetId: id,
+        meta: changes as any,
+      },
+    });
+    return { ok: true, changed: Object.keys(data) };
   }
 
   @HttpCode(200)
