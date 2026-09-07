@@ -44,7 +44,7 @@ export class ReceiptsController {
       description: 'Туршилтын баримт — msgbill.mn',
       paymentMethod: 'CASH',
     });
-    return { id: r.id, state: r.state, receipt_no: r.receiptNo, lottery: r.lottery, error: r.error };
+    return { id: r.id, state: r.state, receipt_no: r.receiptNo, batch_receipt_no: r.batchReceiptNo, lottery: r.lottery, error: r.error };
   }
 
   /** Баримт цуцлах (B-22) — ТЕГ рүү DELETE дамжуулна; эргэлт буцалтгүй тул OWNER/Нягтлан л. */

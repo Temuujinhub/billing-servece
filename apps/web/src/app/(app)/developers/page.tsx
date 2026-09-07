@@ -24,8 +24,15 @@ X-Billing-Signature: 3f1a9c… (HMAC-SHA256)
   "created_at": "2026-08-19T09:30:00.000Z",
   "data": {
     "receipt_id": "rcp_7f3a…",
-    "transaction_id": "txn_91bc…",
-    "receipt_no": "0000123456",
+    "transaction_id": null,
+    "receipt_no": "015200020090001…",
+    "batch_receipt_no": "029100244106001…",
+    "receipt_date": "2026-08-19 17:30:00",
+    "receipt_type": "CITIZEN",
+    "amount": 45000,
+    "description": "Худалдан авалт #10041",
+    "device_id": null,
+    "source": "api",
     "lottery": "AB12345678"
   }
 }`;
@@ -321,7 +328,17 @@ export default function DevelopersPage() {
             <li>
               • <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">payment.succeeded</code>-ийн data:
               invoice_id, invoice_number, amount, provider, provider_payment_id, invoice_state;{' '}
-              <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">receipt.cancelled</code>-ийн data: receipt_id, receipt_no.
+              <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">receipt.cancelled</code>-ийн data: receipt_id, receipt_no, batch_receipt_no.
+            </li>
+            <li>
+              • <b>ДДТД:</b> <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">receipt_no</code> нь ТАНАЙ байгууллагын ДДТД —
+              ebarimt.mn дээр танай нэр дээр бүртгэгддэг дугаар (танай ТТД-ээр эхэлнэ). API-ийн хариу ба webhook хоёрт ЯГ ИЖИЛ утга ирнэ.{' '}
+              <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">batch_receipt_no</code> нь операторын POS-ийн багц баримтын дугаар — зөвхөн лавлагаанд.
+            </li>
+            <li>
+              • <b>Тулгалт:</b> webhook-ийг ҮРГЭЛЖ <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">receipt_id</code>-аар
+              (POST-ын хариуны <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">id</code>) өөрийн бичилттэй тулгана — дүн, цаг, дарааллаар
+              таамаглаж бичихгүй. Өөр receipt_id-тай webhook-ийн дугаараар хадгалсан ДДТД-ээ дарж бичиж болохгүй.
             </li>
             <li>
               • <b>Гарын үсэг:</b> <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12px]">X-Billing-Signature</code> =
@@ -419,7 +436,9 @@ export default function DevelopersPage() {
               <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`{
   "id": "rcp_7f3a…",
   "state": "CREATED",
-  "receipt_no": "0000123456",
+  "receipt_no": "015200020090001…",
+  "batch_receipt_no": "029100244106001…",
+  "receipt_date": "2026-08-19 17:30:00",
   "lottery": "AB12345678",
   "qr_data": "…",
   "receipt_type": "CITIZEN",
@@ -434,13 +453,16 @@ export default function DevelopersPage() {
               <pre className="scroll-thin mt-2 overflow-x-auto rounded-lg bg-white/10 px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-teal-200">{`{
   "id": "rcp_7f3a…",
   "state": "CANCELLED",
-  "receipt_no": "0000123456",
+  "receipt_no": "015200020090001…",
+  "batch_receipt_no": "029100244106001…",
   "error": null
 }`}</pre>
             </div>
             <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-slate-600">
               <li>• <b>POST /api/v1/partner/receipts/:id/cancel</b> — ТЕГ-т илгээгдсэн баримтыг цуцалж буцаана. ТЕГ түр амжилтгүй бол <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">{'state: "CANCEL_PENDING"'}</code> + <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">error</code> ирнэ — систем 10 минут тутам автоматаар дахин оролдоно; эцсийн үр дүнг GET-ээр эсвэл <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">receipt.cancelled</code> webhook-оор мэднэ.</li>
-              <li>• <b>GET /api/v1/partner/receipts/:id</b> — баримтын төлөв (state, receipt_no, lottery, qr_data).</li>
+              <li>• <b>GET /api/v1/partner/receipts/:id</b> — баримтын төлөв (state, receipt_no, batch_receipt_no, receipt_date, lottery, qr_data).</li>
+              <li>• <b>receipt_no</b> = танай байгууллагын ДДТД (ebarimt.mn дээр танай нэр дээр бүртгэгдэнэ, танай ТТД-ээр эхэлнэ). <b>batch_receipt_no</b> = операторын POS-ийн багц баримтын дугаар (лавлагаанд). Хариу ба <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">receipt.created</code> webhook-ийн receipt_no ЯГ ИЖИЛ.</li>
+              <li>• <b>Idempotency-Key</b> толгойг заавал дамжуулна (нэг гүйлгээнд нэг түлхүүр): timeout-оор давтан илгээхэд ТЕГ дээр хоёр дахь баримт үүсэхгүй, ижил хариу ирнэ; боловсруулагдаж байхад нь дахин ирвэл <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">409 IDEMPOTENCY_IN_PROGRESS</code> — хэдэн секундийн дараа ижил түлхүүрээр дахина.</li>
               <li>• <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">receipt_type</code>: CITIZEN | ORGANIZATION — ААН-ийн баримтад <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">payer_reg_no</code> дамжуулна: төлөгч байгууллагын ТТД (11-14 орон) эсвэл регистр (7 орон) — регистр өгвөл ТТД-г ТЕГ-ийн лавлагаагаар автоматаар олно.</li>
               <li>• <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">payment_method</code>: CASH | CARD | BANK_TRANSFER.</li>
               <li>• Хязгаар дүүрвэл 429 <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-[12.5px]">RECEIPT_QUOTA_EXCEEDED</code> — Billing хуудаснаас шатлалаа ахиулна.</li>

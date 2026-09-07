@@ -287,15 +287,38 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
     if (!body?.id) {
       throw new Error(`POS API receipt returned no id (ДДТД): ${text.slice(0, 300)}`);
     }
+    const batchReceiptNo = String(body.id);
+
+    // ДДТД-ийн зөрүү (B-70): top-level `id` нь БАГЦ баримтын дугаар — операторын
+    // POS-оор дамжуулсан үед батч merchantTin = операторын ТТД тул дугаар нь
+    // операторын угтвартай гарч, борлуулагчийн ebarimt.mn порталтай таардаггүй.
+    // Порталд бүртгэгдэх нь борлуулагчийн ДЭД баримт `receipts[].id`
+    // (merchantTin = sellerTin) — түүнийг л ДДТД гэж хэрэглэгчид өгнө.
+    const subReceipts: any[] = Array.isArray(body?.receipts) ? body.receipts : [];
+    const sellerSub =
+      subReceipts.find((r) => str(r?.merchantTin) === sellerTin && str(r?.id)) ??
+      (subReceipts.length === 1 && str(subReceipts[0]?.id) ? subReceipts[0] : null);
+    const sellerReceiptNo = sellerSub ? String(sellerSub.id) : null;
+    if (!sellerReceiptNo) {
+      // Хуучин instance хариудаа дэд баримтын id өгдөггүй бол багцынхыг л
+      // хадгална — гэхдээ тулгалтад асуудал үүсгэх тул тэмдэглэнэ.
+      this.logger.warn(
+        `POS API receipt ${batchReceiptNo}: seller (${sellerTin}) sub-receipt id not found in receipts[] — falling back to batch id`,
+      );
+    } else if (sellerReceiptNo !== batchReceiptNo) {
+      this.logger.log(`eBarimt receipt: seller ДДТД=${sellerReceiptNo} (${sellerTin}), batch=${batchReceiptNo}`);
+    }
 
     // Best-effort push to ТЕГ — the local service also syncs on its own.
     fetch(`${this.baseUrl}/rest/sendData`, { signal: AbortSignal.timeout(30_000) }).catch(() => undefined);
 
     return {
-      receiptNo: String(body.id),
+      receiptNo: sellerReceiptNo ?? batchReceiptNo,
+      batchReceiptNo,
       lottery: body.lottery ? String(body.lottery) : null,
       qrData: body.qrData ? String(body.qrData) : null,
       receiptDate: body.date ? String(body.date) : null,
+      raw: redactReceiptResponse(body),
     };
   }
 
@@ -331,6 +354,21 @@ export class PosApiEbarimtAdapter implements EbarimtPort {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * Түүхий хариуг хадгалахын өмнө ТЕГ-ийн хориотой талбаруудыг (lottery, qrData)
+ * хасна — бусад нь (id, receipts[].id, merchantTin, date, status, version …)
+ * ДДТД-ийн тулгалт, маргааны нотолгоонд хэрэгтэй.
+ */
+export function redactReceiptResponse(body: unknown): Record<string, unknown> | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
+    if (k === 'lottery' || k === 'qrData') continue;
+    out[k] = v;
+  }
+  return out;
 }
 
 /**

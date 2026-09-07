@@ -13,8 +13,11 @@ export class MockEbarimtAdapter implements EbarimtPort {
 
   async createReceipt(_args: EbarimtCreateArgs): Promise<EbarimtCreateResult> {
     const lottery = `${this.block(2)} ${this.block(2)} ${this.block(6)}`;
+    const batchReceiptNo = randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase();
     return {
-      receiptNo: randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase(),
+      // Бодит POS API-тай ижил: борлуулагчийн дэд баримтын дугаар багцынхаас ялгаатай.
+      receiptNo: `${batchReceiptNo.slice(0, 16)}S01`,
+      batchReceiptNo,
       lottery,
       qrData: randomBytes(48).toString('base64'),
       receiptDate: new Date().toISOString().slice(0, 19).replace('T', ' '),

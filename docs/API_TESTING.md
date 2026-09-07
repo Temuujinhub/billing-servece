@@ -62,11 +62,32 @@ POST хүсэлт бүрд `Idempotency-Key` header дамжуулахыг зө�
    receipt.created, receipt.cancelled — HMAC гарын үсэгтэй; формат нь
    Developers хуудасны «Webhook формат» хэсэгт).
 
+## ДДТД — аль дугаар вэ (B-70)
+
+`POST /partner/receipts`-ийн хариу, `GET /partner/receipts/:id` ба
+`receipt.created` webhook гурвуулаа ИЖИЛ `receipt_no` өгнө:
+
+- `receipt_no` — **танай байгууллагын ДДТД**: POS API 3.0-ийн `receipts[].id`
+  (merchantTin = танай ТТД). ebarimt.mn дээр танай нэр дээр бүртгэгддэг,
+  танай ТТД-ээр эхэлдэг дугаар нь энэ. Тулгалт, хэвлэлт, тайланд үүнийг хэрэглэнэ.
+- `batch_receipt_no` — багц (top-level) баримтын дугаар: операторын POS-оор
+  дамжуулж байгаа тул операторын ТТД-ээр эхэлнэ. Зөвхөн лавлагаанд; цуцлалтыг
+  msgbill өөрөө үүгээр хийнэ.
+- `receipt_date` — ТЕГ-ийн өгсөн баримтын огноо.
+
+Webhook-ийг **`receipt_id`-аар** (POST-ын хариуны `id`) өөрийн бичилттэй тулгана.
+Өөр `receipt_id`-тай webhook-ийн `receipt_no`-оор хадгалсан дугаараа дарж бичихгүй.
+
+`Idempotency-Key`-г баримт бүрд заавал дамжуулна (нэг гүйлгээ = нэг түлхүүр).
+Timeout-оор давтан илгээхэд ТЕГ дээр хоёр дахь баримт үүсэхгүй; анхны хүсэлт
+боловсруулагдаж байхад давтвал `409 IDEMPOTENCY_IN_PROGRESS` ирнэ — хэдэн
+секундийн дараа ижил түлхүүрээр дахин асуухад анхны хариуг авна.
+
 ## Баримт цуцлах
 
 `POST /partner/receipts/:id/cancel` — ТЕГ-т илгээгдсэн баримтыг цуцална
 (биегүй POST, түлхүүр нь баримт үүсгэсэн scope-той байна). Хариу:
-`{id, state, receipt_no, error}`. ТЕГ түр амжилтгүй бол
+`{id, state, receipt_no, batch_receipt_no, error}`. ТЕГ түр амжилтгүй бол
 `state=CANCEL_PENDING` — систем 10 минут тутам автоматаар дахин оролдож,
 амжилттай болмогц `receipt.cancelled` webhook илгээнэ. Тест түлхүүр
 `{state: "CANCELLED", test: true}` симуляц буцаана.

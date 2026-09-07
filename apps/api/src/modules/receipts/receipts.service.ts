@@ -8,6 +8,13 @@ import { EbarimtRegistryService } from '../providers/ebarimt-registry.service';
 import { PosApiEbarimtAdapter } from '../providers/posapi-ebarimt.adapter';
 import { ReceiptPurgeService } from './receipt-purge.service';
 
+/**
+ * processOne-ийн claim-ийн хүчинтэй хугацаа. Provider дуудлага (registry 15с +
+ * POS API 20с) үүнээс богино тул хугацаа хэтэрсэн lock = унасан процессын
+ * үлдэгдэл гэж үзээд дахин авна.
+ */
+const LOCK_TTL_MS = 3 * 60 * 1000;
+
 /** Date → "yyyy-MM-dd HH:mm:ss" (Улаанбаатар, UTC+8) — POS API-ийн огнооны формат. */
 function formatUbDateTime(d: Date): string {
   return new Date(d.getTime() + 8 * 3600_000).toISOString().slice(0, 19).replace('T', ' ');
@@ -107,6 +114,7 @@ export class ReceiptsService {
       },
     });
     if (!receipt || !['PENDING', 'FAILED'].includes(receipt.state) || receipt.retries >= 5) return false;
+
     const tenant = await this.prisma.tenant.findUniqueOrThrow({
       where: { id: receipt.tenantId },
       select: {
@@ -119,6 +127,23 @@ export class ReceiptsService {
         ebarimtVatFreeProj: true,
       },
     });
+    // Provider руу илгээхийн ӨМНӨ мөрийг claim хийнэ (B-70). Өмнө нь claim
+    // зөвхөн ТЕГ-ээс хариу ирсний ДАРАА хийгддэг байсан тул createStandalone-ийн
+    // синхрон дуудлага ба sweeper / төлбөрийн дараах processPending нэг PENDING
+    // мөрийг зэрэг аваад ТЕГ дээр ХОЁР баримт үүсгэж, хоёр дахь нь хаана ч
+    // бүртгэгдэлгүй (цуцлах ч боломжгүй) орхигддог байв.
+    const lock = await this.prisma.ebarimtReceipt.updateMany({
+      where: {
+        id: receipt.id,
+        state: { in: ['PENDING', 'FAILED'] },
+        OR: [{ lockedAt: null }, { lockedAt: { lt: new Date(Date.now() - LOCK_TTL_MS) } }],
+      },
+      data: { lockedAt: new Date() },
+    });
+    if (lock.count === 0) {
+      this.logger.debug(`eBarimt receipt ${receipt.id} is being processed elsewhere — skipping`);
+      return false;
+    }
     const keepQr = this.purge.retentionHours > 0;
     const tenantId = receipt.tenantId;
     try {
@@ -160,8 +185,12 @@ export class ReceiptsService {
           where: { id: receipt.id, state: { in: ['PENDING', 'FAILED'] } },
           data: {
             state: 'CREATED',
+            // receiptNo = БОРЛУУЛАГЧИЙН ДДТД (ebarimt.mn дээр tenant-д харагдах
+            // дугаар); батчийн дугаарыг зөвхөн цуцлалтад зориулж тусад нь.
             receiptNo: result.receiptNo,
+            batchReceiptNo: result.batchReceiptNo ?? null,
             receiptDate: result.receiptDate ?? null,
+            providerResponse: result.raw ? (result.raw as Prisma.InputJsonValue) : Prisma.DbNull,
             receiptType,
             payerRegNo,
             // Хадгалах хугацаа 0 бол сугалаа/QR-г огт бичихгүй (ТЕГ-ийн
@@ -169,6 +198,7 @@ export class ReceiptsService {
             lottery: keepQr ? result.lottery : null,
             qrData: keepQr ? result.qrData : null,
             error: null,
+            lockedAt: null,
           },
         });
         if (claimed.count > 0) {
@@ -185,10 +215,20 @@ export class ReceiptsService {
         }
       });
       if (claimedNow) {
+        // Webhook-ийн receipt_no нь POST /partner/receipts-ийн хариутай ЯГ ижил
+        // (нэг result-аас). Хүлээн авагч тал баримтаа receipt_id-аар тулгах ёстой
+        // тул тулгалтад туслах талбаруудыг (amount, device_id, …) хамт өгнө.
         this.webhooks.emit(tenantId, 'receipt.created', {
           receipt_id: receipt.id,
           transaction_id: receipt.transactionId,
           receipt_no: result.receiptNo,
+          batch_receipt_no: result.batchReceiptNo ?? null,
+          receipt_date: result.receiptDate ?? null,
+          receipt_type: receiptType,
+          amount: receipt.transaction?.gross ?? receipt.amount ?? null,
+          description: receipt.description ?? null,
+          device_id: receipt.deviceId,
+          source: receipt.source,
           lottery: result.lottery,
         });
       }
@@ -196,7 +236,7 @@ export class ReceiptsService {
     } catch (e: any) {
       await this.prisma.ebarimtReceipt.update({
         where: { id: receipt.id },
-        data: { state: 'FAILED', retries: { increment: 1 }, error: String(e?.message ?? e).slice(0, 500) },
+        data: { state: 'FAILED', retries: { increment: 1 }, error: String(e?.message ?? e).slice(0, 500), lockedAt: null },
       });
       this.logger.warn(`eBarimt create failed for ${receipt.id}: ${e?.message}`);
       return false;
@@ -244,7 +284,9 @@ export class ReceiptsService {
       }
       await this.ebarimt.cancelReceipt({
         tenantId,
-        receiptNo: receipt.receiptNo,
+        // DELETE /rest/receipt нь БАГЦ баримтын id авна. 2026-09-с өмнөх мөрөнд
+        // batchReceiptNo байхгүй — тэнд receiptNo өөрөө багцын дугаар байсан.
+        receiptNo: receipt.batchReceiptNo ?? receipt.receiptNo,
         // POS API-ийн өгсөн огноог тэргүүлж, хуучин (өмнөх хувилбарын) баримтад
         // үүссэн цагаа УБ-ын цагаар форматлана.
         receiptDate: receipt.receiptDate ?? formatUbDateTime(receipt.createdAt),
@@ -257,6 +299,7 @@ export class ReceiptsService {
       this.webhooks.emit(tenantId, 'receipt.cancelled', {
         receipt_id: receipt.id,
         receipt_no: receipt.receiptNo,
+        batch_receipt_no: receipt.batchReceiptNo ?? null,
       });
       return updated;
     } catch (e: any) {
@@ -349,7 +392,7 @@ export class ReceiptsService {
   async retry(tenantId: string, receiptId: string) {
     await this.prisma.ebarimtReceipt.updateMany({
       where: { id: receiptId, tenantId, state: 'FAILED' },
-      data: { state: 'PENDING' },
+      data: { state: 'PENDING', lockedAt: null },
     });
     return this.processPending(tenantId);
   }

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "msgbill.mn Partner API",
-    "description": "msgbill.mn-ийн гаднын системд зориулсан API.\n\nҮйлчилгээнүүд:\n• Үйлчилгээ 2 — API-аар нэхэмжлэх үүсгэж SMS илгээх (scope: invoice)\n• Үйлчилгээ 3 — өөрийн системээс eBarimt баримт шууд үүсгэх (scope: receipt)\n• Үйлчилгээ 4 — POS терминалаас eBarimt (scope: pos, device_id заавал)\n\nТУРШИЛТ: Dashboard → Developers хуудаснаас ТЕСТ түлхүүр (bsk_test_...) үүсгээд {{apiKey}} хувьсагчид тавина. Тест түлхүүр СЕРВЕРТ ЮУ Ч БИЧИХГҮЙ — бодит хэлбэртэй симуляц хариу буцаана (хариунд \"test\": true талбар байна). Бодит ажиллагаанд live түлхүүрээ ашиглана.\n\nIdempotency: POST хүсэлтүүдэд Idempotency-Key header дэмжигдэнэ — ижил түлхүүр+ижил body давтвал хадгалсан хариу буцаана (давхар нэхэмжлэх/баримт үүсэхгүй).",
+    "description": "msgbill.mn-ийн гаднын системд зориулсан API.\n\nҮйлчилгээнүүд:\n• Үйлчилгээ 2 — API-аар нэхэмжлэх үүсгэж SMS илгээх (scope: invoice)\n• Үйлчилгээ 3 — өөрийн системээс eBarimt баримт шууд үүсгэх (scope: receipt)\n• Үйлчилгээ 4 — POS терминалаас eBarimt (scope: pos, device_id заавал)\n\nТУРШИЛТ: Dashboard → Developers хуудаснаас ТЕСТ түлхүүр (bsk_test_...) үүсгээд {{apiKey}} хувьсагчид тавина. Тест түлхүүр СЕРВЕРТ ЮУ Ч БИЧИХГҮЙ — бодит хэлбэртэй симуляц хариу буцаана (хариунд \"test\": true талбар байна). Бодит ажиллагаанд live түлхүүрээ ашиглана.\n\nIdempotency: POST хүсэлтүүдэд Idempotency-Key header дэмжигдэнэ — ижил түлхүүр+ижил body давтвал хадгалсан хариу буцаана (давхар нэхэмжлэх/баримт үүсэхгүй); анхны хүсэлт боловсруулагдаж байхад давтвал 409 IDEMPOTENCY_IN_PROGRESS — хэдэн секундийн дараа ижил түлхүүрээр дахина. eBarimt баримтад ЗААВАЛ дамжуулна.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -86,7 +86,7 @@
           "request": {
             "method": "GET",
             "url": { "raw": "{{baseUrl}}/partner/receipts/:id", "host": ["{{baseUrl}}"], "path": ["partner", "receipts", ":id"], "variable": [{ "key": "id", "value": "" }] },
-            "description": "state=CREATED бол receipt_no (ДДТД), lottery, qr_data ирнэ; FAILED бол error + автомат retry хийгдэнэ."
+            "description": "state=CREATED бол receipt_no (ТАНАЙ байгууллагын ДДТД — ebarimt.mn дээр танай нэр дээр бүртгэгдэх, танай ТТД-ээр эхэлдэг дугаар), batch_receipt_no (операторын багц баримтын дугаар, лавлагаанд), receipt_date, lottery, qr_data ирнэ; FAILED бол error + автомат retry хийгдэнэ. receipt.created webhook-ийн receipt_no энэ хариутай яг ижил — webhook-ийг receipt_id-аар тулгана."
           }
         },
         {
@@ -94,7 +94,7 @@
           "request": {
             "method": "POST",
             "url": { "raw": "{{baseUrl}}/partner/receipts/:id/cancel", "host": ["{{baseUrl}}"], "path": ["partner", "receipts", ":id", "cancel"], "variable": [{ "key": "id", "value": "" }] },
-            "description": "ТЕГ-т илгээгдсэн баримтыг цуцална. Хариу: {id, state, receipt_no, error}. ТЕГ түр амжилтгүй бол state=CANCEL_PENDING — 10 минут тутам автоматаар дахин оролдож, амжилттай болмогц receipt.cancelled webhook илгээнэ."
+            "description": "ТЕГ-т илгээгдсэн баримтыг цуцална. Хариу: {id, state, receipt_no, batch_receipt_no, error}. ТЕГ түр амжилтгүй бол state=CANCEL_PENDING — 10 минут тутам автоматаар дахин оролдож, амжилттай болмогц receipt.cancelled webhook илгээнэ."
           }
         }
       ]
