@@ -7,8 +7,9 @@ const SWEEP_MS = 10 * 60 * 1000; // 10 минут тутам
  * Гацсан eBarimt баримтын автомат retry sweeper. Өмнө нь retry зөвхөн
  * дараагийн төлбөр эсвэл гар үйлдлээр өдөөгддөг байсан — API/POS үйлчилгээнд
  * (standalone баримт) энэ нь хангалтгүй тул PENDING/FAILED (retries<5)
- * баримтуудыг тогтмол дахин оролдоно. processOne нь claim-guarded тул
- * зэрэгцээ ажиллагаанд давхар баримт үүсэхгүй.
+ * баримтуудыг тогтмол дахин оролдоно. processOne нь provider руу илгээхийн
+ * ӨМНӨ мөрийг `lockedAt`-аар claim хийдэг тул createStandalone-ийн синхрон
+ * дуудлагатай зэрэгцэхэд ТЕГ дээр давхар баримт үүсэхгүй (B-70).
  */
 @Injectable()
 export class ReceiptRetryService implements OnApplicationBootstrap, OnModuleDestroy {

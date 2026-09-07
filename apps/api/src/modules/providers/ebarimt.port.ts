@@ -37,16 +37,26 @@ export interface EbarimtCreateArgs {
 }
 
 export interface EbarimtCreateResult {
+  /**
+   * БОРЛУУЛАГЧИЙН ДДТД — ebarimt.mn дээр tenant-ийн нэр дээр бүртгэгдэх дугаар.
+   * POS API 3.0-д энэ нь `receipts[].id` (merchantTin = tenant-ийн ТТД), top-level
+   * `id` БИШ: операторын POS-оор дамжуулсан үед top-level дугаар операторын ТТД
+   * угтвартай байдаг тул tenant-ийн порталтай хэзээ ч таардаггүй (B-70).
+   */
   receiptNo: string;
+  /** Багц (top-level) баримтын ДДТД — POS API-ийн `id`; цуцлахад үүнийг илгээнэ. */
+  batchReceiptNo?: string | null;
   lottery: string | null;
   qrData: string | null;
   /** POS API-ийн буцаасан баримтын огноо ("yyyy-MM-dd HH:mm:ss") — цуцлахад заавал хэрэгтэй. */
   receiptDate?: string | null;
+  /** Provider-ийн түүхий хариу — lottery/qrData ХАССАН (ТЕГ: хадгалахыг хориглоно). */
+  raw?: Record<string, unknown> | null;
 }
 
 export interface EbarimtCancelArgs {
   tenantId: string;
-  /** Баримтын ДДТД (бидний хадгалсан receiptNo). */
+  /** Багц баримтын ДДТД (batchReceiptNo; хуучин мөрөнд receiptNo) — DELETE /rest/receipt-ийн `id`. */
   receiptNo: string;
   /** Баримт үүссэн огноо "yyyy-MM-dd HH:mm:ss" — POS API DELETE-д шаардлагатай. */
   receiptDate: string;

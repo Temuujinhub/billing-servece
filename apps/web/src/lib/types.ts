@@ -160,7 +160,10 @@ export interface PaymentRow {
 
 export interface ReceiptRow {
   id: string;
+  /** Борлуулагчийн ДДТД — ebarimt.mn дээр байгууллагын нэр дээр бүртгэгдэх дугаар. */
   receiptNo: string | null;
+  /** Багц баримтын ДДТД (операторын POS-оор дамжуулсан үед операторын угтвартай); хуучин мөрөнд null. */
+  batchReceiptNo?: string | null;
   lottery: string | null;
   qrData: string | null;
   state: string;

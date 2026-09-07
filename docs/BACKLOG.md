@@ -95,6 +95,12 @@
 |---|---|---|
 | B-69 | Админ байгууллагын мэдээллийг засдаг боллоо (ж: Юнайтэдбест ойлын байршлын код 2302→2426): `PATCH /admin/merchants/:id` — name/regNo/tin/contactEmail/contactPhone/address/ebarimtMerchantTin/ebarimtPosNo/ebarimtBranchNo/ebarimtDistrictCode талбарууд, зөвхөн ирсэн талбар шинэчлэгдэж өөрчлөлт бүр хуучин→шинэ утгатайгаа audit-д (`admin.merchant.updated`) үлдэнэ; districtCode 4 орон validation. Админ → Байгууллага → дэлгэрэнгүй хуудсанд «Байгууллагын мэдээлэл ✏️ Засах» карт | ✅ |
 
+## Дууссан (2026-09-07, eBarimt ДДТД зөрүү + давхар баримтын хамгаалалт)
+
+| ID | Ажил | Статус |
+|---|---|---|
+| B-70 | **ДДТД-ийн зөрүү (EasyParking тулгалт):** POS API 3.0 adapter top-level `id` (БАГЦ баримт — операторын POS-оор дамжуулсан үед операторын ТТД `02910024410…` угтвартай) буцаадаг байсан тул хэрэглэгчид өгсөн дугаар ebarimt.mn дээр tenant-ийн нэр дээр бүртгэгддэг дугаартай (tenant-ийн ТТД `01520002009…` угтвартай `receipts[].id`) хэзээ ч таардаггүй байв. Одоо `receiptNo` = борлуулагчийн дэд баримтын `receipts[].id` (merchantTin = tenant ТТД), багцын дугаар `batchReceiptNo`-д тусад нь (цуцлалтын DELETE үүгээр), POS API-ийн түүхий хариу `providerResponse`-д (lottery/qrData хассан). API хариу + `receipt.created` webhook + dashboard бүгд ижил `receipt_no`, нэмэлт `batch_receipt_no`/`receipt_date`; webhook-т тулгалтын талбарууд (amount, device_id, description, source, receipt_type). **Давхар баримтын хамгаалалт:** `processOne` provider руу илгээхийн ӨМНӨ `lockedAt`-аар claim хийдэг боллоо (sweeper/төлбөрийн processPending-тэй зэрэгцэхэд ТЕГ дээр орхигдсон 2 дахь баримт үүсэхгүй); Partner API `Idempotency-Key` хүсэлт ажиллахаас өмнө бүртгэгдэж, боловсруулагдаж байхад давтвал `409 IDEMPOTENCY_IN_PROGRESS` (timeout-retry ТЕГ рүү давхар очихгүй). Migration 15 (idempotent). Docs: INTEGRATIONS.md, API_TESTING.md, Developers хуудас, Postman | ✅ |
+
 ## Дууссан (2026-08-19, B2B баримтын payer_reg_no засвар)
 
 | ID | Ажил | Статус |

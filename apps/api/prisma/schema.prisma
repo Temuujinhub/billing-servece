@@ -493,7 +493,20 @@ model EbarimtReceipt {
   amount        Int?
   description   String?
   deviceId      String? // pos source: аль терминалаас
+  // Борлуулагч (tenant)-ийн ДДТД — POS API-ийн receipts[].id, merchantTin нь
+  // tenant-ийн ТТД. Энэ л дугаар ebarimt.mn дээр байгууллагын нэр дээр
+  // бүртгэгддэг тул API/webhook/UI-д ҮРГЭЛЖ энийг харуулна (B-70).
   receiptNo     String?
+  // Багц (top-level) баримтын ДДТД — POS API-ийн `id`. Операторын POS-оор
+  // дамжуулсан үед операторын ТТД угтвартай. Зөвхөн цуцлахад (DELETE
+  // /rest/receipt) хэрэглэнэ. 2026-09-с өмнөх мөрүүдэд NULL (receiptNo-д
+  // багцын дугаар байгаа).
+  batchReceiptNo String?
+  // POS API-ийн ТҮҮХИЙ хариу (lottery/qrData-г хассан) — тулгалт, маргаанд.
+  providerResponse Json?
+  // processOne-ийн claim: provider руу илгээж буй хугацаанд өөр ажилтан
+  // (sweeper, төлбөрийн дараах processPending) давхар илгээхээс хамгаална.
+  lockedAt      DateTime?
   // POS API-ийн буцаасан баримтын огноо ("yyyy-MM-dd HH:mm:ss") — цуцлахад хэрэгтэй.
   receiptDate   String?
   lottery       String?

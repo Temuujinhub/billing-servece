@@ -133,7 +133,12 @@ export default function ReceiptsPage() {
                       <td className="td text-right font-semibold">
                         {r.transaction ? mnt(r.transaction.gross) : r.amount != null ? mnt(r.amount) : '—'}
                       </td>
-                      <td className="td max-w-[150px] truncate font-mono text-[12px]">{r.receiptNo ?? '—'}</td>
+                      <td
+                        className="td max-w-[150px] truncate font-mono text-[12px]"
+                        title={r.batchReceiptNo && r.batchReceiptNo !== r.receiptNo ? `Багцын ДДТД: ${r.batchReceiptNo}` : undefined}
+                      >
+                        {r.receiptNo ?? '—'}
+                      </td>
                       <td className="td font-mono text-[13px] tracking-wider">{r.lottery ?? '—'}</td>
                       <td className="td">
                         <ReceiptBadge state={r.state} />

@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
@@ -127,7 +128,16 @@ export class PartnerApiController {
     private readonly config: ConfigService,
   ) {}
 
-  /** Idempotency-Key: ижил түлхүүр+ижил body → хадгалсан хариу; өөр body → 409. */
+  /**
+   * Idempotency-Key: ижил түлхүүр+ижил body → хадгалсан хариу; өөр body → 409.
+   *
+   * Түлхүүрийг `run()`-ээс ӨМНӨ бүртгэнэ (B-70). Өмнө нь хариу ирсний дараа л
+   * бичдэг байсан тул хэрэглэгч тал timeout-оор давтан илгээхэд (баримт ТЕГ дээр
+   * үүсэж байх 1–20 секундийн дотор) хоёр дахь хүсэлт мөн ТЕГ рүү очиж НЭГ
+   * гүйлгээнд ХОЁР ДДТД үүсдэг байв. Одоо боловсруулагдаж буй түлхүүр дахин
+   * ирвэл 409 IDEMPOTENCY_IN_PROGRESS — хэрэглэгч ижил түлхүүрээр дахин асуухад
+   * анхны хариуг авна.
+   */
   private async withIdempotency<T>(
     partner: PartnerContext,
     idemKey: string | undefined,
@@ -137,19 +147,40 @@ export class PartnerApiController {
     if (!idemKey || partner.mode === 'test') return run();
     const key = `${partner.keyId}:${idemKey.slice(0, 100)}`;
     const requestHash = sha256(JSON.stringify(body ?? {}));
-    const existing = await this.prisma.idempotencyKey.findUnique({
-      where: { tenantId_key: { tenantId: partner.tenantId, key } },
-    });
-    if (existing) {
-      if (existing.requestHash !== requestHash) {
+    const where = { tenantId_key: { tenantId: partner.tenantId, key } };
+
+    // Түлхүүрийг захиалж авна: unique зөрчил = өмнө нь (эсвэл яг одоо) ирсэн.
+    let reserved = false;
+    try {
+      await this.prisma.idempotencyKey.create({ data: { tenantId: partner.tenantId, key, requestHash, response: Prisma.DbNull } });
+      reserved = true;
+    } catch (e) {
+      if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) throw e;
+    }
+    if (!reserved) {
+      const existing = await this.prisma.idempotencyKey.findUnique({ where });
+      if (existing && existing.requestHash !== requestHash) {
         throw apiError(HttpStatus.CONFLICT, 'IDEMPOTENCY_MISMATCH', 'Idempotency-Key өөр агуулгатай хүсэлтэд ашиглагдсан.', 'Idempotency key reused with different body.');
       }
-      return existing.response as T;
+      if (existing?.response != null) return existing.response as T;
+      // Хуучин мөр (хариугүй) эсвэл яг одоо боловсруулагдаж байгаа — ТЕГ рүү
+      // давхар илгээхгүй; хэрэглэгч хэдэн секундийн дараа ижил түлхүүрээр дахина.
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'IDEMPOTENCY_IN_PROGRESS',
+        'Энэ Idempotency-Key-тэй хүсэлт боловсруулагдаж байна — хэдэн секундийн дараа ижил түлхүүрээр дахин илгээнэ үү.',
+        'A request with this Idempotency-Key is still in progress; retry with the same key shortly.',
+      );
     }
-    const result = await run();
-    await this.prisma.idempotencyKey
-      .create({ data: { tenantId: partner.tenantId, key, requestHash, response: result as any } })
-      .catch(() => undefined); // зэрэгцээ давхар хүсэлд unique зөрчил — хэвийн
+    let result: T;
+    try {
+      result = await run();
+    } catch (e) {
+      // Амжилтгүй хүсэлтийн захиалгыг чөлөөлнө — хэрэглэгч ижил түлхүүрээр дахин оролдож болно.
+      await this.prisma.idempotencyKey.delete({ where }).catch(() => undefined);
+      throw e;
+    }
+    await this.prisma.idempotencyKey.update({ where, data: { response: result as any } }).catch(() => undefined);
     return result;
   }
 
@@ -202,7 +233,7 @@ export class PartnerApiController {
         customer: { select: { name: true, phone: true } },
         intents: {
           where: { state: 'SUCCEEDED' },
-          include: { transactions: { include: { receipts: { select: { state: true, receiptNo: true, lottery: true } } } } },
+          include: { transactions: { include: { receipts: { select: { state: true, receiptNo: true, batchReceiptNo: true, lottery: true } } } } },
         },
       },
     });
@@ -244,6 +275,7 @@ export class PartnerApiController {
         id: `test_${sha256(JSON.stringify(dto)).slice(0, 24)}`,
         state: 'CREATED',
         receipt_no: `TEST${Date.now() % 1_000_000_000}`,
+        batch_receipt_no: `TESTBATCH${Date.now() % 1_000_000_000}`,
         lottery: 'TEST-LOTTERY',
         qr_data: null,
         receipt_type: dto.receipt_type ?? 'CITIZEN',
@@ -286,7 +318,11 @@ export class PartnerApiController {
       return {
         id: receipt.id,
         state: receipt.state,
+        // receipt_no = БОРЛУУЛАГЧИЙН ДДТД (ebarimt.mn дээр танай нэр дээр
+        // бүртгэгдэх дугаар); batch_receipt_no = багцын дугаар (лавлагаанд).
         receipt_no: receipt.receiptNo,
+        batch_receipt_no: receipt.batchReceiptNo,
+        receipt_date: receipt.receiptDate,
         lottery: receipt.lottery,
         qr_data: receipt.qrData,
         receipt_type: receipt.receiptType,
@@ -321,6 +357,7 @@ export class PartnerApiController {
       id: receipt.id,
       state: receipt.state,
       receipt_no: receipt.receiptNo,
+      batch_receipt_no: receipt.batchReceiptNo,
       error: receipt.error,
     };
   }
@@ -341,6 +378,8 @@ export class PartnerApiController {
       amount: receipt.amount,
       description: receipt.description,
       receipt_no: receipt.receiptNo,
+      batch_receipt_no: receipt.batchReceiptNo,
+      receipt_date: receipt.receiptDate,
       lottery: receipt.lottery,
       qr_data: receipt.qrData,
       receipt_type: receipt.receiptType,
